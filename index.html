@@ -955,6 +955,10 @@ details>summary{color:var(--acc-dark)}
         </select>
       </div>
       <div class="grow" id="impDocBox"><label>Documento</label><select id="impDoc"></select></div>
+      <label style="display:block;font-weight:400;color:var(--ink);margin:6px 0 0">
+        <input type="checkbox" id="impVisual" style="width:auto;margin-right:7px">
+        <b>Leer las páginas como imagen</b> — para criterios en tablas o PDF escaneados. Más preciso, consume más créditos.
+      </label>
       <div class="grow hidden" id="impFileBox"><label>Archivo (PDF, Word .docx o TXT)</label><input type="file" id="impFile" accept=".pdf,.docx,.txt"></div>
       <div><button class="primary" id="btnAnalyze">Analizar</button></div>
     </div>
@@ -4163,6 +4167,13 @@ function critItemOk(p){
   if(/^criterios?\s+de\s+(inclusi[oó]n|exclusi[oó]n)\s*[/y]?\s*(exclusi[oó]n)?\s*$/i.test(p)) return false;  /* el propio encabezado */
   if(/(signos vitales|examen f[ií]sico|peso corporal|electrocardiograma|ECG de 12)/i.test(p) && !/\b(deber[aá]|debe|se requiere|requisito|criterio|no haber|haber tenido)\b/i.test(p)) return false;
   if(/(semana del estudio|d[ií]a del estudio|per[ií]odo del estudio|plazo de visitas|visita del estudio)/i.test(p)) return false;
+  /* narrativa del consentimiento, del comité de ética o de la justificación del
+     estudio: no son condiciones verificables en un paciente */
+  const pl = p.replace(/\s+/g,' ');
+  if(/(se trataron|se discutieron|se conversaron|inquietudes|preocupaciones|manifestaron|como incentivo|para facilitar|dado que les ofrece|cuestiones log[ií]sticas|observaciones influyeron|el comit[eé] de [eé]tica|acta de reuni[oó]n|se le explic[oó]|se inform[oó] al participante|riesgos y beneficios|car[aá]cter voluntario|puede retirarse|sin necesidad de justificar)/i.test(pl)) return false;
+  /* un criterio describe una condición del paciente: si no tiene ningún término
+     evaluable, casi seguro no es un criterio sino texto de relleno */
+  if(!/\d|\b(a[nñ]os|edad|mayor|menor|igual|diagn[oó]stic|antecedente|historia de|tratamient|dosis|firma|consentimiento|capaz|dispuest|acepta|debe|deber[aá]|no haber|haber tenido|presencia|ausencia|positiv|negativ|activa?|cr[oó]nic|estable|documentad|confirmad|seg[uú]n criterios|puntaje|score|nivel|valor|recuento|funci[oó]n|embarazo|lactancia|anticoncep|infecci[oó]n|neoplasia|insuficiencia|alergia|hipersensibilidad|participaci[oó]n|capacidad|cumplir|toler)\b/i.test(pl)) return false;
   const words = p.split(/\s+/);
   const upperRatio = words.filter(x=>/^[A-ZÁÉÍÓÚÑ]{2,}$/.test(x)).length / Math.max(1,words.length);
   if(upperRatio > 0.5) return false;                             /* encabezados de tabla en mayúsculas */
@@ -4406,7 +4417,7 @@ async function aiChat(opt){
   }
   return { text, cut };
 }
-async function aiExtractProtocol(rawText){
+async function aiExtractProtocol(rawText, imagenes){
   const doc = protocolChunks(rawText);
   const prompt =
     'Sos un asistente de un equipo de investigación clínica. Del siguiente protocolo, extraé la información pedida.\n\n'+
@@ -4420,10 +4431,16 @@ async function aiExtractProtocol(rawText){
     '- NO incluyas en los criterios títulos de secciones, entradas del índice, texto de plantillas ni notas al pie.\n'+
     '- "visitas": una entrada por visita programada. "dia" es el día del protocolo respecto de la basal (negativo para screening; si la visita se define por semanas, convertí a días: semana N = día N×7). Las ventanas van en días (0 si no se especifica).\n'+
     '- "tareas": los procedimientos y evaluaciones que corresponden a ESA visita según la tabla/cronograma de procedimientos (schedule of assessments). En esa tabla las filas son los procedimientos y las columnas las visitas: incluí en cada visita los procedimientos cuya celda está marcada (con "X", "•", etc.) para esa columna. Escribí el nombre del procedimiento tal como figura en la fila, sin las "X". Si no podés determinar con seguridad qué procedimientos corresponden a una visita, devolvé "tareas" vacío para esa visita en lugar de adivinar.\n'+
-    '- Si una sección no aparece en el texto, devolvé el array vacío. No inventes criterios, visitas ni procedimientos.';
+    '- Si una sección no aparece en el texto, devolvé el array vacío. No inventes criterios, visitas ni procedimientos.\n'+
+    '- Los criterios pueden venir en una TABLA. Si el texto trae una sección «TABLAS RECONSTRUIDAS», cada renglón es una fila y las columnas van separadas por «|»: tomá de cada fila el enunciado del criterio, no el número ni la columna de referencia. Si hay imágenes adjuntas, leé de ellas las tablas de criterios.\n'+
+    '- No confundas los criterios de elegibilidad con el texto narrativo del consentimiento informado, la justificación del estudio ni las actas de comité: si el fragmento no es una condición verificable en un paciente, no lo incluyas.';
+  const contenido = (imagenes && imagenes.length)
+    ? [{ t:'text', text:'IMÁGENES DE LAS PÁGINAS DEL DOCUMENTO (leé de acá las tablas de criterios):' }]
+        .concat(imagenes, [{ t:'text', text:prompt }])
+    : prompt;
   const res = await aiChat({
     system: 'Respondés exclusivamente con un objeto JSON válido, sin texto antes ni después y sin bloques de código.',
-    content: prompt, maxTokens: 8000
+    content: contenido, maxTokens: 8000
   });
   const txt = res.text;
   const o = parseAiObjectLoose(txt);
@@ -4445,6 +4462,7 @@ async function aiExtractProtocol(rawText){
 
 /* --- modal --- */
 let IMP_VISITS = [];
+let IMP_BLOB = null, IMP_NOMBRE = '';
 
 function openImportModal(){
   const stId = $('stId').value;
@@ -4489,21 +4507,28 @@ $('btnAnalyze').addEventListener('click', async ()=>{
     } else if(src==='file'){
       const f = $('impFile').files[0];
       if(!f) throw new Error('Elegí un archivo.');
-      text = await extractText(f, f.name);
+      text = await extractTextTablas(f, f.name);
+      IMP_BLOB = f; IMP_NOMBRE = f.name;
     } else {
       const doc = (DB.docs||[]).find(d=>d.id===$('impDoc').value);
       if(!doc) throw new Error('No hay documento adjunto para analizar. Adjuntá uno o usá otra fuente.');
       const b = await docBlob(doc);
       if(!b) throw new Error('El archivo no está disponible en este navegador.');
-      text = await extractText(b, doc.filename);
+      text = await extractTextTablas(b, doc.filename);
+      IMP_BLOB = b; IMP_NOMBRE = doc.filename;
     }
-    if((text||'').trim().length<50)
-      throw new Error('El documento no tiene texto legible (puede ser un PDF escaneado). Probá con la opción de pegar texto.');
+    if((text||'').trim().length<50 && !($('impVisual').checked && IMP_BLOB))
+      throw new Error('El documento no tiene texto legible (puede ser un PDF escaneado). Tildá «Leer las páginas como imagen» o pegá el texto.');
     let crit, usoIA = false;
     if(aiConfigured()){
+      let imgs = [];
+      if($('impVisual').checked && IMP_BLOB && (IMP_NOMBRE||'').toLowerCase().endsWith('.pdf')){
+        st.textContent = T('Convirtiendo las páginas a imagen...');
+        imgs = await docsImagenes([{ filename:IMP_NOMBRE, _blob:IMP_BLOB }], 10);
+      }
       st.textContent = T('Analizando el protocolo con IA (puede tardar unos segundos)...');
       try{
-        const o = await aiExtractProtocol(text);
+        const o = await aiExtractProtocol(text, imgs);
         crit = { incl:o.incl, excl:o.excl };
         IMP_VISITS = o.visitas;
         usoIA = true;
@@ -6094,8 +6119,8 @@ async function docsImagenes(docs, maxTotal){
     if(usadas >= (maxTotal||8)) break;
     const esPdf = (doc.filename||'').toLowerCase().endsWith('.pdf');
     if(!esPdf) continue;
-    let b;
-    try{ b = await docBlob(doc); }catch(e){ continue; }
+    let b = doc._blob || null;
+    if(!b){ try{ b = await docBlob(doc); }catch(e){ continue; } }
     if(!b) continue;
     try{
       await ensurePdfJs();
