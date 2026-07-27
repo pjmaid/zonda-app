@@ -4417,52 +4417,126 @@ async function aiChat(opt){
   }
   return { text, cut };
 }
-async function aiExtractProtocol(rawText, imagenes){
-  const doc = protocolChunks(rawText);
+/* Aísla la sección de inclusión o de exclusión dentro del texto del protocolo.
+   Devuelve '' si no encuentra el encabezado, y en ese caso se usa todo el texto. */
+function seccionCriterios(texto, tipo){
+  const t = normText(texto);
+  const reIn  = /(?:^|\n)\s*(?:\d+(?:\.\d+)*\.?\s*)?criterios?\s+de\s+inclusi[oó]n\s*(?:\n|:|$)/i;
+  const reEx  = /(?:^|\n)\s*(?:\d+(?:\.\d+)*\.?\s*)?criterios?\s+de\s+exclusi[oó]n\s*(?:\n|:|$)/i;
+  const reInE = /(?:^|\n)\s*(?:\d+(?:\.\d+)*\.?\s*)?inclusion\s+criteria\s*(?:\n|:|$)/i;
+  const reExE = /(?:^|\n)\s*(?:\d+(?:\.\d+)*\.?\s*)?exclusion\s+criteria\s*(?:\n|:|$)/i;
+  const mIn = t.match(reIn) || t.match(reInE);
+  const mEx = t.match(reEx) || t.match(reExE);
+  if(tipo === 'inclusion'){
+    if(!mIn) return '';
+    const desde = mIn.index;
+    const hasta = (mEx && mEx.index > desde) ? mEx.index : Math.min(t.length, desde+40000);
+    return t.slice(desde, hasta);
+  }
+  if(!mEx) return '';
+  /* de exclusión hasta el próximo encabezado de sección del mismo nivel */
+  const resto = t.slice(mEx.index);
+  const fin = resto.slice(200).search(/\n\s*\d+\.\d+\.?\s+[A-ZÁÉÍÓÚ][a-záéíóúñ]/);
+  return fin > 0 ? resto.slice(0, 200+fin) : resto.slice(0, 40000);
+}
+
+/* Una consulta por sección: así los criterios de inclusión no se comen el
+   presupuesto de salida y dejan a los de exclusión sin lugar, que es lo que
+   pasaba con una sola llamada para todo. */
+async function aiCriteriosSeccion(texto, tipo, imagenes){
+  const cual = tipo==='inclusion' ? 'INCLUSIÓN' : 'EXCLUSIÓN';
+  const seccion = seccionCriterios(texto, tipo);
+  const doc = protocolChunks(seccion || texto, 60000);
   const prompt =
-    'Sos un asistente de un equipo de investigación clínica. Del siguiente protocolo, extraé la información pedida.\n\n'+
-    'PROTOCOLO:\n<<<\n'+doc+'\n>>>\n\n'+
-    'Respondé ÚNICAMENTE con este objeto JSON:\n'+
-    '{"inclusion":["criterio 1","criterio 2"],"exclusion":["criterio 1"],'+
-    '"visitas":[{"nombre":"Visita 2","dia":15,"ventanaAntes":3,"ventanaDespues":3,'+
-    '"tareas":["Signos vitales","Laboratorio central (hemograma, química, orina)","Registro de eventos adversos"]}]}\n\n'+
+    'Sos un asistente de un equipo de investigación clínica. Del siguiente fragmento de protocolo, extraé ÚNICAMENTE los criterios de '+cual+'.\n\n'+
+    'FRAGMENTO:\n<<<\n'+doc+'\n>>>\n\n'+
+    'Respondé ÚNICAMENTE con este objeto JSON:\n{"criterios":["criterio 1","criterio 2"]}\n\n'+
     'Reglas:\n'+
-    '- Transcribí cada criterio de elegibilidad tal como figura en el protocolo, sin el número de ítem, uno por elemento del array.\n'+
-    '- NO incluyas en los criterios títulos de secciones, entradas del índice, texto de plantillas ni notas al pie.\n'+
-    '- "visitas": una entrada por visita programada. "dia" es el día del protocolo respecto de la basal (negativo para screening; si la visita se define por semanas, convertí a días: semana N = día N×7). Las ventanas van en días (0 si no se especifica).\n'+
-    '- "tareas": los procedimientos y evaluaciones que corresponden a ESA visita según la tabla/cronograma de procedimientos (schedule of assessments). En esa tabla las filas son los procedimientos y las columnas las visitas: incluí en cada visita los procedimientos cuya celda está marcada (con "X", "•", etc.) para esa columna. Escribí el nombre del procedimiento tal como figura en la fila, sin las "X". Si no podés determinar con seguridad qué procedimientos corresponden a una visita, devolvé "tareas" vacío para esa visita en lugar de adivinar.\n'+
-    '- Si una sección no aparece en el texto, devolvé el array vacío. No inventes criterios, visitas ni procedimientos.\n'+
-    '- Los criterios pueden venir en una TABLA. Si el texto trae una sección «TABLAS RECONSTRUIDAS», cada renglón es una fila y las columnas van separadas por «|»: tomá de cada fila el enunciado del criterio, no el número ni la columna de referencia. Si hay imágenes adjuntas, leé de ellas las tablas de criterios.\n'+
-    '- No confundas los criterios de elegibilidad con el texto narrativo del consentimiento informado, la justificación del estudio ni las actas de comité: si el fragmento no es una condición verificable en un paciente, no lo incluyas.';
+    '- Transcribí cada criterio tal como figura, sin el número de ítem. Uno por elemento del array.\n'+
+    '- Un criterio numerado que trae una «Nota:» aclaratoria va en UN SOLO elemento junto con su nota.\n'+
+    '- Los subtítulos temáticos que agrupan criterios (por ejemplo «Afecciones médicas e infecciones», «Medicación previa o concomitante») NO son criterios: no los incluyas como elemento.\n'+
+    '- No incluyas títulos de sección, entradas del índice, pies de página, texto narrativo del consentimiento ni actas de comité.\n'+
+    '- Si el fragmento contiene criterios de la otra categoría, ignoralos: acá van solo los de '+cual+'.\n'+
+    '- Si el texto trae una sección «TABLAS RECONSTRUIDAS», cada renglón es una fila con columnas separadas por «|»: tomá el enunciado del criterio.\n'+
+    '- Si no hay criterios de '+cual+' en el fragmento, devolvé {"criterios":[]}. No inventes.';
   const contenido = (imagenes && imagenes.length)
-    ? [{ t:'text', text:'IMÁGENES DE LAS PÁGINAS DEL DOCUMENTO (leé de acá las tablas de criterios):' }]
-        .concat(imagenes, [{ t:'text', text:prompt }])
+    ? [{ t:'text', text:'IMÁGENES DE LAS PÁGINAS DEL DOCUMENTO:' }].concat(imagenes, [{ t:'text', text:prompt }])
     : prompt;
   const res = await aiChat({
     system: 'Respondés exclusivamente con un objeto JSON válido, sin texto antes ni después y sin bloques de código.',
-    content: contenido, maxTokens: 8000
+    content: contenido, maxTokens: 12000
   });
-  const txt = res.text;
-  const o = parseAiObjectLoose(txt);
-  if(!o) throw new Error('La IA no devolvió un resultado interpretable.' + (txt.trim() ? ' Respondió: «'+txt.trim().slice(0,160)+'…»' : ''));
-  const clean = a => (Array.isArray(a)?a:[]).map(x=>String(x||'').replace(/\s+/g,' ').trim()).filter(x=>x.length>=8).slice(0,60);
+  const o = parseAiObjectLoose(res.text);
+  const arr = o && Array.isArray(o.criterios) ? o.criterios : [];
+  return { criterios: arr, cortado: res.cut && !arr.length };
+}
+
+/* Las visitas y el cronograma, en su propia consulta. */
+async function aiVisitasProtocolo(texto, imagenes){
+  const doc = protocolChunks(texto, 70000);
+  const prompt =
+    'Sos un asistente de un equipo de investigación clínica. Del siguiente protocolo, extraé el calendario de visitas.\n\n'+
+    'PROTOCOLO:\n<<<\n'+doc+'\n>>>\n\n'+
+    'Respondé ÚNICAMENTE con este objeto JSON:\n'+
+    '{"visitas":[{"nombre":"Visita 2","dia":15,"ventanaAntes":3,"ventanaDespues":3,'+
+    '"tareas":["Signos vitales","Hemograma","Registro de eventos adversos"]}]}\n\n'+
+    'Reglas:\n'+
+    '- Una entrada por visita programada. "dia" es el día del protocolo respecto de la basal (negativo para screening; si la visita se define por semanas, semana N = día N×7).\n'+
+    '- Las ventanas van en días (0 si no se especifica).\n'+
+    '- "tareas": los procedimientos que corresponden a ESA visita según la tabla de procedimientos. En esa tabla las filas son procedimientos y las columnas visitas: incluí los que tengan la celda marcada para esa columna, con el nombre de la fila y sin las "X".\n'+
+    '- Si no podés determinar con seguridad los procedimientos de una visita, devolvé "tareas" vacío para esa visita en lugar de adivinar.\n'+
+    '- Si el protocolo no trae calendario de visitas, devolvé {"visitas":[]}. No inventes.';
+  const contenido = (imagenes && imagenes.length)
+    ? [{ t:'text', text:'IMÁGENES DE LAS PÁGINAS DEL DOCUMENTO:' }].concat(imagenes, [{ t:'text', text:prompt }])
+    : prompt;
+  const res = await aiChat({
+    system: 'Respondés exclusivamente con un objeto JSON válido, sin texto antes ni después y sin bloques de código.',
+    content: contenido, maxTokens: 14000
+  });
+  const o = parseAiObjectLoose(res.text);
+  return (o && Array.isArray(o.visitas)) ? o.visitas : [];
+}
+
+async function aiExtractProtocol(rawText, imagenes){
+  const clean = a => (Array.isArray(a)?a:[]).map(x=>String(x||'').replace(/\s+/g,' ').trim())
+    .filter(x=>x.length>=8).filter((x,i,arr)=>arr.indexOf(x)===i).slice(0,80);
   const cleanTasks = a => (Array.isArray(a)?a:[])
     .map(x=>String(x||'').replace(/\s+/g,' ').replace(/\s*\bX\b\s*/g,' ').trim().replace(/^[-•*\s]+/,''))
     .filter(x=>x.length>=3 && x.length<=160 && !/^X+$/i.test(x))
     .filter((x,i,arr)=>arr.indexOf(x)===i).slice(0,40);
-  const vis = (Array.isArray(o.visitas)?o.visitas:[]).map(v=>({
-    nombre: String(v.nombre||'').trim() || ('Día '+v.dia),
-    dia: parseInt(v.dia,10),
-    venAntes: Math.abs(parseInt(v.ventanaAntes,10)||0),
-    venDesp: Math.abs(parseInt(v.ventanaDespues,10)||0),
-    tareas: cleanTasks(v.tareas)
-  })).filter(v=>!isNaN(v.dia) && Math.abs(v.dia)<=2000).sort((a,b)=>a.dia-b.dia).slice(0,60);
-  return { incl: clean(o.inclusion), excl: clean(o.exclusion), visitas: vis };
+
+  /* tres consultas independientes: si una falla, las otras igual traen su parte */
+  const errores = [];
+  let incl = [], excl = [], visitas = [];
+  try{
+    const r = await aiCriteriosSeccion(rawText, 'inclusion', imagenes);
+    incl = clean(r.criterios);
+    if(r.cortado) errores.push(T('la respuesta de los criterios de inclusión se cortó por longitud'));
+  }catch(e){ errores.push(T('inclusión')+': '+e.message); }
+  try{
+    const r = await aiCriteriosSeccion(rawText, 'exclusion', imagenes);
+    excl = clean(r.criterios);
+    if(r.cortado) errores.push(T('la respuesta de los criterios de exclusión se cortó por longitud'));
+  }catch(e){ errores.push(T('exclusión')+': '+e.message); }
+  try{
+    visitas = (await aiVisitasProtocolo(rawText, imagenes)).map(v=>({
+      nombre: String(v.nombre||'').trim() || ('Día '+v.dia),
+      dia: parseInt(v.dia,10),
+      venAntes: Math.abs(parseInt(v.ventanaAntes,10)||0),
+      venDesp: Math.abs(parseInt(v.ventanaDespues,10)||0),
+      tareas: cleanTasks(v.tareas)
+    })).filter(v=>!isNaN(v.dia) && Math.abs(v.dia)<=2000).sort((a,b)=>a.dia-b.dia).slice(0,60);
+  }catch(e){ errores.push(T('visitas')+': '+e.message); }
+
+  if(!incl.length && !excl.length && !visitas.length)
+    throw new Error(errores.length ? errores.join(' · ') : T('La IA no devolvió un resultado interpretable.'));
+  return { incl, excl, visitas, errores };
 }
 
 /* --- modal --- */
 let IMP_VISITS = [];
 let IMP_BLOB = null, IMP_NOMBRE = '';
+let IMP_ERRORES = [];
 
 function openImportModal(){
   const stId = $('stId').value;
@@ -4520,18 +4594,20 @@ $('btnAnalyze').addEventListener('click', async ()=>{
     if((text||'').trim().length<50 && !($('impVisual').checked && IMP_BLOB))
       throw new Error('El documento no tiene texto legible (puede ser un PDF escaneado). Tildá «Leer las páginas como imagen» o pegá el texto.');
     let crit, usoIA = false;
+    IMP_ERRORES = [];
     if(aiConfigured()){
       let imgs = [];
       if($('impVisual').checked && IMP_BLOB && (IMP_NOMBRE||'').toLowerCase().endsWith('.pdf')){
         st.textContent = T('Convirtiendo las páginas a imagen...');
         imgs = await docsImagenes([{ filename:IMP_NOMBRE, _blob:IMP_BLOB }], 10);
       }
-      st.textContent = T('Analizando el protocolo con IA (puede tardar unos segundos)...');
+      st.textContent = T('Analizando el protocolo con IA: criterios de inclusión, de exclusión y visitas...');
       try{
         const o = await aiExtractProtocol(text, imgs);
         crit = { incl:o.incl, excl:o.excl };
         IMP_VISITS = o.visitas;
         usoIA = true;
+        IMP_ERRORES = o.errores || [];
       }catch(errIA){
         st.style.color='var(--warn)';
         st.textContent = '⚠ La IA no pudo analizarlo ('+errIA.message+'). Se intenta con el método básico...';
@@ -4559,8 +4635,19 @@ $('btnAnalyze').addEventListener('click', async ()=>{
       st.style.color='var(--warn)';
       st.textContent = '⚠ Detectado: '+crit.incl.length+' criterios de inclusión, '+crit.excl.length+' de exclusión y '+IMP_VISITS.length+' visitas'+via+'. El resultado parece dudoso (puede haber tomado el índice o una tabla en vez de la sección real). Revisalo: si no son criterios reales, borralos y pegá a mano la sección del protocolo, o configurá la clave de IA para un análisis mucho más confiable.';
     } else {
-      st.style.color='var(--ok)';
-      st.textContent = '✔ Detectado: '+crit.incl.length+' criterios de inclusión, '+crit.excl.length+' de exclusión y '+IMP_VISITS.length+' visitas'+via+'. Revisá y corregí antes de aplicar.';
+      /* con la extracción por secciones, que falte una entera es señal de que
+         el documento no la trae o que la respuesta se cortó */
+      const faltaAlguna = usoIA && ((!crit.incl.length && crit.excl.length) || (crit.incl.length && !crit.excl.length));
+      if(faltaAlguna || IMP_ERRORES.length){
+        st.style.color='var(--warn)';
+        st.textContent = '⚠ Detectado: '+crit.incl.length+' criterios de inclusión, '+crit.excl.length+' de exclusión y '+IMP_VISITS.length+' visitas'+via+'. '+
+          (faltaAlguna ? 'No se encontró la sección de criterios de '+(crit.incl.length?'exclusión':'inclusión')+
+            ': revisá que el documento la incluya, o pegá esa sección aparte con la opción «Pegar texto». ' : '')+
+          (IMP_ERRORES.length ? IMP_ERRORES.join(' · ') : '');
+      } else {
+        st.style.color='var(--ok)';
+        st.textContent = '✔ Detectado: '+crit.incl.length+' criterios de inclusión, '+crit.excl.length+' de exclusión y '+IMP_VISITS.length+' visitas'+via+'. Revisá y corregí antes de aplicar.';
+      }
     }
   }catch(e){
     st.style.color='var(--bad)'; st.textContent='⚠ '+e.message;
