@@ -3814,7 +3814,7 @@ $('btnCopyEvo').addEventListener('click', async ()=>{
 });
 
 /* ================= DOCUMENTOS DEL ESTUDIO ================= */
-const DOC_TIPOS_ES = { protocolo:'Protocolo', ci:'Consentimiento informado', manual:'Manual de procedimientos', enmienda:'Enmienda', contrato:'Contrato / presupuesto', historia:'Historia clínica', laboratorio:'Laboratorio', informe:'Informe / estudio compl.', otro:'Otro' };
+const DOC_TIPOS_ES = { protocolo:'Protocolo', ci:'Consentimiento informado', manual:'Manual de procedimientos', enmienda:'Enmienda', contrato:'Contrato / presupuesto', historia:'Historia clínica', resumen:'Resumen / epicrisis', laboratorio:'Laboratorio', informe:'Informe / estudio compl.', medicacion:'Medicación / recetas', otro:'Otro' };
 const DOC_TIPOS = new Proxy({}, { get:(o,k)=>DOC_TIPOS_ES[k] ? T(DOC_TIPOS_ES[k]) : undefined });
 
 function idbOpen(){
