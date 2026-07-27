@@ -1877,7 +1877,8 @@ async function supaRefresh(){
     });
     if(!r.ok) return false;
     const j = await r.json();
-    SESSION = { access_token:j.access_token, refresh_token:j.refresh_token, email:(j.user&&j.user.email)||SESSION.email };
+    SESSION = { access_token:j.access_token, refresh_token:j.refresh_token, email:(j.user&&j.user.email)||SESSION.email,
+                claveTemp: SESSION.claveTemp };
     saveJSON(LS.SES, SESSION);
     return true;
   }catch(e){ return false; }
@@ -2308,7 +2309,8 @@ async function doLogin(){
       });
       const j = await r.json().catch(()=>({}));
       if(!r.ok){ loginMsg(j.error_description||j.msg||'Email o clave incorrectos.'); return; }
-      SESSION = { access_token:j.access_token, refresh_token:j.refresh_token, email:(j.user&&j.user.email)||user };
+      SESSION = { access_token:j.access_token, refresh_token:j.refresh_token, email:(j.user&&j.user.email)||user,
+                  claveTemp: !!(j.user && j.user.user_metadata && j.user.user_metadata.clave_temporal) };
       saveJSON(LS.SES, SESSION);
       CURRENT_USER = SESSION.email;
       await enterApp();
@@ -2453,6 +2455,10 @@ async function enterApp(){
            rol:(MEMBRESIA?MEMBRESIA.rol:'coord'), authId:(MEMBRESIA?MEMBRESIA.user_id:''),
            estudios:[], activo:true, pendiente:true };
   }
+  if(Store.online() && SESSION && SESSION.claveTemp){
+    const ok = await forzarCambioClave();
+    if(!ok){ doLogout(); return; }
+  }
   refreshUserUi();
   resetInactividad();
   const mb = $('modeBadge');
@@ -2463,6 +2469,44 @@ async function enterApp(){
   renderAll();
   showView('view-dashboard');
   applyLang();
+}
+
+async function forzarCambioClave(){
+  return new Promise(res=>{
+    const back = document.createElement('div'); back.className='modal-back';
+    back.innerHTML =
+      '<div class="modal" style="max-width:440px">'+
+        '<h3>'+T('Definí tu clave personal')+'</h3>'+
+        '<div class="muted small" style="margin-bottom:8px">'+
+          T('Entraste con una clave temporal asignada por el administrador. Antes de continuar, definí una clave que solo vos conozcas: es la que respalda tu firma en los registros.')+
+        '</div>'+
+        '<label>'+T('Clave nueva')+'</label><input type="password" id="fc_p1" autocomplete="new-password">'+
+        '<label>'+T('Repetila')+'</label><input type="password" id="fc_p2" autocomplete="new-password">'+
+        '<div class="small" id="fc_msg" style="margin-top:6px;min-height:16px"></div>'+
+        '<div class="toolbar" style="margin-top:10px;margin-bottom:0">'+
+          '<button class="primary" id="fc_ok">'+T('Guardar clave y continuar')+'</button>'+
+        '</div>'+
+      '</div>';
+    document.body.appendChild(back);
+    back.querySelector('#fc_ok').addEventListener('click', async ()=>{
+      const p1 = back.querySelector('#fc_p1').value, p2 = back.querySelector('#fc_p2').value;
+      const m = back.querySelector('#fc_msg');
+      const pc = passCheck(p1);
+      if(!pc.ok || p1.length<12){ m.textContent = T('Mínimo 12 caracteres, con mayúscula, minúscula, número y símbolo.'); m.style.color='var(--bad)'; return; }
+      if(p1!==p2){ m.textContent = T('Las claves no coinciden.'); m.style.color='var(--bad)'; return; }
+      m.textContent = T('Guardando...'); m.style.color='var(--muted)';
+      try{
+        const r = await supaFetch('/auth/v1/user', { method:'PUT',
+          body: JSON.stringify({ password:p1, data:{ clave_temporal:false } }) });
+        const j = await r.json().catch(()=>({}));
+        if(!r.ok) throw new Error(j.error_description||j.msg||('('+r.status+')'));
+        SESSION.claveTemp = false; saveJSON(LS.SES, SESSION);
+        auditar('sesion','cambio_clave_inicial','', CURRENT_USER);
+        back.remove(); toast(T('Clave actualizada.'));
+        res(true);
+      }catch(e){ m.textContent = '⚠ '+e.message; m.style.color='var(--bad)'; }
+    });
+  });
 }
 
 function avisarClaveVencida(){
@@ -8359,6 +8403,8 @@ function sitioForm(){
     '</div>'+
     '<div class="row">'+
       '<div class="grow"><label>'+T('Nombre del administrador')+'</label><input type="text" id="sf_admin"></div>'+
+      '<div class="grow"><label>'+T('Clave temporal (opcional)')+'</label>'+
+        '<input type="password" id="sf_ctemp" autocomplete="new-password"></div>'+
     '</div>'+
     '<div class="muted small" style="margin:6px 0">'+
       T('Se crea el sitio y se le manda una invitación por email al administrador para que defina su clave. Desde ese momento él da de alta al resto de su equipo.')+
@@ -8377,8 +8423,14 @@ function sitioForm(){
     if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){ msg.textContent = T('Escribí un email válido.'); msg.style.color='var(--bad)'; return; }
     $('sf_save').disabled = true; msg.textContent = T('Creando...'); msg.style.color='var(--muted)';
     try{
+      const ctempS = $('sf_ctemp').value;
+      if(ctempS){
+        const pcS = passCheck(ctempS);
+        if(!pcS.ok || ctempS.length<12){ msg.textContent = T('La clave temporal debe tener 12+ caracteres, con mayúscula, minúscula, número y símbolo.'); msg.style.color='var(--bad)'; return; }
+      }
       const j = await fnServidor({ accion:'organizacion', nombre, email,
-                                   nombreAdmin: $('sf_admin').value.trim(), redirect: location.href });
+                                   nombreAdmin: $('sf_admin').value.trim(),
+                                   claveTemporal: ctempS || undefined, redirect: location.href });
       msg.textContent = j.mensaje || T('Sitio creado.'); msg.style.color='var(--ok)';
       toast(T('Sitio creado.'));
       box.classList.add('hidden');
@@ -8401,7 +8453,14 @@ function userForm(id){
       '</select></div>'+
     '</div>'+
     '<div class="muted small" id="uf_roldesc" style="margin:4px 0 8px"></div>'+
-    (Store.online() ? '' :
+    (Store.online() ? (u.id ? '' :
+      '<div class="row" id="uf_ctempBox">'+
+        '<div class="grow"><label>'+T('Clave temporal (opcional)')+'</label>'+
+          '<input type="password" id="uf_ctemp" autocomplete="new-password"></div>'+
+        '<div class="grow" style="align-self:end"><div class="muted small">'+
+          T('Vacía: se manda una invitación por email para que defina su clave. Completa: entra ya mismo con esta clave y el sistema lo obliga a cambiarla en el primer ingreso. Mínimo 12 caracteres, con mayúscula, minúscula, número y símbolo.')+
+        '</div></div>'+
+      '</div>') :
       '<div class="row" id="uf_claveBox">'+
         '<div class="grow"><label>'+(u.hash?T('Cambiar la clave (dejar vacío para no tocarla)'):T('Clave inicial'))+'</label>'+
           '<input type="password" id="uf_clave" autocomplete="new-password"></div>'+
@@ -8471,10 +8530,17 @@ function userForm(id){
 
     /* ---- alta online: la cuenta la crea el servidor y manda la invitación ---- */
     if(Store.online() && !u.id){
+      const ctempEl = $('uf_ctemp');
+      const ctemp = ctempEl ? ctempEl.value : '';
+      if(ctemp){
+        const pcT = passCheck(ctemp);
+        if(!pcT.ok || ctemp.length<12){ toast(T('La clave temporal debe tener 12+ caracteres, con mayúscula, minúscula, número y símbolo.')); return; }
+      }
       $('uf_save').disabled = true;
       try{
         const j = await fnServidor({ accion:'usuario', email, rol, nombre:nombreSel,
-                                     estudios:estudiosSel, facturacion:factSel, redirect: location.href });
+                                     estudios:estudiosSel, facturacion:factSel,
+                                     claveTemporal: ctemp || undefined, redirect: location.href });
         toast(j.mensaje || T('Usuario creado.'));
         await Store.loadAll();
         box.classList.add('hidden');
