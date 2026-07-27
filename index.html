@@ -3838,8 +3838,11 @@ function latestCI(studyId){
 }
 function fmtSize(n){ if(n==null) return ''; if(n<1024) return n+' B'; if(n<1048576) return Math.round(n/1024)+' KB'; return (n/1048576).toFixed(1)+' MB'; }
 
+/* multi-sitio: cada organizacion guarda sus archivos en su propia carpeta,
+   y la politica del servidor rechaza cualquier ruta fuera de ella */
+function storagePrefijo(){ return (MEMBRESIA && MEMBRESIA.org_id) ? MEMBRESIA.org_id+'/' : ''; }
 async function storagePut(path, blob){
-  const r = await supaFetch('/storage/v1/object/ec-docs/'+path, {
+  const r = await supaFetch('/storage/v1/object/ec-docs/'+storagePrefijo()+path, {
     method:'POST', headers:{ 'Content-Type': blob.type||'application/octet-stream', 'x-upsert':'true' }, body: blob
   });
   if(!r.ok){
@@ -3847,8 +3850,8 @@ async function storagePut(path, blob){
     throw new Error('No se pudo subir el archivo ('+(j.message||r.status)+'). ¿Ejecutaste el script SQL actualizado que crea el bucket ec-docs?');
   }
 }
-async function storageGet(path){ const r = await supaFetch('/storage/v1/object/ec-docs/'+path, { method:'GET' }); return r.ok ? r.blob() : null; }
-async function storageDel(path){ try{ await supaFetch('/storage/v1/object/ec-docs/'+path, { method:'DELETE' }); }catch(e){} }
+async function storageGet(path){ const r = await supaFetch('/storage/v1/object/ec-docs/'+storagePrefijo()+path, { method:'GET' }); return r.ok ? r.blob() : null; }
+async function storageDel(path){ try{ await supaFetch('/storage/v1/object/ec-docs/'+storagePrefijo()+path, { method:'DELETE' }); }catch(e){} }
 
 async function docBlob(doc){
   try{ return doc.storage==='supabase' ? await storageGet(doc.path) : await idbGet(doc.id); }
