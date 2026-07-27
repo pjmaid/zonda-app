@@ -868,6 +868,17 @@ details>summary{color:var(--acc-dark)}
       <div id="usersList"></div>
     </div>
 
+    <div class="card hidden" id="sitiosCard">
+      <div class="toolbar" style="margin-bottom:6px"><h3 style="margin:0">Sitios de investigación</h3>
+        <span class="spacer"></span><button class="primary" id="btnSitioNew">+ Nuevo sitio</button></div>
+      <div class="muted small" style="margin-bottom:8px">
+        Cada sitio es una organización aislada: sus usuarios no ven los datos de los demás.
+        Al crear un sitio designás a su primer administrador, que después da de alta al resto de su equipo.
+      </div>
+      <div id="sitioForm" class="hidden" style="border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:10px"></div>
+      <div id="sitiosList"></div>
+    </div>
+
     <div class="card">
       <h3>Respaldo de datos</h3>
       <div class="muted small" style="margin-bottom:10px">Exportá periódicamente un respaldo. Podés importarlo en otra computadora o después de cambiar de modo.</div>
@@ -1735,6 +1746,73 @@ const PERM = {
             registros:true, indicadores:true, borrar:false, todosLosEstudios:false }
 };
 let ME = null;   /* usuario actual: {id, email, nombre, rol, estudios:[], facturacion, activo} */
+
+/* ================= MULTI-SITIO =================
+   En modo online, el rol y la organización del usuario los define el
+   SERVIDOR (tabla ec_members), no el navegador. La app los lee pero no
+   los puede falsear: las políticas de la base filtran todo por
+   organización, así que aunque alguien modifique este JavaScript, la
+   base no le devuelve datos de otro sitio.
+   MEMBRESIA = { user_id, org_id, rol, superadmin, org_nombre } */
+let MEMBRESIA = null;
+function esSuper(){ return !!(MEMBRESIA && MEMBRESIA.superadmin); }
+function miOrgNombre(){ return (MEMBRESIA && MEMBRESIA.org_nombre) || ''; }
+
+/* identificador del usuario dentro del token de sesión */
+function jwtSub(){
+  try{
+    const t = SESSION && SESSION.access_token; if(!t) return '';
+    const p = JSON.parse(atob(t.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));
+    return p.sub || '';
+  }catch(e){ return ''; }
+}
+
+/* lee del servidor mi organización y mi rol real */
+async function cargarMembresia(){
+  MEMBRESIA = null;
+  if(!Store.online()) return;
+  const sub = jwtSub(); if(!sub) return;
+  try{
+    const r = await supaFetch('/rest/v1/ec_members?select=user_id,org_id,rol,superadmin,activo&user_id=eq.'+encodeURIComponent(sub), { method:'GET' });
+    if(!r.ok) return;
+    const filas = await r.json();
+    const m = filas && filas[0];
+    if(!m || m.activo===false) return;
+    MEMBRESIA = { user_id:m.user_id, org_id:m.org_id, rol:m.rol, superadmin:!!m.superadmin, org_nombre:'' };
+    const ro = await supaFetch('/rest/v1/ec_orgs?select=id,nombre&id=eq.'+encodeURIComponent(m.org_id), { method:'GET' });
+    if(ro.ok){ const o = await ro.json(); if(o && o[0]) MEMBRESIA.org_nombre = o[0].nombre || ''; }
+  }catch(e){ /* sin membresía: la app lo informa y no deja entrar */ }
+}
+
+/* llamada a la función del servidor que crea cuentas (Edge Function) */
+async function fnServidor(payload){
+  const r = await supaFetch('/functions/v1/crear-usuario', { method:'POST', body: JSON.stringify(payload) });
+  const j = await r.json().catch(()=>({}));
+  if(!r.ok || j.error) throw new Error(j.error || ('No se pudo completar la operación ('+r.status+').'));
+  return j;
+}
+
+/* cambia el rol de un usuario ya existente, en el servidor */
+async function cambiarRolServidor(authId, rol){
+  if(!Store.online() || !authId) return;
+  const r = await supaFetch('/rest/v1/ec_members?user_id=eq.'+encodeURIComponent(authId), {
+    method:'PATCH', headers:{ 'Prefer':'return=minimal' }, body: JSON.stringify({ rol })
+  });
+  if(!r.ok){
+    const t = await r.text().catch(()=>'');
+    throw new Error('No se pudo cambiar el rol en el servidor'+(t?': '+t:'')+'.');
+  }
+}
+
+/* activa o desactiva el acceso de un usuario, en el servidor */
+async function activarServidor(authId, activo){
+  if(!Store.online() || !authId) return;
+  const r = await supaFetch('/rest/v1/ec_members?user_id=eq.'+encodeURIComponent(authId), {
+    method:'PATCH', headers:{ 'Prefer':'return=minimal' }, body: JSON.stringify({ activo:!!activo })
+  });
+  if(!r.ok) throw new Error('No se pudo cambiar el estado en el servidor.');
+}
+
 function myRole(){ return (ME && ROLES[ME.rol]) ? ME.rol : 'admin'; }
 function can(k){ const p = PERM[myRole()]; return p ? p[k] !== false : true; }
 /* la facturación no depende del rol: el administrador la habilita usuario por usuario */
@@ -2331,6 +2409,14 @@ async function doSignup(){
 }
 
 async function enterApp(){
+  /* modo online: primero el servidor dice a qué sitio pertenezco y con qué rol */
+  if(Store.online()){
+    await cargarMembresia();
+    if(!MEMBRESIA){
+      loginMsg(T('Tu cuenta todavía no está asignada a ningún sitio. Pedile al administrador que te dé de alta.'));
+      return;
+    }
+  }
   try{ await Store.loadAll(); }
   catch(e){ loginMsg(e.message); return; }
   $('loginScreen').classList.add('hidden');
@@ -2340,7 +2426,21 @@ async function enterApp(){
        usersAll().find(u=>(u.usuario||'')===CURRENT_USER) ||
        (usersAll().length ? null : { id:uid(), email:CURRENT_USER, usuario:CURRENT_USER, nombre:CURRENT_USER,
                                      rol:'admin', estudios:[], activo:true, creado:new Date().toISOString() });
-  if(ME && !usersAll().length){ try{ await Store.upsert('users', ME); }catch(e){} }
+  /* online: el rol de la ficha es informativo; manda el del servidor */
+  if(MEMBRESIA){
+    if(!ME) ME = { id:uid(), email:CURRENT_USER, usuario:CURRENT_USER, nombre:CURRENT_USER,
+                   estudios:[], activo:true, creado:new Date().toISOString() };
+    ME.rol = MEMBRESIA.rol;
+    ME.authId = MEMBRESIA.user_id;
+    if(MEMBRESIA.rol==='admin') ME.facturacion = true;
+  }
+  if(ME && !usersAll().length && (!Store.online() || myRole()==='admin')){
+    try{ await Store.upsert('users', ME); }catch(e){}
+  }
+  /* fichas creadas antes del modelo multi-sitio: se les completa el vínculo con la cuenta */
+  if(MEMBRESIA && ME && ME.id && !ME.pendiente && usersAll().some(u=>u.id===ME.id && !u.authId)){
+    try{ await Store.upsert('users', ME); }catch(e){}
+  }
   if(ME && ME.activo===false){
     ME = null; CURRENT_USER='';
     $('appShell').classList.add('hidden'); $('loginScreen').classList.remove('hidden');
@@ -2349,12 +2449,15 @@ async function enterApp(){
   }
   if(!ME){
     /* usuario autenticado pero sin ficha: entra con permisos mínimos hasta que el admin lo dé de alta */
-    ME = { id:uid(), email:CURRENT_USER, usuario:CURRENT_USER, nombre:CURRENT_USER, rol:'coord', estudios:[], activo:true, pendiente:true };
+    ME = { id:uid(), email:CURRENT_USER, usuario:CURRENT_USER, nombre:CURRENT_USER,
+           rol:(MEMBRESIA?MEMBRESIA.rol:'coord'), authId:(MEMBRESIA?MEMBRESIA.user_id:''),
+           estudios:[], activo:true, pendiente:true };
   }
   refreshUserUi();
   resetInactividad();
   const mb = $('modeBadge');
-  mb.textContent = Store.online() ? 'ONLINE' : 'LOCAL';
+  mb.textContent = Store.online() ? (miOrgNombre() || 'ONLINE') : 'LOCAL';
+  mb.title = Store.online() ? T('Sitio')+': '+(miOrgNombre()||'—')+(esSuper()?' · '+T('superadministrador'):'') : T('Modo local');
   mb.className = 'badge-mode ' + (Store.online() ? 'online' : 'local');
   initConfigUI();
   renderAll();
@@ -2370,7 +2473,7 @@ function doLogout(){
   if(CURRENT_USER) auditar('sesion','salida','', CURRENT_USER);
   clearTimeout(SEC_TIMER); clearTimeout(SEC_WARN);
   SESSION = null; localStorage.removeItem(LS.SES);
-  CURRENT_USER=''; ME = null;
+  CURRENT_USER=''; ME = null; MEMBRESIA = null;
   $('appShell').classList.add('hidden');
   $('loginScreen').classList.remove('hidden');
   initLoginScreen();
@@ -8151,6 +8254,7 @@ function refreshUserUi(){
   const cfgTab = Array.from(document.querySelectorAll('#tabs button')).find(x=>x.dataset.tab==='config');
   if(cfgTab) cfgTab.classList.toggle('hidden', !can('config'));
   const uc = $('usersCard'); if(uc) uc.classList.toggle('hidden', !can('usuarios'));
+  const sc = $('sitiosCard'); if(sc){ sc.classList.toggle('hidden', !(Store.online() && esSuper())); if(Store.online() && esSuper()) renderSitios(); }
   const ec = $('btnNewStudy'); if(ec) ec.classList.toggle('hidden', !can('estudiosEditar'));
   /* la solapa de facturación solo para quien la tenga habilitada */
   const ft = Array.from(document.querySelectorAll('#tabs button')).find(x=>x.dataset.tab==='fact');
@@ -8159,7 +8263,8 @@ function refreshUserUi(){
 function renderUsers(){
   if(!can('usuarios')) return;
   $('usersHint').innerHTML = Store.online()
-    ? T('Cada persona crea su cuenta desde la pantalla de ingreso con su email; acá le asignás el rol y los protocolos. Si no figura en esta lista, entra sin acceso a ningún protocolo.')
+    ? T('Al dar de alta un usuario, el servidor le crea la cuenta y le manda una invitación por email para que ponga su clave. Acá le asignás el rol y los protocolos.')+
+      (miOrgNombre() ? ' <span class="chip acc">'+T('Sitio')+': '+esc(miOrgNombre())+'</span>' : '')
     : '<b>'+T('Modo local')+':</b> '+T('esta lista organiza roles y protocolos, pero no es una barrera de seguridad: los datos viven en este navegador. Para control de acceso real, pasá al modo online con Supabase.');
   const us = usersAll().slice().sort((a,b)=>(a.nombre||a.email||'').localeCompare(b.nombre||b.email||''));
   $('usersList').innerHTML = us.length ? us.map(u=>{
@@ -8182,15 +8287,106 @@ function renderUsers(){
   $('usersList').querySelectorAll('[data-utog]').forEach(b=>b.addEventListener('click', async ()=>{
     const u = usersAll().find(x=>x.id===b.dataset.utog); if(!u) return;
     if(u.id===(ME&&ME.id)){ toast(T('No podés desactivar tu propio usuario.')); return; }
-    u.activo = (u.activo===false);
-    await persist('users', u, T('Usuario actualizado.')); renderUsers();
+    const nuevo = (u.activo===false);
+    try{
+      /* online: el bloqueo real lo aplica el servidor */
+      if(Store.online() && u.authId) await activarServidor(u.authId, nuevo);
+      u.activo = nuevo;
+      await persist('users', u, T('Usuario actualizado.'));
+    }catch(e){ toast('⚠ '+e.message); }
+    renderUsers();
   }));
   $('usersList').querySelectorAll('[data-udel]').forEach(b=>b.addEventListener('click', async ()=>{
     if(!confirm(T('¿Eliminar este usuario? No se borran sus datos, solo su acceso y asignaciones.'))) return;
-    try{ await Store.remove('users', b.dataset.udel); toast(T('Usuario eliminado.')); }
+    const u = usersAll().find(x=>x.id===b.dataset.udel);
+    try{
+      if(Store.online() && u && u.authId){
+        const r = await supaFetch('/rest/v1/ec_members?user_id=eq.'+encodeURIComponent(u.authId), { method:'DELETE' });
+        if(!r.ok) throw new Error(T('No se pudo quitarle el acceso en el servidor.'));
+      }
+      await Store.remove('users', b.dataset.udel); toast(T('Usuario eliminado.'));
+    }
     catch(e){ toast('⚠ '+e.message); }
     renderUsers();
   }));
+}
+
+/* ---------- panel de sitios (solo superadministrador) ---------- */
+let SITIOS = [];
+async function cargarSitios(){
+  SITIOS = [];
+  if(!Store.online() || !esSuper()) return;
+  try{
+    const r = await supaFetch('/rest/v1/ec_orgs?select=id,nombre,contacto,activo,creado_en&order=nombre.asc', { method:'GET' });
+    if(r.ok) SITIOS = await r.json();
+  }catch(e){}
+}
+async function renderSitios(){
+  const card = $('sitiosCard'); if(!card) return;
+  const visible = Store.online() && esSuper();
+  card.classList.toggle('hidden', !visible);
+  if(!visible) return;
+  await cargarSitios();
+  $('sitiosList').innerHTML = SITIOS.length ? SITIOS.map(s=>
+    '<div class="doc-line" style="flex-wrap:wrap">'+
+      '<div style="flex:1;min-width:220px"><b>'+esc(s.nombre)+'</b> '+
+        (s.id===(MEMBRESIA&&MEMBRESIA.org_id) ? '<span class="chip acc">'+T('el mío')+'</span>' : '')+
+        (s.activo===false ? ' <span class="chip bad">'+T('desactivado')+'</span>' : '')+
+        '<div class="muted small">'+esc(s.contacto||'—')+' · '+T('desde')+' '+fmtDate(String(s.creado_en||'').slice(0,10))+'</div>'+
+      '</div>'+
+      '<button class="ghost" data-stog="'+s.id+'">'+(s.activo===false?T('Activar'):T('Desactivar'))+'</button>'+
+    '</div>').join('') : '<div class="muted small">'+T('Todavía no hay otros sitios.')+'</div>';
+  $('sitiosList').querySelectorAll('[data-stog]').forEach(b=>b.addEventListener('click', async ()=>{
+    const s = SITIOS.find(x=>x.id===b.dataset.stog); if(!s) return;
+    if(s.id===(MEMBRESIA&&MEMBRESIA.org_id)){ toast(T('No podés desactivar tu propio sitio.')); return; }
+    try{
+      const r = await supaFetch('/rest/v1/ec_orgs?id=eq.'+encodeURIComponent(s.id), {
+        method:'PATCH', headers:{ 'Prefer':'return=minimal' }, body: JSON.stringify({ activo: s.activo===false })
+      });
+      if(!r.ok) throw new Error(T('No se pudo actualizar el sitio.'));
+      toast(T('Sitio actualizado.')); renderSitios();
+    }catch(e){ toast('⚠ '+e.message); }
+  }));
+}
+function sitioForm(){
+  const box = $('sitioForm');
+  box.innerHTML =
+    '<div class="row">'+
+      '<div class="grow"><label>'+T('Nombre del sitio')+' *</label>'+
+        '<input type="text" id="sf_nombre" placeholder="'+T('Ej: Centro de Investigaciones Clínicas Mendoza')+'"></div>'+
+      '<div class="grow"><label>'+T('Email del administrador')+' *</label>'+
+        '<input type="email" id="sf_email" placeholder="director@sitio.org"></div>'+
+    '</div>'+
+    '<div class="row">'+
+      '<div class="grow"><label>'+T('Nombre del administrador')+'</label><input type="text" id="sf_admin"></div>'+
+    '</div>'+
+    '<div class="muted small" style="margin:6px 0">'+
+      T('Se crea el sitio y se le manda una invitación por email al administrador para que defina su clave. Desde ese momento él da de alta al resto de su equipo.')+
+    '</div>'+
+    '<div class="toolbar" style="margin-top:10px;margin-bottom:0">'+
+      '<button class="primary" id="sf_save">'+T('Crear sitio')+'</button>'+
+      '<button id="sf_cancel">'+T('Cancelar')+'</button>'+
+    '</div>'+
+    '<div class="small" id="sf_msg" style="margin-top:6px"></div>';
+  box.classList.remove('hidden');
+  $('sf_cancel').addEventListener('click', ()=>box.classList.add('hidden'));
+  $('sf_save').addEventListener('click', async ()=>{
+    const nombre = $('sf_nombre').value.trim(), email = $('sf_email').value.trim();
+    const msg = $('sf_msg');
+    if(!nombre){ msg.textContent = T('Poné el nombre del sitio.'); msg.style.color='var(--bad)'; return; }
+    if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){ msg.textContent = T('Escribí un email válido.'); msg.style.color='var(--bad)'; return; }
+    $('sf_save').disabled = true; msg.textContent = T('Creando...'); msg.style.color='var(--muted)';
+    try{
+      const j = await fnServidor({ accion:'organizacion', nombre, email,
+                                   nombreAdmin: $('sf_admin').value.trim(), redirect: location.href });
+      msg.textContent = j.mensaje || T('Sitio creado.'); msg.style.color='var(--ok)';
+      toast(T('Sitio creado.'));
+      box.classList.add('hidden');
+      renderSitios();
+    }catch(e){ msg.textContent = '⚠ '+e.message; msg.style.color='var(--bad)'; }
+    finally{ $('sf_save').disabled = false; }
+  });
+  box.scrollIntoView({ behavior:'smooth', block:'nearest' });
 }
 function userForm(id){
   const u = id ? usersAll().find(x=>x.id===id) : { id:'', email:'', nombre:'', rol:'coord', estudios:[], activo:true };
@@ -8269,12 +8465,31 @@ function userForm(id){
     } else if(claveEl && !u.hash){
       toast(T('Poné una clave inicial para que este usuario pueda ingresar con su email.')); return;
     }
+    const estudiosSel = rol==='admin' ? [] : Array.from(document.querySelectorAll('.uf_est:checked')).map(c=>c.value);
+    const factSel = rol==='admin' ? true : $('uf_fact').checked;
+    const nombreSel = $('uf_nombre').value.trim() || email;
+
+    /* ---- alta online: la cuenta la crea el servidor y manda la invitación ---- */
+    if(Store.online() && !u.id){
+      $('uf_save').disabled = true;
+      try{
+        const j = await fnServidor({ accion:'usuario', email, rol, nombre:nombreSel,
+                                     estudios:estudiosSel, facturacion:factSel, redirect: location.href });
+        toast(j.mensaje || T('Usuario creado.'));
+        await Store.loadAll();
+        box.classList.add('hidden');
+        renderUsers();
+      }catch(e){ toast('⚠ '+e.message); }
+      finally{ $('uf_save').disabled = false; }
+      return;
+    }
+
     const obj = Object.assign({}, u, {
       id: u.id || uid(),
-      email, nombre: $('uf_nombre').value.trim() || email,
+      email, nombre: nombreSel,
       rol,
-      facturacion: rol==='admin' ? true : $('uf_fact').checked,
-      estudios: rol==='admin' ? [] : Array.from(document.querySelectorAll('.uf_est:checked')).map(c=>c.value),
+      facturacion: factSel,
+      estudios: estudiosSel,
       activo: u.activo!==false,
       creado: u.creado || new Date().toISOString()
     }, cred || {});
@@ -8285,6 +8500,11 @@ function userForm(id){
     if(u.id===(ME&&ME.id) && rol!=='admin' && usersAll().filter(x=>x.rol==='admin' && x.activo!==false).length<=1){
       toast(T('Tiene que quedar al menos un administrador activo.')); return;
     }
+    /* online: si cambió el rol, el cambio real va al servidor */
+    if(Store.online() && obj.authId && (u.rol||'') !== rol){
+      try{ await cambiarRolServidor(obj.authId, rol); }
+      catch(e){ toast('⚠ '+e.message); return; }
+    }
     await persist('users', obj, T('Usuario guardado.'));
     if(ME && obj.id===ME.id){ ME = obj; refreshUserUi(); renderAll(); }
     box.classList.add('hidden');
@@ -8293,54 +8513,307 @@ function userForm(id){
   box.scrollIntoView({ behavior:'smooth', block:'nearest' });
 }
 $('btnUserNew').addEventListener('click', ()=>userForm(null));
+$('btnSitioNew').addEventListener('click', ()=>sitioForm());
 
 /* ================= CONFIGURACIÓN ================= */
-const SQL_SCRIPT = `-- Tablas para "Zonda" (ejecutar UNA sola vez en Supabase > SQL Editor)
+const SQL_SCRIPT = `-- ============================================================
+-- Zonda - esquema multi-sitio (v2)
+-- Ejecutar en Supabase -> SQL Editor. Es idempotente: se puede
+-- volver a correr sin romper nada.
+--
+-- Modelo: cada sitio de investigacion es una ORGANIZACION aislada.
+-- Un usuario pertenece a una sola organizacion y solo ve sus datos,
+-- aunque modifique el JavaScript del navegador: el filtro esta en
+-- la base de datos, no en la app.
+--
+-- Roles: superadmin (vos, dueno del producto) crea organizaciones y
+-- designa al primer administrador de cada una. Ese administrador da
+-- de alta a los usuarios de SU sitio desde la app.
+-- ============================================================
+
+
+-- ------------------------------------------------------------
+-- 1) ORGANIZACIONES (sitios)
+-- ------------------------------------------------------------
+create table if not exists ec_orgs (
+  id uuid primary key default gen_random_uuid(),
+  nombre text not null,
+  contacto text,
+  activo boolean not null default true,
+  creado_en timestamptz not null default now()
+);
+
+
+-- ------------------------------------------------------------
+-- 2) MIEMBROS - fuente de verdad del rol y la organizacion
+--    El cliente NO puede falsear esto: vive en el servidor y las
+--    politicas de abajo lo protegen.
+-- ------------------------------------------------------------
+create table if not exists ec_members (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  org_id uuid not null references ec_orgs(id) on delete cascade,
+  rol text not null default 'coord' check (rol in ('admin','medico','coord')),
+  superadmin boolean not null default false,
+  activo boolean not null default true,
+  creado_en timestamptz not null default now()
+);
+create index if not exists ec_members_org_idx on ec_members(org_id);
+
+
+-- ------------------------------------------------------------
+-- 3) FUNCIONES DE CONTEXTO
+--    security definer para poder leer ec_members sin caer en
+--    recursion de politicas.
+-- ------------------------------------------------------------
+create or replace function current_org() returns uuid
+language sql stable security definer set search_path = public as $$
+  select org_id from ec_members where user_id = auth.uid() and activo
+$$;
+
+create or replace function current_rol() returns text
+language sql stable security definer set search_path = public as $$
+  select rol from ec_members where user_id = auth.uid() and activo
+$$;
+
+create or replace function es_superadmin() returns boolean
+language sql stable security definer set search_path = public as $$
+  select coalesce((select superadmin from ec_members
+                   where user_id = auth.uid() and activo), false)
+$$;
+
+
+-- ------------------------------------------------------------
+-- 4) TABLAS DE DATOS
+--    Se conserva la forma que la app ya usa (id text + data jsonb
+--    + updated_at) y se le agrega org_id, que la base completa sola.
+-- ------------------------------------------------------------
 create table if not exists ec_studies  (id text primary key, data jsonb not null, updated_at timestamptz default now());
 create table if not exists ec_patients (id text primary key, data jsonb not null, updated_at timestamptz default now());
 create table if not exists ec_visits   (id text primary key, data jsonb not null, updated_at timestamptz default now());
+create table if not exists ec_docs     (id text primary key, data jsonb not null, updated_at timestamptz default now());
+create table if not exists ec_users    (id text primary key, data jsonb not null, updated_at timestamptz default now());
 
-alter table ec_studies  enable row level security;
-alter table ec_patients enable row level security;
-alter table ec_visits   enable row level security;
+do $$
+declare t text;
+begin
+  foreach t in array array['ec_studies','ec_patients','ec_visits','ec_docs','ec_users']
+  loop
+    execute format('alter table %I add column if not exists org_id uuid references ec_orgs(id) on delete cascade', t);
+    execute format('alter table %I alter column org_id set default current_org()', t);
+    execute format('create index if not exists %I on %I(org_id)', t || '_org_idx', t);
+  end loop;
+end $$;
 
-drop policy if exists "acceso_equipo" on ec_studies;
-create policy "acceso_equipo" on ec_studies  for all to authenticated using (true) with check (true);
-drop policy if exists "acceso_equipo" on ec_patients;
-create policy "acceso_equipo" on ec_patients for all to authenticated using (true) with check (true);
-drop policy if exists "acceso_equipo" on ec_visits;
-create policy "acceso_equipo" on ec_visits   for all to authenticated using (true) with check (true);
 
--- Documentos de los estudios (protocolo, CI, manuales)
-create table if not exists ec_docs (id text primary key, data jsonb not null, updated_at timestamptz default now());
-alter table ec_docs enable row level security;
-drop policy if exists "acceso_equipo" on ec_docs;
-create policy "acceso_equipo" on ec_docs for all to authenticated using (true) with check (true);
-
--- Usuarios del equipo: rol y protocolos asignados
-create table if not exists ec_users (id text primary key, data jsonb not null, updated_at timestamptz default now());
-alter table ec_users enable row level security;
-drop policy if exists "acceso_equipo" on ec_users;
-create policy "acceso_equipo" on ec_users for all to authenticated using (true) with check (true);
-
--- Pista de auditoría: SOLO INSERCIÓN (ni update ni delete, ni siquiera el dueño)
+-- ------------------------------------------------------------
+-- 5) PISTA DE AUDITORIA - solo insercion, por organizacion
+-- ------------------------------------------------------------
 create table if not exists ec_audit (
   id bigserial primary key,
   ts timestamptz not null default now(),
   usuario text, rol text, entidad text, accion text,
   ref_id text, detalle text, motivo text
 );
-alter table ec_audit enable row level security;
-drop policy if exists "aud_ver" on ec_audit;
-create policy "aud_ver" on ec_audit for select to authenticated using (true);
-drop policy if exists "aud_ins" on ec_audit;
-create policy "aud_ins" on ec_audit for insert to authenticated with check (true);
+alter table ec_audit add column if not exists org_id uuid references ec_orgs(id) on delete cascade;
+alter table ec_audit alter column org_id set default current_org();
+create index if not exists ec_audit_org_ts_idx on ec_audit(org_id, ts desc);
+
+
+-- ------------------------------------------------------------
+-- 6) POLITICAS - aislamiento por organizacion
+-- ------------------------------------------------------------
+alter table ec_orgs    enable row level security;
+alter table ec_members enable row level security;
+alter table ec_audit   enable row level security;
+
+-- Organizaciones: cada uno ve la suya; el superadmin ve y administra todas.
+drop policy if exists orgs_ver on ec_orgs;
+create policy orgs_ver on ec_orgs for select to authenticated
+  using (id = current_org() or es_superadmin());
+drop policy if exists orgs_super on ec_orgs;
+create policy orgs_super on ec_orgs for all to authenticated
+  using (es_superadmin()) with check (es_superadmin());
+
+-- Miembros: se ven los del propio sitio. Crear membresias es potestad del
+-- superadmin o de la Edge Function (que usa service_role y no pasa por RLS).
+drop policy if exists mem_ver on ec_members;
+create policy mem_ver on ec_members for select to authenticated
+  using (org_id = current_org() or es_superadmin());
+drop policy if exists mem_ins on ec_members;
+create policy mem_ins on ec_members for insert to authenticated
+  with check (es_superadmin());
+drop policy if exists mem_upd on ec_members;
+create policy mem_upd on ec_members for update to authenticated
+  using ((org_id = current_org() and current_rol() = 'admin') or es_superadmin())
+  with check ((org_id = current_org() and current_rol() = 'admin') or es_superadmin());
+drop policy if exists mem_del on ec_members;
+create policy mem_del on ec_members for delete to authenticated
+  using ((org_id = current_org() and current_rol() = 'admin' and user_id <> auth.uid())
+         or es_superadmin());
+
+-- Guarda contra escalada de privilegios: un admin de sitio no puede
+-- volverse superadmin, ni mover usuarios a otra organizacion, ni
+-- cambiarse el rol a si mismo.
+create or replace function ec_members_guard() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  /* sin sesion de usuario = acceso directo por SQL Editor o service_role:
+     es el dueno del proyecto o la Edge Function, no se restringe */
+  if auth.uid() is null then return new; end if;
+  if es_superadmin() then return new; end if;
+
+  if tg_op = 'INSERT' and new.superadmin then
+    raise exception 'Solo un superadministrador puede otorgar ese permiso';
+  end if;
+
+  if tg_op = 'UPDATE' then
+    if new.superadmin is distinct from old.superadmin then
+      raise exception 'Solo un superadministrador puede otorgar ese permiso';
+    end if;
+    if new.org_id is distinct from old.org_id then
+      raise exception 'No se puede mover un usuario a otra organizacion';
+    end if;
+    if new.user_id = auth.uid() and new.rol is distinct from old.rol then
+      raise exception 'No podes cambiar tu propio rol';
+    end if;
+  end if;
+
+  return new;
+end $$;
+
+drop trigger if exists ec_members_guard_trg on ec_members;
+create trigger ec_members_guard_trg before insert or update on ec_members
+for each row execute function ec_members_guard();
+
+-- Tablas de datos clinicos y operativos: todo filtrado por organizacion.
+do $$
+declare t text;
+begin
+  foreach t in array array['ec_studies','ec_patients','ec_visits','ec_docs']
+  loop
+    execute format('alter table %I enable row level security', t);
+    -- se elimina la politica abierta del esquema anterior
+    execute format('drop policy if exists "acceso_equipo" on %I', t);
+    execute format('drop policy if exists org_ver on %I', t);
+    execute format('create policy org_ver on %I for select to authenticated
+                    using (org_id = current_org())', t);
+    execute format('drop policy if exists org_ins on %I', t);
+    execute format('create policy org_ins on %I for insert to authenticated
+                    with check (org_id = current_org())', t);
+    execute format('drop policy if exists org_upd on %I', t);
+    execute format('create policy org_upd on %I for update to authenticated
+                    using (org_id = current_org()) with check (org_id = current_org())', t);
+    execute format('drop policy if exists org_del on %I', t);
+    execute format('create policy org_del on %I for delete to authenticated
+                    using (org_id = current_org())', t);
+  end loop;
+end $$;
+
+-- Fichas de usuario: las lee todo el sitio, pero solo el administrador
+-- las crea, modifica o borra.
+-- Se retira el guardian provisorio del esquema anterior: ahora el control
+-- lo hacen las politicas de abajo mas la Edge Function de alta de usuarios.
+drop trigger if exists ec_users_guard_trg on ec_users;
+drop function if exists ec_users_guard();
+
+alter table ec_users enable row level security;
+drop policy if exists "acceso_equipo" on ec_users;
+drop policy if exists org_ver on ec_users;
+create policy org_ver on ec_users for select to authenticated
+  using (org_id = current_org());
+drop policy if exists org_ins on ec_users;
+create policy org_ins on ec_users for insert to authenticated
+  with check (org_id = current_org() and current_rol() = 'admin');
+drop policy if exists org_upd on ec_users;
+create policy org_upd on ec_users for update to authenticated
+  using (org_id = current_org() and current_rol() = 'admin')
+  with check (org_id = current_org() and current_rol() = 'admin');
+drop policy if exists org_del on ec_users;
+create policy org_del on ec_users for delete to authenticated
+  using (org_id = current_org() and current_rol() = 'admin');
+
+-- Auditoria: se lee y se escribe, nunca se modifica ni se borra.
+drop policy if exists aud_ver on ec_audit;
+create policy aud_ver on ec_audit for select to authenticated
+  using (org_id = current_org() or es_superadmin());
+drop policy if exists aud_ins on ec_audit;
+create policy aud_ins on ec_audit for insert to authenticated
+  with check (org_id = current_org());
 revoke update, delete on ec_audit from authenticated, anon;
 
--- Almacenamiento de archivos adjuntos
-insert into storage.buckets (id, name, public) values ('ec-docs','ec-docs', false) on conflict (id) do nothing;
+
+-- ------------------------------------------------------------
+-- 7) ARCHIVOS ADJUNTOS - una carpeta por organizacion
+-- ------------------------------------------------------------
+insert into storage.buckets (id, name, public) values ('ec-docs','ec-docs', false)
+  on conflict (id) do nothing;
 drop policy if exists "ec_docs_equipo" on storage.objects;
-create policy "ec_docs_equipo" on storage.objects for all to authenticated using (bucket_id = 'ec-docs') with check (bucket_id = 'ec-docs');`;
+drop policy if exists ec_docs_org on storage.objects;
+create policy ec_docs_org on storage.objects for all to authenticated
+  using (bucket_id = 'ec-docs' and (storage.foldername(name))[1] = current_org()::text)
+  with check (bucket_id = 'ec-docs' and (storage.foldername(name))[1] = current_org()::text);
+
+
+-- ============================================================
+-- 8) PUESTA EN MARCHA
+--    Ejecutar UNA vez, cambiando el email por el tuyo.
+--    Crea la primera organizacion, te hace su administrador y
+--    superadministrador, y asigna los datos que ya existan a esa
+--    organizacion.
+-- ============================================================
+
+do $$
+declare
+  v_email text := 'pjmaid@cier.ar';          -- <<< tu email
+  v_sitio text := 'Mi sitio de investigacion'; -- <<< nombre del sitio
+  v_uid uuid;
+  v_org uuid;
+  t text;
+begin
+  select id into v_uid from auth.users where email = v_email;
+  if v_uid is null then
+    raise exception 'No existe el usuario %. Crealo primero en Authentication -> Users.', v_email;
+  end if;
+
+  -- organizacion (reutiliza la del usuario o una ya creada con ese nombre)
+  select org_id into v_org from ec_members where user_id = v_uid;
+  if v_org is null then
+    select id into v_org from ec_orgs where nombre = v_sitio
+      order by creado_en asc limit 1;
+  end if;
+  if v_org is null then
+    insert into ec_orgs (nombre, contacto) values (v_sitio, v_email) returning id into v_org;
+  end if;
+  -- limpia organizaciones duplicadas de intentos anteriores (sin miembros)
+  delete from ec_orgs o
+   where o.nombre = v_sitio and o.id <> v_org
+     and not exists (select 1 from ec_members m where m.org_id = o.id);
+
+  -- membresia: administrador y superadministrador
+  insert into ec_members (user_id, org_id, rol, superadmin, activo)
+  values (v_uid, v_org, 'admin', true, true)
+  on conflict (user_id) do update
+    set rol = 'admin', superadmin = true, activo = true, org_id = excluded.org_id;
+
+  -- los datos que ya estaban sin organizacion pasan a la primera
+  foreach t in array array['ec_studies','ec_patients','ec_visits','ec_docs','ec_users','ec_audit']
+  loop
+    execute format('update %I set org_id = %L where org_id is null', t, v_org);
+  end loop;
+
+  raise notice 'Listo. Organizacion % - administrador %', v_org, v_email;
+end $$;
+
+-- Una vez migrados los datos, org_id pasa a ser obligatorio.
+do $$
+declare t text;
+begin
+  foreach t in array array['ec_studies','ec_patients','ec_visits','ec_docs','ec_users']
+  loop
+    execute format('alter table %I alter column org_id set not null', t);
+  end loop;
+end $$;
+`;
 
 function initConfigUI(){
   ($('cfgModeLocal')).checked = CFG.mode!=='supabase';
