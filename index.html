@@ -6331,14 +6331,19 @@ function openNarrModal(){
   $('narrModal').classList.remove('hidden');
 }
 
-async function aiNarrarCriterios(st, texto, p, imagenes){
-  const items = narrCriterios(st);
-  const MAXC = aiCtxMax() - 6000;
-  let doc = texto;
-  if(doc.length > MAXC) doc = doc.slice(0, MAXC) + '\n[TEXTO TRUNCADO POR LONGITUD]';
+/* Redacta las fundamentaciones en LOTES. Con 40 o más criterios, una sola
+   consulta desborda el límite de salida y las últimas oraciones vuelven
+   cortadas a mitad de frase. Repartir en tandas cortas garantiza que cada
+   oración llegue completa, y además deja avanzar aunque una tanda falle. */
+const NARR_LOTE = 8;
+
+async function aiNarrarLote(items, st, texto, p, imagenes){
   const resp = p.criterios || {};
   const yaResp = items.map(it=>it.clave+'='+(resp[it.clave]||'pendiente')).join(', ');
   const sexo = p.sexo==='F' ? 'femenino' : (p.sexo==='M' ? 'masculino' : 'no consignado');
+  const MAXC = aiCtxMax() - 8000;
+  let doc = texto;
+  if(doc.length > MAXC) doc = doc.slice(0, MAXC) + '\n[TEXTO TRUNCADO POR LONGITUD]';
 
   const prompt =
     'Sos un asistente de un equipo de investigación clínica. Para CADA criterio de elegibilidad listado, redactá una fundamentación breve referida a ESTE paciente, usando ÚNICAMENTE la documentación que se incluye más abajo.\n\n'+
@@ -6347,41 +6352,82 @@ async function aiNarrarCriterios(st, texto, p, imagenes){
     'CRITERIOS:\n'+items.map(it=>it.clave+'. ['+(it.tipo==='inclusion'?'INCLUSIÓN':'EXCLUSIÓN')+' '+it.n+'] '+it.criterio).join('\n')+'\n\n'+
     'DOCUMENTACIÓN DEL PACIENTE:\n<<<\n'+doc+'\n>>>\n\n'+
     'Respondé ÚNICAMENTE con un array JSON válido, un objeto por criterio:\n'+
-    '[{"clave":"i0","texto":"fundamentación de 1 a 3 oraciones referida a este paciente","cita":"cita textual del documento (máx. 25 palabras)","estado":"cumple|no_cumple|pendiente"}]\n\n'+
+    '[{"clave":"i0","texto":"fundamentación de 1 a 3 oraciones referida a este paciente","estado":"cumple|no_cumple|pendiente"}]\n\n'+
     'REGLAS — usá exclusivamente la DOCUMENTACIÓN incluida arriba:\n'+
     '- Escribí en tercera persona, en prosa clínica sobria, sin adjetivos valorativos y sin repetir el enunciado del criterio palabra por palabra: explicá el dato del paciente que lo satisface o lo contradice.\n'+
+    '- La conclusión tiene que quedar escrita DENTRO de la misma oración, no como etiqueta aparte. Cerrá con «…, por lo que cumple con el criterio» o «…, por lo que no cumple con el criterio», tanto en inclusión como en exclusión.\n'+
+    '- Si el dato no figura, cerrá con «…, por lo que el criterio queda pendiente de documentación» e indicá con precisión qué estudio o dato hay que obtener.\n'+
+    '- Escribí cada oración COMPLETA: nunca la dejes cortada a mitad de frase. Máximo 45 palabras por fundamentación.\n'+
     '- Mencioná el dato concreto (valor, fecha, diagnóstico, fármaco) tal como figura en la documentación.\n'+
     '- No uses conocimiento médico general ni valores de referencia externos. No infieras ni completes lo que no esté escrito.\n'+
-    '- Si el dato no figura, "estado" es "pendiente", la "cita" debe ser exactamente "sin dato en la documentación", y el "texto" debe indicar con precisión qué estudio o dato hay que obtener para poder evaluarlo.\n'+
-    '- En criterios de exclusión, "cumple" significa que el paciente NO presenta la condición (es decir, no queda excluido); "no_cumple" significa que la presenta y por lo tanto queda excluido.\n'+
+    '- En criterios de exclusión, "cumple" significa que el paciente NO presenta la condición; "no_cumple" significa que la presenta.\n'+
     '- No identifiques al paciente por nombre: referite a él como «el participante» o «la participante» según el sexo.\n'+
-    '- Escribí "texto" en '+AI_LANG_NAME()+'.\n'+
-    '- Si el texto trae una sección «TABLAS RECONSTRUIDAS», cada renglón es una fila y las columnas van separadas por «|». En un laboratorio el orden habitual es analito | resultado | unidad | referencia: el valor del paciente es la PRIMERA cifra, no los límites de referencia. Si hay imágenes adjuntas, leé las tablas de ellas.';
+    '- Si el texto trae una sección «TABLAS RECONSTRUIDAS», cada renglón es una fila y las columnas van separadas por «|». En un laboratorio el orden habitual es analito | resultado | unidad | referencia: el valor del paciente es la PRIMERA cifra.\n'+
+    '- Escribí "texto" en '+AI_LANG_NAME()+'.';
 
-  const maxTok = Math.min(20000, Math.max(2000, items.length*220 + 500));
   const contenido = (imagenes && imagenes.length)
     ? [{ t:'text', text:'IMÁGENES DE LOS DOCUMENTOS DEL PACIENTE (leelas como parte de la documentación, sobre todo las tablas):' }]
         .concat(imagenes, [{ t:'text', text:prompt }])
     : prompt;
   const r = await aiChat({
     system: 'Respondés exclusivamente con un array JSON válido, sin texto antes ni después, sin explicaciones y sin bloques de código. Empezá con "[" y terminá con "]".',
-    content: contenido, maxTokens: maxTok
+    content: contenido, maxTokens: Math.max(3000, items.length*320)
   });
   const arr = parseAiArray(r.text.replace(/```json|```/g,'').trim());
-  if(!arr.length) throw new Error(r.cut
-    ? T('La respuesta se cortó por longitud. Probá con menos criterios o un modelo con más capacidad.')
-    : T('La IA no devolvió un resultado interpretable.'));
   const porClave = {};
   arr.forEach(o=>{ const k=String(o.clave||'').trim().toLowerCase(); if(/^[ie]\d{1,2}$/.test(k)) porClave[k]=o; });
-  return items.map(it=>{
+  return porClave;
+}
+
+async function aiNarrarCriterios(st, texto, p, imagenes, st_el){
+  const items = narrCriterios(st);
+  const lotes = [];
+  for(let i=0;i<items.length;i+=NARR_LOTE) lotes.push(items.slice(i, i+NARR_LOTE));
+
+  const porClave = {};
+  let fallados = 0;
+  for(let i=0;i<lotes.length;i++){
+    if(st_el) st_el.textContent = T('Redactando')+' '+(i*NARR_LOTE+1)+'–'+Math.min(items.length,(i+1)*NARR_LOTE)+
+                                  ' '+T('de')+' '+items.length+' '+T('criterios')+'...';
+    try{
+      Object.assign(porClave, await aiNarrarLote(lotes[i], st, texto, p, imagenes));
+    }catch(e){ fallados++; }
+    /* las imágenes se mandan solo en la primera tanda: repetirlas multiplica el costo */
+    if(imagenes && imagenes.length) imagenes = null;
+  }
+  if(!Object.keys(porClave).length)
+    throw new Error(T('La IA no devolvió ninguna fundamentación interpretable.'));
+
+  /* una oración que llegó cortada se marca como pendiente en lugar de guardarse a medias */
+  const cortada = t => {
+    const x = String(t||'').trim();
+    return x.length>20 && !/[.!?»)]$/.test(x);
+  };
+  const res = items.map(it=>{
     const o = porClave[it.clave] || {};
-    return Object.assign({}, it, {
-      texto: String(o.texto||'').slice(0,900) || T('Sin fundamentación: no se encontró información en la documentación cargada.'),
-      cita:  String(o.cita||'').slice(0,300),
-      estado: ['cumple','no_cumple','pendiente'].includes(String(o.estado||'')) ? o.estado : 'pendiente',
-      resp: (p.criterios||{})[it.clave] || 'pendiente'
-    });
+    let txt = String(o.texto||'').slice(0,1200).trim();
+    let est = ['cumple','no_cumple','pendiente'].includes(String(o.estado||'')) ? o.estado : 'pendiente';
+    if(!txt){ txt = T('Sin fundamentación: no se encontró información en la documentación cargada.'); est='pendiente'; }
+    else if(cortada(txt)){ txt = txt.replace(/[,;:\s]+\S*$/,'') + '. ' + T('(La redacción quedó incompleta: volvé a generarla o completala a mano.)'); }
+    return Object.assign({}, it, { texto:txt, cita:String(o.cita||'').slice(0,300), estado:est,
+                                   resp:(p.criterios||{})[it.clave] || 'pendiente' });
   });
+  return { items:res, fallados, lotes:lotes.length };
+}
+
+/* Devuelve la fundamentación con la conclusión dentro de la misma oración.
+   Si el texto redactado ya la declara, se usa tal cual; si no (por ejemplo en
+   fundamentaciones hechas con la versión anterior), se le agrega el cierre. */
+function narrOracion(it){
+  let t = String(it.texto||'').trim();
+  const yaLoDice = /(por lo que|de modo que|motivo por el cual|en consecuencia)[^.]*\b(cumple|no cumple|queda pendiente|pendiente)\b/i.test(t)
+                 || /\b(cumple|no cumple)\s+(con\s+)?(el|este)\s+criterio\b/i.test(t);
+  if(yaLoDice) return t;
+  const cierre = it.estado==='cumple' ? T('por lo que cumple con el criterio')
+               : it.estado==='no_cumple' ? T('por lo que no cumple con el criterio')
+               : T('por lo que el criterio queda pendiente de documentación');
+  t = t.replace(/\s*[.;]\s*$/,'');
+  return t + ', ' + cierre + '.';
 }
 
 function narrChip(e){
@@ -6390,22 +6436,25 @@ function narrChip(e){
   return '<span class="chip warn">'+T('pendiente')+'</span>';
 }
 
+let NARR_NRO = 0;
 function renderNarr(){
   if(!NARR) return;
+  NARR_NRO = 0;
   const grupos = [['inclusion', T('Criterios de inclusión')], ['exclusion', T('Criterios de exclusión')]];
   let h = '';
   for(const [tipo, titulo] of grupos){
     const its = NARR.items.filter(x=>x.tipo===tipo);
     if(!its.length) continue;
     h += '<h3 style="margin:14px 0 6px">'+titulo+'</h3>';
-    h += its.map((it,k)=>{
+    h += its.map(it=>{
       const idx = NARR.items.indexOf(it);
+      NARR_NRO++;
+      const ref = (tipo==='inclusion'?'I':'E')+it.n;
       return '<div style="border:1px solid var(--line);border-radius:9px;padding:10px 12px;margin-bottom:8px;background:#fbfcfe">'+
         '<div class="small" style="color:var(--muted);margin-bottom:3px">'+
-          '<b>'+(tipo==='inclusion'?'I':'E')+it.n+'.</b> '+esc(it.criterio)+' '+narrChip(it.estado)+
+          '<b>'+NARR_NRO+'.</b> <span class="chip gray">'+ref+'</span> '+esc(it.criterio)+' '+narrChip(it.estado)+
         '</div>'+
-        '<textarea data-narr="'+idx+'" rows="3" style="margin-bottom:4px">'+esc(it.texto)+'</textarea>'+
-        (it.cita ? '<div class="small" style="color:var(--muted)">'+T('Fuente')+': «'+esc(it.cita)+'»</div>' : '')+
+        '<textarea data-narr="'+idx+'" rows="3">'+esc(narrOracion(it))+'</textarea>'+
       '</div>';
     }).join('');
   }
@@ -6433,20 +6482,24 @@ function narrBody(p, st){
       (noC ? noC+' '+T('criterio(s) no se cumplen')+'. ' : '')+
       (pend ? pend+' '+T('criterio(s) sin documentación suficiente')+'.' : '')+'</div>';
   }
+  /* numeración corrida a lo largo de todo el documento: inclusión primero y
+     exclusión continuando la cuenta, con la referencia al criterio del
+     protocolo al margen para poder rastrearlo */
+  let nro = 0;
   for(const [tipo, titulo] of [['inclusion', T('Criterios de inclusión')], ['exclusion', T('Criterios de exclusión')]]){
     const its = NARR.items.filter(x=>x.tipo===tipo);
     if(!its.length) continue;
-    h += '<h2>'+titulo+'</h2>';
+    h += '<h2>'+titulo+'</h2><ol start="'+(nro+1)+'" style="margin:6px 0 6px 22px;padding:0">';
     for(const it of its){
-      const et = it.estado==='cumple' ? T('cumple') : (it.estado==='no_cumple' ? T('no cumple') : T('pendiente'));
-      h += '<div style="margin-bottom:10px;page-break-inside:avoid">'+
-        '<div style="font-size:11px;color:#4d5c6b;text-transform:uppercase;letter-spacing:.04em">'+
-          (tipo==='inclusion'?'I':'E')+it.n+' — '+esc(et)+'</div>'+
-        '<div style="font-style:italic;color:#4d5c6b;margin:1px 0 3px">'+esc(it.criterio)+'</div>'+
-        '<div>'+esc(it.texto)+'</div>'+
-        (it.cita ? '<div style="font-size:11.5px;color:#6a7887;margin-top:2px">'+T('Fuente')+': «'+esc(it.cita)+'»</div>' : '')+
-      '</div>';
+      nro++;
+      const ref = (tipo==='inclusion'?'I':'E')+it.n;
+      h += '<li style="margin-bottom:9px;page-break-inside:avoid">'+
+        '<div>'+esc(narrOracion(it))+
+          ' <span style="font-size:10.5px;color:#8a97a4">['+ref+']</span></div>'+
+        '<div style="font-size:11px;color:#6a7887;margin-top:1px"><i>'+T('Criterio')+':</i> '+esc(it.criterio)+'</div>'+
+      '</li>';
     }
+    h += '</ol>';
   }
   h += '<div class="sig">'+T('Revisado y confirmado por')+': ______________________________'+
        '<br>'+T('Aclaración y firma del investigador')+' · '+T('Fecha')+': ____/____/______</div>'+
@@ -6461,15 +6514,15 @@ function narrTexto(p, st){
   L.push(T('Protocolo')+': '+(st.codigo||'')+(st.nombre?' — '+st.nombre:''));
   L.push(T('Fecha')+': '+fmtDate(todayISO()));
   L.push(T('Evaluación')+': '+eligibility(p));
+  let k = 0;
   for(const [tipo, titulo] of [['inclusion', T('Criterios de inclusión')], ['exclusion', T('Criterios de exclusión')]]){
     const its = NARR.items.filter(x=>x.tipo===tipo);
     if(!its.length) continue;
     L.push('', titulo.toUpperCase());
     for(const it of its){
-      const et = it.estado==='cumple' ? T('cumple') : (it.estado==='no_cumple' ? T('no cumple') : T('pendiente'));
-      L.push('', (tipo==='inclusion'?'I':'E')+it.n+' ('+et+') — '+it.criterio);
-      L.push(it.texto);
-      if(it.cita) L.push(T('Fuente')+': «'+it.cita+'»');
+      k++;
+      L.push('', k+'. '+narrOracion(it)+' ['+(tipo==='inclusion'?'I':'E')+it.n+']');
+      L.push('   '+T('Criterio')+': '+it.criterio);
     }
   }
   return L.join('\n');
@@ -6504,13 +6557,18 @@ $('btnNarrRun').addEventListener('click', async ()=>{
       imgs = await docsImagenes(elegidos, 8);
     }
     stEl.textContent = T('Redactando la fundamentación (puede tardar un momento)...');
-    const items = await aiNarrarCriterios(st, texto, p, imgs);
+    const r = await aiNarrarCriterios(st, texto, p, imgs, stEl);
+    const items = r.items;
     NARR = { items, fecha:new Date().toISOString(), modelo:aiModelName(), obsoleta:false, critFirma:critFirma(st) };
     renderNarr();
     const pend = items.filter(x=>x.estado==='pendiente').length;
-    stEl.style.color = pend ? 'var(--warn)' : 'var(--ok)';
-    stEl.textContent = (pend?'⚠ ':'✔ ')+items.length+' '+T('criterios fundamentados')+
+    const incompletas = items.filter(x=>/redacci[oó]n qued[oó] incompleta/i.test(x.texto)).length;
+    stEl.style.color = (pend||r.fallados||incompletas) ? 'var(--warn)' : 'var(--ok)';
+    stEl.textContent = ((pend||r.fallados||incompletas)?'⚠ ':'✔ ')+items.length+' '+T('criterios fundamentados')+
+      ' ('+r.lotes+' '+T('tandas')+')'+
       (pend ? ' — '+pend+' '+T('sin documentación suficiente')+'.' : '.')+
+      (r.fallados ? ' '+r.fallados+' '+T('tanda(s) fallaron: volvé a generar para completarlas.') : '')+
+      (incompletas ? ' '+incompletas+' '+T('quedaron incompletas.') : '')+
       ' '+T('Editá lo que haga falta; se guarda con el paciente.');
     /* queda guardada en la ficha del paciente */
     const pac = getPatient($('paId').value);
