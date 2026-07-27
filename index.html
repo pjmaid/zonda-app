@@ -464,6 +464,7 @@ details>summary{color:var(--acc-dark)}
         <h3 style="margin:0">Criterios de elegibilidad</h3>
         <span class="spacer"></span>
         <button id="btnMissingPdf">📄 Informe de datos faltantes</button>
+        <button id="btnCritNarr">📝 Fundamentación por criterio</button>
         <button id="btnEvalCrit">🤖 Evaluar automáticamente</button>
       </div>
       <div class="muted small" style="margin-bottom:8px">Marcá cada criterio para este paciente. Elegible = todos los de inclusión en «Sí» y todos los de exclusión en «No». La evaluación automática sugiere respuestas a partir de los documentos: siempre las confirma el investigador.</div>
@@ -487,6 +488,7 @@ details>summary{color:var(--acc-dark)}
       <button class="primary" id="btnAllLabs">🖨 Listado completo del estudio</button>
       <button class="primary" id="btnOrdenesTodas">🧾 Órdenes por paciente y visita</button>
       <button id="btnLabsFromProt">🔎 Tomar los análisis del protocolo</button>
+        <button id="btnClasifProc">⚙ Clasificar procedimientos</button>
       <button id="btnBackLabs">← Volver</button>
     </div>
     <div class="muted small" style="margin-bottom:10px">Listado de estudios de laboratorio y complementarios de cada visita, tomado de la tabla de procedimientos del protocolo. De cada visita podés imprimir su listado (o guardarlo como PDF), enviarlo por email o generar la orden para el laboratorio.</div>
@@ -1059,6 +1061,62 @@ details>summary{color:var(--acc-dark)}
 </div>
 
 <!-- ==== MODAL EVALUACIÓN AUTOMÁTICA ==== -->
+<div id="clasifModal" class="modal-back hidden">
+  <div class="modal" style="max-width:920px">
+    <div class="toolbar" style="margin-bottom:8px">
+      <h3 style="margin:0">⚙ Clasificar los procedimientos del protocolo</h3>
+      <span class="spacer"></span>
+      <button id="btnClasifClose">✕ Cerrar</button>
+    </div>
+    <div class="muted small" style="margin-bottom:8px">
+      Definí a qué orden va cada procedimiento. La app propone una clasificación por el nombre, pero manda lo que elijas acá:
+      queda guardado por nombre y se aplica a todas las visitas y a los demás protocolos que tengan ese mismo procedimiento.
+    </div>
+    <div class="row" style="margin-bottom:8px">
+      <div class="grow"><label>Buscar</label><input type="text" id="clasifBuscar" placeholder="filtrar por nombre"></div>
+      <div style="flex:0 0 230px"><label>Mostrar</label>
+        <select id="clasifFiltro">
+          <option value="">Todos</option>
+          <option value="pend">Solo los que nunca revisé</option>
+          <option value="lab">Solo laboratorio</option>
+          <option value="comp">Solo complementarios</option>
+          <option value="no">Solo los excluidos</option>
+        </select>
+      </div>
+    </div>
+    <div id="clasifResumen" style="margin-bottom:8px"></div>
+    <div id="clasifLista" style="max-height:52vh;overflow:auto"></div>
+    <div class="toolbar" style="margin-top:10px;margin-bottom:0">
+      <button class="primary" id="btnClasifAplicar">Aplicar y cerrar</button>
+      <button id="btnClasifReset">↺ Volver a la propuesta automática</button>
+    </div>
+  </div>
+</div>
+
+<div id="narrModal" class="modal-back hidden">
+  <div class="modal" style="max-width:1000px">
+    <div class="toolbar" style="margin-bottom:8px">
+      <h3 style="margin:0">📝 Fundamentación de criterios para este paciente</h3>
+      <span class="spacer"></span>
+      <button id="btnNarrClose">✕ Cerrar</button>
+    </div>
+    <div class="muted small" id="narrIntro" style="margin-bottom:8px"></div>
+    <div id="narrDocsBox" style="max-height:150px;overflow:auto;margin-bottom:8px"></div>
+    <label style="display:block;font-weight:400;color:var(--ink);margin:2px 0 8px">
+      <input type="checkbox" id="narrVisual" style="width:auto;margin-right:7px">
+      <b>Leer las páginas como imagen</b> — para laboratorios en tablas complejas o documentos escaneados. Más preciso con tablas, consume más créditos.
+    </label>
+    <div class="toolbar" style="margin-bottom:6px">
+      <button class="primary" id="btnNarrRun">Redactar la fundamentación</button>
+      <span class="spacer"></span>
+      <button id="btnNarrPrint" class="hidden">📄 Imprimir / PDF</button>
+      <button id="btnNarrMail" class="hidden">✉ Enviar por email</button>
+    </div>
+    <div id="narrStatus" class="small" style="min-height:18px;margin-bottom:6px"></div>
+    <div id="narrOut" class="hidden"></div>
+  </div>
+</div>
+
 <div id="evalModal" class="modal-back hidden">
   <div class="modal">
     <div class="toolbar" style="margin-bottom:8px">
@@ -1068,6 +1126,10 @@ details>summary{color:var(--acc-dark)}
     </div>
     <div id="evalModeInfo" class="banner gray"></div>
     <div id="evalDocsBox" style="margin-top:8px"></div>
+    <label style="display:block;font-weight:400;color:var(--ink);margin:2px 0 8px">
+      <input type="checkbox" id="evalVisual" style="width:auto;margin-right:7px">
+      <b>Leer las páginas como imagen</b> — para laboratorios en tablas complejas o documentos escaneados. Más preciso con tablas, consume más créditos.
+    </label>
     <label>Texto adicional (opcional): pegá datos de la historia clínica, laboratorio, etc.</label>
     <textarea id="evalPaste" rows="5" placeholder="Ej: Paciente de 54 años con diagnóstico de... Laboratorio 20/07: creatinina 0,9 mg/dl..."></textarea>
     <div class="toolbar" style="margin-top:10px;margin-bottom:0">
@@ -2715,9 +2777,26 @@ $('btnSaveStudy').addEventListener('click', async ()=>{
     criteriosExclusion: $('stExcl').value.split('\n').map(t=>t.trim()).filter(Boolean),
     visitas
   };
-  const hadPatients = DB.patients.some(p=>p.estudioId===id);
+  const hadPatients = DB.patients.some(p=>p.estudioId===id && !p.anulado);
+  /* ¿cambiaron los criterios respecto de lo que estaba guardado? */
+  const critCambio = !!prev && critFirma(prev) !== critFirma(s);
+  s.critFirma = critFirma(s);
   await persist('studies', s, 'Estudio guardado.');
-  if(prev && hadPatients) toast('Estudio guardado. Si cambiaste criterios o visitas, revisá los pacientes ya cargados.');
+  if(critCambio && hadPatients){
+    /* las respuestas de los pacientes se reasignan por el TEXTO del criterio,
+       nunca por su posición: si no, quedarían apuntando a otro criterio */
+    try{
+      const r = await critRemapearPacientes(prev, s);
+      renderAll();
+      critAvisoRemapeo(r, s);
+      auditar('estudio','cambio_criterios', s.id,
+        s.codigo+': '+(prev.criteriosInclusion||[]).length+'+'+(prev.criteriosExclusion||[]).length+
+        ' → '+s.criteriosInclusion.length+'+'+s.criteriosExclusion.length+
+        ', '+r.tocados+' paciente(s) actualizados');
+    }catch(e){ toast('⚠ '+T('Los criterios cambiaron pero no se pudieron actualizar en los pacientes')+': '+e.message); }
+  } else if(prev && hadPatients){
+    toast('Estudio guardado. Si cambiaste las visitas, revisá los pacientes ya cargados.');
+  }
   showView('view-studies');
 });
 $('btnCancelStudy').addEventListener('click', ()=>showView('view-studies'));
@@ -2888,6 +2967,33 @@ function renderPaCriterios(){
   const st = getStudy($('paEstudio').value);
   const box = $('paCritBox'); box.innerHTML='';
   if(!st){ box.innerHTML='<div class="muted">'+T('Elegí un estudio.')+'</div>'; updateEligBanner(); return; }
+  /* si los criterios del protocolo cambiaron después de responder, hay que avisarlo:
+     las respuestas se remapearon por texto y algunas pueden necesitar reconfirmación */
+  const pacAct = getPatient($('paId').value);
+  if(pacAct && Object.keys(pacAct.criterios||{}).length){
+    const fAct = critFirma(st);
+    const hist = (pacAct.critHistorial||[]);
+    if(pacAct.critFirma && pacAct.critFirma !== fAct){
+      const w = document.createElement('div'); w.className='banner warn';
+      w.innerHTML = '⚠ '+T('Los criterios de este protocolo cambiaron después de que se registraron estas respuestas. Reconfirmá cada una antes de decidir la elegibilidad.');
+      box.appendChild(w);
+    } else if(hist.length){
+      const u = hist[hist.length-1];
+      if(u.aproximadas || (u.perdidas||[]).length){
+        const w = document.createElement('div'); w.className='banner warn';
+        w.innerHTML = '⚠ '+T('El')+' '+fmtDate(String(u.fecha).slice(0,10))+' '+
+          T('los criterios del protocolo se actualizaron')+': '+u.aproximadas+' '+
+          T('respuesta(s) se reasignaron por similitud y')+' '+(u.perdidas||[]).length+' '+
+          T('quedaron sin criterio')+'. '+T('Revisalas.');
+        box.appendChild(w);
+      }
+    }
+    if(pacAct.critNarrativa && pacAct.critNarrativa.obsoleta){
+      const w2 = document.createElement('div'); w2.className='banner gray';
+      w2.innerHTML = '📝 '+T('La fundamentación redactada corresponde a la versión anterior de los criterios: conviene volver a redactarla.');
+      box.appendChild(w2);
+    }
+  }
   const mk = (list, pref, titulo, hint) => {
     if(!list.length) return;
     const h = document.createElement('h3'); h.textContent = titulo; h.style.marginTop='12px';
@@ -2958,7 +3064,8 @@ $('btnSavePatient').addEventListener('click', async ()=>{
     sexo: $('paSexo').value,
     anticoncepcion: $('paAnti').value,
     anticoncepcionDet: $('paAntiDet').value.trim(),
-    criterios: Object.assign({}, PA_CRIT)
+    criterios: Object.assign({}, PA_CRIT),
+    critFirma: (getStudy($('paEstudio').value) ? critFirma(getStudy($('paEstudio').value)) : '')
   };
   await persist('patients', p, 'Paciente guardado.');
   if(!p.fechaBasal && (p.estado==='activo'||p.estado==='screening'))
@@ -5589,7 +5696,7 @@ function openEvalModal(){
   $('evalModal').classList.remove('hidden');
 }
 
-async function aiEvalCriteria(st, text){
+async function aiEvalCriteria(st, text, imagenes){
   const inc = st.criteriosInclusion||[], exc = st.criteriosExclusion||[];
   const MAXC = 60000;
   let doc = text;
@@ -5601,6 +5708,7 @@ async function aiEvalCriteria(st, text){
     'DOCUMENTACIÓN DEL PACIENTE:\n<<<\n'+doc+'\n>>>\n\n'+
     'Respondé ÚNICAMENTE con un array JSON válido, con un objeto por cada criterio listado:\n'+
     '[{"clave":"i0","respuesta":"si|no|pendiente","justificacion":"cita TEXTUAL del documento (máximo 25 palabras)","falta":"qué dato concreto haría falta (solo si respuesta es pendiente)"}]\n\n'+
+    'Cómo leer las tablas: si el texto trae una sección «TABLAS RECONSTRUIDAS», cada renglón es una fila y las columnas están separadas por «|». En un laboratorio, el orden habitual es analito | resultado | unidad | valores de referencia: el resultado del paciente es la PRIMERA cifra, no los límites de referencia. Si hay imágenes adjuntas, leé las tablas directamente de ellas.\n\n'+
     'REGLA FUNDAMENTAL — usá exclusivamente la DOCUMENTACIÓN DEL PACIENTE incluida arriba:\n'+
     '- No uses conocimiento médico general, valores de referencia, estadísticas ni ninguna fuente externa para decidir la respuesta.\n'+
     '- No infieras, no deduzcas ni completes datos ausentes: si el dato no está escrito en la documentación, la respuesta es "pendiente".\n'+
@@ -5612,9 +5720,15 @@ async function aiEvalCriteria(st, text){
     '- Escribí "justificacion" y "falta" en '+AI_LANG_NAME()+'.';
   /* espacio de salida proporcional a la cantidad de criterios */
   const maxTok = Math.min(16000, Math.max(1500, (inc.length+exc.length)*140 + 400));
+  /* si se pidió lectura visual, las páginas van como imagen antes del texto:
+     así la IA ve las tablas de laboratorio con sus columnas en su lugar */
+  const contenido = (imagenes && imagenes.length)
+    ? [{ t:'text', text:'IMÁGENES DE LOS DOCUMENTOS DEL PACIENTE (leelas como parte de la documentación, sobre todo las tablas):' }]
+        .concat(imagenes, [{ t:'text', text:prompt }])
+    : prompt;
   const resp = await aiChat({
     system: 'Respondés exclusivamente con un array JSON válido, sin texto antes ni después, sin explicaciones y sin bloques de código. Empezá la respuesta con "[" y terminala con "]".',
-    content: prompt, maxTokens: maxTok
+    content: contenido, maxTokens: maxTok
   });
   let txt = resp.text.replace(/```json|```/g,'').trim();
   const truncado = resp.cut;
@@ -5694,15 +5808,21 @@ $('btnRunEval').addEventListener('click', async ()=>{
       if(!doc) continue;
       const b = await docBlob(doc);
       if(!b) continue;
-      try{ text += '\n=== '+doc.filename+' ===\n' + await extractText(b, doc.filename); }
+      try{ text += '\n=== '+doc.filename+' ===\n' + await extractTextTablas(b, doc.filename); }
       catch(e){ /* documento ilegible: se ignora */ }
     }
     if($('evalPaste').value.trim()) text += '\n=== Texto pegado ===\n' + $('evalPaste').value.trim();
     if(text.trim().length < 30) throw new Error('No hay texto para analizar. Seleccioná documentos con texto legible o pegá los datos del paciente.');
     const study = getStudy($('paEstudio').value);
     if(aiConfigured()){
+      let imgs = [];
+      if($('evalVisual') && $('evalVisual').checked){
+        stEl.textContent = T('Convirtiendo las páginas a imagen...');
+        const elegidos = checks.map(c=>(DB.docs||[]).find(d=>d.id===c.dataset.doc)).filter(Boolean);
+        imgs = await docsImagenes(elegidos, 8);
+      }
       stEl.textContent = T('Consultando a la IA (puede tardar unos segundos)...');
-      const res = await aiEvalCriteria(study, text);
+      const res = await aiEvalCriteria(study, text, imgs);
       const n = applyEvalResults(res);
       renderPaCriterios();
       $('paAiNotice').innerHTML = '<div class="banner warn">🤖 Respuestas sugeridas por IA a partir de los documentos ('+n.resp+' respondidas, '+n.pend+' quedaron pendientes). Confirmá cada criterio antes de guardar: la decisión final es siempre del investigador.</div>';
@@ -5722,6 +5842,532 @@ $('btnRunEval').addEventListener('click', async ()=>{
   }finally{
     btn.disabled = false;
   }
+});
+
+/* ================= CAMBIO DE CRITERIOS EN UN ESTUDIO YA EN MARCHA =================
+   Las respuestas del paciente se guardan por posición (i0, i1, e0...). Si se
+   reimportan o reordenan los criterios del protocolo, esas claves quedarían
+   apuntando a un criterio distinto del que se evaluó: un error silencioso y con
+   consecuencias regulatorias. Para evitarlo, al guardar el estudio se comparan
+   los criterios anteriores con los nuevos y se remapean las respuestas de cada
+   paciente POR EL TEXTO del criterio, no por su posición.
+   Lo que no se puede emparejar con seguridad vuelve a «pendiente», queda
+   asentado en la auditoría y se informa en pantalla. */
+
+function critNorm(t){
+  return stripAcc(String(t||'')).toLowerCase()
+    .replace(/^\s*\d+(\.\d+)*[\.\)]?\s*/,'')          /* numeración inicial */
+    .replace(/(\d)[.,](\d)/g,'$1_$2')                 /* conserva 1.5 como un solo token */
+    .replace(/[^a-z0-9_\s]/g,' ').replace(/\s+/g,' ').trim();
+}
+
+/* palabras sin valor discriminante: si la diferencia entre dos criterios está
+   solo en estas, siguen siendo el mismo criterio */
+const CRIT_VACIAS = new Set(('de del la el los las un una unos unas y o u en con por para a al que se su sus '+
+  'segun acuerdo conforme vigentes vigente cualquier cualquiera antes durante despues sobre entre desde hasta '+
+  'debe deben debera deberan tener tiene tienen presentar presenta ser estar este esta estos estas '+
+  'participante participantes paciente pacientes sujeto sujetos individuo individuos '+
+  'estudio protocolo investigador criterio criterios momento tiempo forma manera').split(' '));
+
+function critTokens(t){
+  return new Set(critNorm(t).split(' ').filter(Boolean));
+}
+/* tokens que distinguen un criterio de otro: excluye las palabras vacías.
+   Los tokens cortos SÍ cuentan: «B» y «C» son lo único que separa
+   «hepatitis B» de «hepatitis C». */
+function critClaves(set){
+  const out = new Set();
+  set.forEach(w=>{ if(!CRIT_VACIAS.has(w)) out.add(w); });
+  return out;
+}
+
+/* Decide si dos criterios son el mismo. Ante la duda NO empareja: es preferible
+   dejar la respuesta en «pendiente» y que se reconfirme, antes que asignarla al
+   criterio equivocado. Devuelve 0 (distintos) o la similitud (mismo criterio). */
+function critSim(a, b){
+  const A = critTokens(a), B = critTokens(b);
+  if(!A.size || !B.size) return 0;
+  const cA = critClaves(A), cB = critClaves(B);
+
+  /* palabras clave exclusivas de cada lado */
+  const soloA = new Set(), soloB = new Set();
+  cA.forEach(w=>{ if(!cB.has(w)) soloA.add(w); });
+  cB.forEach(w=>{ if(!cA.has(w)) soloB.add(w); });
+  /* si cada lado aporta una palabra clave que el otro no tiene, son criterios
+     distintos: «función renal» vs «función hepática», «hepatitis B» vs «C» */
+  if(soloA.size && soloB.size) return 0;
+
+  let inter = 0;
+  A.forEach(w=>{ if(B.has(w)) inter++; });
+  const dice = (2*inter) / (A.size + B.size);
+  const contiene = inter / Math.min(A.size, B.size);   /* uno incluido en el otro */
+  return Math.max(dice, contiene >= 0.85 ? contiene : 0);
+}
+
+/* firma de la lista de criterios: cambia si cambia el texto, el orden o la cantidad */
+function critFirma(st){
+  const l = (st.criteriosInclusion||[]).map(c=>'i:'+critNorm(c))
+      .concat((st.criteriosExclusion||[]).map(c=>'e:'+critNorm(c)));
+  let h = 5381;
+  const t = l.join('|');
+  for(let i=0;i<t.length;i++) h = ((h<<5)+h+t.charCodeAt(i))>>>0;
+  return l.length+'-'+h.toString(36);
+}
+
+/* Devuelve { mapa:{claveVieja:claveNueva}, exactas, aproximadas, perdidos:[{clave,texto}] } */
+function critMapear(prev, nuevo){
+  const mapa = {}, perdidos = [];
+  let exactas = 0, aprox = 0;
+  for(const tipo of ['i','e']){
+    const viejos = (tipo==='i' ? prev.criteriosInclusion : prev.criteriosExclusion) || [];
+    const nuevos = (tipo==='i' ? nuevo.criteriosInclusion : nuevo.criteriosExclusion) || [];
+    const tomados = new Set();
+    /* primera pasada: coincidencia exacta del texto normalizado */
+    viejos.forEach((cv, iv)=>{
+      const k = nuevos.findIndex((cn, i)=>!tomados.has(i) && critNorm(cn)===critNorm(cv));
+      if(k>=0){ mapa[tipo+iv] = tipo+k; tomados.add(k); exactas++; }
+    });
+    /* segunda pasada: el más parecido que quede libre, si supera el umbral */
+    viejos.forEach((cv, iv)=>{
+      if(mapa[tipo+iv]) return;
+      let mejor=-1, mejorS=0;
+      nuevos.forEach((cn, i)=>{
+        if(tomados.has(i)) return;
+        const sim = critSim(cv, cn);
+        if(sim > mejorS){ mejorS = sim; mejor = i; }
+      });
+      if(mejor>=0 && mejorS >= 0.75){ mapa[tipo+iv] = tipo+mejor; tomados.add(mejor); aprox++; }
+      else perdidos.push({ clave:tipo+iv, texto:cv });
+    });
+  }
+  return { mapa, exactas, aproximadas:aprox, perdidos };
+}
+
+/* Aplica el remapeo a todos los pacientes del estudio. Devuelve el resumen. */
+async function critRemapearPacientes(prev, nuevo){
+  const { mapa, exactas, aproximadas, perdidos } = critMapear(prev, nuevo);
+  const firma = critFirma(nuevo);
+  const pacientes = DB.patients.filter(p=>p.estudioId===nuevo.id && !p.anulado);
+  let tocados = 0, respMovidas = 0, respPerdidas = 0;
+
+  for(const p of pacientes){
+    const viejasR = p.criterios || {};
+    const viejasJ = p.critJust || {};
+    if(!Object.keys(viejasR).length && !Object.keys(viejasJ).length){
+      p.critFirma = firma; continue;
+    }
+    const nuevasR = {}, nuevasJ = {};
+    const perdidasDe = [];
+    for(const k of Object.keys(viejasR)){
+      const dest = mapa[k];
+      if(dest){
+        nuevasR[dest] = viejasR[k];
+        if(viejasJ[k]) nuevasJ[dest] = viejasJ[k];
+        /* si el emparejamiento fue aproximado, la respuesta queda marcada para reconfirmar */
+        respMovidas++;
+      } else if(viejasR[k] && viejasR[k]!=='pendiente'){
+        const idx = parseInt(k.slice(1),10);
+        const lista = k[0]==='i' ? (prev.criteriosInclusion||[]) : (prev.criteriosExclusion||[]);
+        perdidasDe.push({ clave:k, texto:lista[idx]||'', respuesta:viejasR[k] });
+        respPerdidas++;
+      }
+    }
+    p.criterios = nuevasR;
+    p.critJust = nuevasJ;
+    p.critFirma = firma;
+    /* la fundamentación redactada quedó escrita contra los criterios anteriores */
+    if(p.critNarrativa) p.critNarrativa.obsoleta = true;
+    p.critHistorial = (p.critHistorial||[]).concat([{
+      fecha: new Date().toISOString(), usuario: CURRENT_USER,
+      exactas, aproximadas, perdidas: perdidasDe
+    }]);
+    try{ await Store.upsert('patients', p); tocados++; }catch(e){}
+    auditar('paciente','remapeo_criterios', p.id,
+      p.codigo+': '+respMovidas+' conservadas, '+perdidasDe.length+' descartadas');
+  }
+  return { pacientes:pacientes.length, tocados, exactas, aproximadas, perdidos, respMovidas, respPerdidas };
+}
+
+/* Aviso en pantalla, claro sobre qué hay que revisar a mano */
+function critAvisoRemapeo(r, nuevo){
+  const filas = [];
+  filas.push('<b>'+r.tocados+'</b> '+T('paciente(s) actualizados en el protocolo')+' '+esc(nuevo.codigo)+'.');
+  filas.push(r.exactas+' '+T('criterio(s) se emparejaron por texto idéntico')+'; '+
+             r.aproximadas+' '+T('por similitud (revisá esas respuestas)')+'.');
+  if(r.perdidos.length){
+    filas.push('<b>'+T('Criterios que ya no existen en el protocolo')+' ('+r.perdidos.length+'):</b>');
+    filas.push('<ul style="margin:4px 0 0 16px">'+r.perdidos.slice(0,8).map(x=>'<li>'+esc(x.texto.slice(0,120))+'</li>').join('')+
+      (r.perdidos.length>8 ? '<li>'+T('y')+' '+(r.perdidos.length-8)+' '+T('más')+'</li>' : '')+'</ul>');
+  }
+  if(r.respPerdidas) filas.push('⚠ '+r.respPerdidas+' '+T('respuesta(s) ya registradas quedaron sin criterio y volvieron a «pendiente». Están asentadas en la auditoría.'));
+  filas.push(T('Las fundamentaciones redactadas antes del cambio quedaron marcadas como desactualizadas.'));
+  const back = document.createElement('div');
+  back.className='modal-back';
+  back.innerHTML = '<div class="modal" style="max-width:620px">'+
+    '<h3>'+T('Se actualizaron los criterios en los pacientes')+'</h3>'+
+    '<div class="banner warn" style="margin-bottom:10px">'+filas.join('<br>')+'</div>'+
+    '<div class="muted small">'+T('Revisá los criterios de cada paciente antes de tomar decisiones de elegibilidad: el emparejamiento automático es una ayuda, no una confirmación.')+'</div>'+
+    '<div class="toolbar" style="margin-top:12px;margin-bottom:0"><button class="primary" id="crAvisoOk">'+T('Entendido')+'</button></div>'+
+  '</div>';
+  document.body.appendChild(back);
+  back.querySelector('#crAvisoOk').addEventListener('click', ()=>back.remove());
+}
+
+/* ================= LECTURA DE TABLAS EN DOCUMENTOS DEL PACIENTE =================
+   Un laboratorio o una lista de medicación casi siempre vienen en tabla. Al
+   volcarlas a texto plano las columnas se mezclan y la IA lee "Creatinina 1,2
+   0,6 1,3 mg/dL" sin saber cuál es el valor y cuáles los límites de referencia.
+   Acá se agrupan las palabras por coordenadas, se detectan las columnas de la
+   página y se reconstruyen las filas con separador « | », que sí se interpreta
+   sin ambigüedad. Es determinista: no usa IA. */
+
+function pdfDetectarColumnas(filas){
+  /* candidatos: los bordes izquierdos donde arrancan muchas celdas */
+  const cuenta = new Map();
+  for(const f of filas){
+    for(const w of f){
+      const b = Math.round(w.x0/6)*6;      /* tolerancia de 6 puntos */
+      cuenta.set(b, (cuenta.get(b)||0)+1);
+    }
+  }
+  const minFilas = Math.max(3, Math.round(filas.length*0.25));
+  const cols = Array.from(cuenta.entries())
+    .filter(([,n])=>n>=minFilas).map(([x])=>x).sort((a,b)=>a-b);
+  /* se fusionan los que quedaron pegados */
+  const out = [];
+  for(const x of cols){ if(!out.length || x-out[out.length-1] > 14) out.push(x); }
+  return out;
+}
+
+function pdfFilaATabla(fila, cols){
+  const celdas = cols.map(()=>[]);
+  for(const w of fila){
+    let mejor = 0;
+    for(let k=0;k<cols.length;k++){ if(w.x0 >= cols[k]-8) mejor = k; }
+    celdas[mejor].push(w);
+  }
+  return celdas.map(c=>flowUnir(c)).join(' | ').replace(/(\s*\|\s*)+$/,'').trim();
+}
+
+/* Reconstruye las tablas de un PDF. Devuelve '' si no encuentra ninguna. */
+async function pdfTablasGeom(blob, maxPag){
+  await ensurePdfJs();
+  const doc = await pdfjsLib.getDocument({ data: await blob.arrayBuffer() }).promise;
+  const n = Math.min(doc.numPages, maxPag||60);
+  const salida = [];
+  for(let i=1;i<=n;i++){
+    const palabras = await flowPaginaGeom(await doc.getPage(i));
+    if(palabras.length < 12) continue;
+    const filas = flowAgruparFilas(palabras).filter(f=>f.length>=2);
+    if(filas.length < 4) continue;
+    const cols = pdfDetectarColumnas(filas);
+    if(cols.length < 3) continue;                 /* sin al menos 3 columnas no es tabla */
+    /* solo las filas que efectivamente ocupan varias columnas */
+    const lineas = [];
+    for(const f of filas){
+      const ocupadas = new Set();
+      for(const w of f){ let k=0; for(let j=0;j<cols.length;j++){ if(w.x0>=cols[j]-8) k=j; } ocupadas.add(k); }
+      if(ocupadas.size >= Math.min(3, cols.length)) lineas.push(pdfFilaATabla(f, cols));
+    }
+    if(lineas.length >= 4) salida.push('--- tabla, página '+i+' ('+cols.length+' columnas) ---\n'+lineas.join('\n'));
+  }
+  return salida.join('\n\n');
+}
+
+/* Texto del documento + las tablas reconstruidas como apéndice. Si el archivo
+   no es PDF o no tiene tablas, devuelve solo el texto, igual que antes. */
+async function extractTextTablas(blob, filename){
+  const base = await extractText(blob, filename);
+  const esPdf = (filename||'').toLowerCase().endsWith('.pdf') || (blob.type||'').toLowerCase().includes('pdf');
+  if(!esPdf) return base;
+  let tablas = '';
+  try{ tablas = await pdfTablasGeom(blob, 60); }catch(e){}
+  if(!tablas) return base;
+  return base + '\n\n=== TABLAS RECONSTRUIDAS (columnas separadas por «|») ===\n' + tablas;
+}
+
+/* Páginas como imagen, para que la IA vea tablas complejas o documentos escaneados. */
+async function docsImagenes(docs, maxTotal){
+  const bloques = [];
+  let usadas = 0;
+  for(const doc of docs){
+    if(usadas >= (maxTotal||8)) break;
+    const esPdf = (doc.filename||'').toLowerCase().endsWith('.pdf');
+    if(!esPdf) continue;
+    let b;
+    try{ b = await docBlob(doc); }catch(e){ continue; }
+    if(!b) continue;
+    try{
+      await ensurePdfJs();
+      const pdf = await pdfjsLib.getDocument({ data: await b.arrayBuffer() }).promise;
+      const n = Math.min(pdf.numPages, (maxTotal||8)-usadas);
+      for(let i=1;i<=n;i++){
+        const data = await pdfPageImage(await pdf.getPage(i), 1500);
+        bloques.push({ t:'text', text:'['+doc.filename+' — página '+i+']' });
+        bloques.push({ t:'img', mime:'image/png', data });
+        usadas++;
+      }
+    }catch(e){}
+  }
+  return bloques;
+}
+
+/* ================= FUNDAMENTACIÓN DE CRITERIOS PACIENTE POR PACIENTE =================
+   Redacta, para cada criterio de inclusión y exclusión, un párrafo con el dato
+   concreto de ESTE paciente y la cita del documento que lo respalda. Es lo que
+   se adjunta como documento fuente del screening: deja escrito por qué el
+   paciente cumple o no cumple cada punto, en vez de un simple Sí/No.
+   Todo sale de los documentos cargados; lo que no está documentado se declara
+   como pendiente, nunca se completa por inferencia. */
+
+let NARR = null;   /* { items:[{clave,tipo,n,texto,criterio,resp,cita}], fecha, modelo } */
+
+function narrCriterios(st){
+  const out = [];
+  (st.criteriosInclusion||[]).forEach((c,i)=>out.push({ clave:'i'+i, tipo:'inclusion', n:i+1, criterio:c }));
+  (st.criteriosExclusion||[]).forEach((c,i)=>out.push({ clave:'e'+i, tipo:'exclusion', n:i+1, criterio:c }));
+  return out;
+}
+
+function openNarrModal(){
+  const st = getStudy($('paEstudio').value);
+  if(!st || !narrCriterios(st).length){ toast(T('El estudio seleccionado no tiene criterios cargados.')); return; }
+  const pid = $('paId').value;
+  if(!pid || !getPatient(pid)){ toast(T('Guardá el paciente antes de redactar la fundamentación.')); return; }
+  const docs = docsOfPatient(pid);
+  $('narrDocsBox').innerHTML = docs.length
+    ? '<label>'+T('Documentos del paciente a usar')+'</label>'+docs.map(d=>
+        '<div class="doc-line"><input type="checkbox" checked data-ndoc="'+d.id+'" style="width:16px;height:16px"> '+
+        '<div class="dinfo">'+esc(DOC_TIPOS[d.tipo]||d.tipo)+' — '+esc(d.filename)+
+        (d.version?' <span class="muted small">('+esc(d.version)+')</span>':'')+'</div></div>').join('')
+    : '<div class="banner warn">'+T('Este paciente no tiene documentos adjuntos. Adjuntá su historia clínica y laboratorios: la fundamentación se redacta a partir de ellos.')+'</div>';
+  $('narrIntro').innerHTML = aiConfigured()
+    ? T('Para cada criterio se redacta un párrafo con el dato concreto de este paciente y la cita del documento que lo respalda. Sirve como documento fuente del screening. Lo que no esté documentado queda declarado como pendiente: revisá y editá antes de firmar.')
+    : '<b>'+T('Necesitás una clave de API en Configuración para redactar la fundamentación.')+'</b>';
+  $('btnNarrRun').disabled = !aiConfigured() || !docs.length;
+  $('narrStatus').textContent = '';
+  $('narrOut').classList.add('hidden');
+  $('btnNarrPrint').classList.add('hidden');
+  $('btnNarrMail').classList.add('hidden');
+  /* si ya se redactó antes para este paciente, se muestra */
+  const guardada = (getPatient(pid)||{}).critNarrativa;
+  if(guardada && guardada.items && guardada.items.length){
+    NARR = guardada; renderNarr();
+    if(guardada.obsoleta){
+      $('narrStatus').style.color='var(--warn)';
+      $('narrStatus').textContent = '⚠ '+T('Los criterios del protocolo cambiaron después de redactar esta fundamentación: volvé a redactarla.');
+    } else {
+      $('narrStatus').style.color='var(--muted)';
+      $('narrStatus').textContent = T('Fundamentación guardada el')+' '+fmtDate(String(guardada.fecha||'').slice(0,10))+'. '+T('Podés editarla o volver a redactarla.');
+    }
+  }
+  $('narrModal').classList.remove('hidden');
+}
+
+async function aiNarrarCriterios(st, texto, p, imagenes){
+  const items = narrCriterios(st);
+  const MAXC = 60000;
+  let doc = texto;
+  if(doc.length > MAXC) doc = doc.slice(0, MAXC) + '\n[TEXTO TRUNCADO POR LONGITUD]';
+  const resp = p.criterios || {};
+  const yaResp = items.map(it=>it.clave+'='+(resp[it.clave]||'pendiente')).join(', ');
+  const sexo = p.sexo==='F' ? 'femenino' : (p.sexo==='M' ? 'masculino' : 'no consignado');
+
+  const prompt =
+    'Sos un asistente de un equipo de investigación clínica. Para CADA criterio de elegibilidad listado, redactá una fundamentación breve referida a ESTE paciente, usando ÚNICAMENTE la documentación que se incluye más abajo.\n\n'+
+    'PACIENTE: código '+(p.codigo||'')+', sexo '+sexo+'.\n'+
+    'RESPUESTAS YA REGISTRADAS POR EL INVESTIGADOR (respetalas): '+(yaResp||'ninguna')+'\n\n'+
+    'CRITERIOS:\n'+items.map(it=>it.clave+'. ['+(it.tipo==='inclusion'?'INCLUSIÓN':'EXCLUSIÓN')+' '+it.n+'] '+it.criterio).join('\n')+'\n\n'+
+    'DOCUMENTACIÓN DEL PACIENTE:\n<<<\n'+doc+'\n>>>\n\n'+
+    'Respondé ÚNICAMENTE con un array JSON válido, un objeto por criterio:\n'+
+    '[{"clave":"i0","texto":"fundamentación de 1 a 3 oraciones referida a este paciente","cita":"cita textual del documento (máx. 25 palabras)","estado":"cumple|no_cumple|pendiente"}]\n\n'+
+    'REGLAS — usá exclusivamente la DOCUMENTACIÓN incluida arriba:\n'+
+    '- Escribí en tercera persona, en prosa clínica sobria, sin adjetivos valorativos y sin repetir el enunciado del criterio palabra por palabra: explicá el dato del paciente que lo satisface o lo contradice.\n'+
+    '- Mencioná el dato concreto (valor, fecha, diagnóstico, fármaco) tal como figura en la documentación.\n'+
+    '- No uses conocimiento médico general ni valores de referencia externos. No infieras ni completes lo que no esté escrito.\n'+
+    '- Si el dato no figura, "estado" es "pendiente", la "cita" debe ser exactamente "sin dato en la documentación", y el "texto" debe indicar con precisión qué estudio o dato hay que obtener para poder evaluarlo.\n'+
+    '- En criterios de exclusión, "cumple" significa que el paciente NO presenta la condición (es decir, no queda excluido); "no_cumple" significa que la presenta y por lo tanto queda excluido.\n'+
+    '- No identifiques al paciente por nombre: referite a él como «el participante» o «la participante» según el sexo.\n'+
+    '- Escribí "texto" en '+AI_LANG_NAME()+'.\n'+
+    '- Si el texto trae una sección «TABLAS RECONSTRUIDAS», cada renglón es una fila y las columnas van separadas por «|». En un laboratorio el orden habitual es analito | resultado | unidad | referencia: el valor del paciente es la PRIMERA cifra, no los límites de referencia. Si hay imágenes adjuntas, leé las tablas de ellas.';
+
+  const maxTok = Math.min(20000, Math.max(2000, items.length*220 + 500));
+  const contenido = (imagenes && imagenes.length)
+    ? [{ t:'text', text:'IMÁGENES DE LOS DOCUMENTOS DEL PACIENTE (leelas como parte de la documentación, sobre todo las tablas):' }]
+        .concat(imagenes, [{ t:'text', text:prompt }])
+    : prompt;
+  const r = await aiChat({
+    system: 'Respondés exclusivamente con un array JSON válido, sin texto antes ni después, sin explicaciones y sin bloques de código. Empezá con "[" y terminá con "]".',
+    content: contenido, maxTokens: maxTok
+  });
+  const arr = parseAiArray(r.text.replace(/```json|```/g,'').trim());
+  if(!arr.length) throw new Error(r.cut
+    ? T('La respuesta se cortó por longitud. Probá con menos criterios o un modelo con más capacidad.')
+    : T('La IA no devolvió un resultado interpretable.'));
+  const porClave = {};
+  arr.forEach(o=>{ const k=String(o.clave||'').trim().toLowerCase(); if(/^[ie]\d{1,2}$/.test(k)) porClave[k]=o; });
+  return items.map(it=>{
+    const o = porClave[it.clave] || {};
+    return Object.assign({}, it, {
+      texto: String(o.texto||'').slice(0,900) || T('Sin fundamentación: no se encontró información en la documentación cargada.'),
+      cita:  String(o.cita||'').slice(0,300),
+      estado: ['cumple','no_cumple','pendiente'].includes(String(o.estado||'')) ? o.estado : 'pendiente',
+      resp: (p.criterios||{})[it.clave] || 'pendiente'
+    });
+  });
+}
+
+function narrChip(e){
+  if(e==='cumple')    return '<span class="chip ok">'+T('cumple')+'</span>';
+  if(e==='no_cumple') return '<span class="chip bad">'+T('no cumple')+'</span>';
+  return '<span class="chip warn">'+T('pendiente')+'</span>';
+}
+
+function renderNarr(){
+  if(!NARR) return;
+  const grupos = [['inclusion', T('Criterios de inclusión')], ['exclusion', T('Criterios de exclusión')]];
+  let h = '';
+  for(const [tipo, titulo] of grupos){
+    const its = NARR.items.filter(x=>x.tipo===tipo);
+    if(!its.length) continue;
+    h += '<h3 style="margin:14px 0 6px">'+titulo+'</h3>';
+    h += its.map((it,k)=>{
+      const idx = NARR.items.indexOf(it);
+      return '<div style="border:1px solid var(--line);border-radius:9px;padding:10px 12px;margin-bottom:8px;background:#fbfcfe">'+
+        '<div class="small" style="color:var(--muted);margin-bottom:3px">'+
+          '<b>'+(tipo==='inclusion'?'I':'E')+it.n+'.</b> '+esc(it.criterio)+' '+narrChip(it.estado)+
+        '</div>'+
+        '<textarea data-narr="'+idx+'" rows="3" style="margin-bottom:4px">'+esc(it.texto)+'</textarea>'+
+        (it.cita ? '<div class="small" style="color:var(--muted)">'+T('Fuente')+': «'+esc(it.cita)+'»</div>' : '')+
+      '</div>';
+    }).join('');
+  }
+  $('narrOut').innerHTML = h;
+  $('narrOut').classList.remove('hidden');
+  $('narrOut').querySelectorAll('textarea[data-narr]').forEach(ta=>{
+    ta.addEventListener('input', ()=>{ NARR.items[+ta.dataset.narr].texto = ta.value; });
+  });
+  $('btnNarrPrint').classList.remove('hidden');
+  $('btnNarrMail').classList.remove('hidden');
+}
+
+function narrBody(p, st){
+  const pend = NARR.items.filter(x=>x.estado==='pendiente').length;
+  const noC  = NARR.items.filter(x=>x.estado==='no_cumple').length;
+  let h = '<h1>'+T('Fundamentación de criterios de elegibilidad')+'</h1>'+
+    '<div class="meta"><b>'+T('Paciente')+':</b> '+esc(p.codigo||'')+
+      (p.iniciales?' ('+esc(p.iniciales)+')':'')+
+      ' · <b>'+T('Protocolo')+':</b> '+esc(st.codigo||'')+(st.nombre?' — '+esc(st.nombre):'')+
+      (st.patrocinador?' · <b>'+T('Patrocinador')+':</b> '+esc(st.patrocinador):'')+
+      '<br><b>'+T('Fecha')+':</b> '+fmtDate(todayISO())+
+      ' · <b>'+T('Evaluación')+':</b> '+esc(eligibility(p))+'</div>';
+  if(noC || pend){
+    h += '<div class="box"><b>'+T('Atención')+':</b> '+
+      (noC ? noC+' '+T('criterio(s) no se cumplen')+'. ' : '')+
+      (pend ? pend+' '+T('criterio(s) sin documentación suficiente')+'.' : '')+'</div>';
+  }
+  for(const [tipo, titulo] of [['inclusion', T('Criterios de inclusión')], ['exclusion', T('Criterios de exclusión')]]){
+    const its = NARR.items.filter(x=>x.tipo===tipo);
+    if(!its.length) continue;
+    h += '<h2>'+titulo+'</h2>';
+    for(const it of its){
+      const et = it.estado==='cumple' ? T('cumple') : (it.estado==='no_cumple' ? T('no cumple') : T('pendiente'));
+      h += '<div style="margin-bottom:10px;page-break-inside:avoid">'+
+        '<div style="font-size:11px;color:#4d5c6b;text-transform:uppercase;letter-spacing:.04em">'+
+          (tipo==='inclusion'?'I':'E')+it.n+' — '+esc(et)+'</div>'+
+        '<div style="font-style:italic;color:#4d5c6b;margin:1px 0 3px">'+esc(it.criterio)+'</div>'+
+        '<div>'+esc(it.texto)+'</div>'+
+        (it.cita ? '<div style="font-size:11.5px;color:#6a7887;margin-top:2px">'+T('Fuente')+': «'+esc(it.cita)+'»</div>' : '')+
+      '</div>';
+    }
+  }
+  h += '<div class="sig">'+T('Revisado y confirmado por')+': ______________________________'+
+       '<br>'+T('Aclaración y firma del investigador')+' · '+T('Fecha')+': ____/____/______</div>'+
+       '<div class="foot">'+T('Documento generado con Zonda a partir de la documentación cargada del participante. '+
+       'Las fundamentaciones son un borrador asistido: la evaluación de elegibilidad es responsabilidad del investigador.')+'</div>';
+  return h;
+}
+
+function narrTexto(p, st){
+  const L = [T('Fundamentación de criterios de elegibilidad'), ''];
+  L.push(T('Paciente')+': '+(p.codigo||'')+(p.iniciales?' ('+p.iniciales+')':''));
+  L.push(T('Protocolo')+': '+(st.codigo||'')+(st.nombre?' — '+st.nombre:''));
+  L.push(T('Fecha')+': '+fmtDate(todayISO()));
+  L.push(T('Evaluación')+': '+eligibility(p));
+  for(const [tipo, titulo] of [['inclusion', T('Criterios de inclusión')], ['exclusion', T('Criterios de exclusión')]]){
+    const its = NARR.items.filter(x=>x.tipo===tipo);
+    if(!its.length) continue;
+    L.push('', titulo.toUpperCase());
+    for(const it of its){
+      const et = it.estado==='cumple' ? T('cumple') : (it.estado==='no_cumple' ? T('no cumple') : T('pendiente'));
+      L.push('', (tipo==='inclusion'?'I':'E')+it.n+' ('+et+') — '+it.criterio);
+      L.push(it.texto);
+      if(it.cita) L.push(T('Fuente')+': «'+it.cita+'»');
+    }
+  }
+  return L.join('\n');
+}
+
+$('btnCritNarr').addEventListener('click', openNarrModal);
+$('btnNarrClose').addEventListener('click', ()=>$('narrModal').classList.add('hidden'));
+
+$('btnNarrRun').addEventListener('click', async ()=>{
+  const stEl = $('narrStatus'), btn = $('btnNarrRun');
+  btn.disabled = true;
+  try{
+    stEl.style.color='var(--muted)'; stEl.textContent = T('Leyendo los documentos del paciente...');
+    let texto = '';
+    for(const c of Array.from(document.querySelectorAll('#narrDocsBox input[type=checkbox]:checked'))){
+      const doc = (DB.docs||[]).find(d=>d.id===c.dataset.ndoc);
+      if(!doc) continue;
+      const b = await docBlob(doc);
+      if(!b) continue;
+      try{ texto += '\n=== '+doc.filename+' ===\n' + await extractTextTablas(b, doc.filename); }catch(e){}
+    }
+    if(texto.trim().length < 30) throw new Error(T('No hay texto legible en los documentos seleccionados.'));
+    const st = getStudy($('paEstudio').value);
+    const p = Object.assign({}, getPatient($('paId').value), {
+      criterios: PA_CRIT, estudioId: $('paEstudio').value, sexo: ($('paSexo')||{}).value || ''
+    });
+    let imgs = [];
+    if($('narrVisual').checked){
+      stEl.textContent = T('Convirtiendo las páginas a imagen...');
+      const elegidos = Array.from(document.querySelectorAll('#narrDocsBox input[type=checkbox]:checked'))
+        .map(c=>(DB.docs||[]).find(d=>d.id===c.dataset.ndoc)).filter(Boolean);
+      imgs = await docsImagenes(elegidos, 8);
+    }
+    stEl.textContent = T('Redactando la fundamentación (puede tardar un momento)...');
+    const items = await aiNarrarCriterios(st, texto, p, imgs);
+    NARR = { items, fecha:new Date().toISOString(), modelo:aiModelName(), obsoleta:false, critFirma:critFirma(st) };
+    renderNarr();
+    const pend = items.filter(x=>x.estado==='pendiente').length;
+    stEl.style.color = pend ? 'var(--warn)' : 'var(--ok)';
+    stEl.textContent = (pend?'⚠ ':'✔ ')+items.length+' '+T('criterios fundamentados')+
+      (pend ? ' — '+pend+' '+T('sin documentación suficiente')+'.' : '.')+
+      ' '+T('Editá lo que haga falta; se guarda con el paciente.');
+    /* queda guardada en la ficha del paciente */
+    const pac = getPatient($('paId').value);
+    if(pac){ pac.critNarrativa = NARR; try{ await Store.upsert('patients', pac); }catch(e){} }
+    auditar('paciente','fundamentacion_criterios', pac?pac.id:'', (pac&&pac.codigo)||'');
+  }catch(e){
+    stEl.style.color='var(--bad)'; stEl.textContent = '⚠ '+e.message;
+  }finally{ btn.disabled = !aiConfigured(); }
+});
+
+$('btnNarrPrint').addEventListener('click', ()=>{
+  if(!NARR) return;
+  const st = getStudy($('paEstudio').value);
+  const p = Object.assign({}, getPatient($('paId').value), { criterios: PA_CRIT, estudioId: $('paEstudio').value });
+  openReport(T('Fundamentación de criterios – ')+(p.codigo||''), narrBody(p, st));
+});
+
+$('btnNarrMail').addEventListener('click', ()=>{
+  if(!NARR) return;
+  const st = getStudy($('paEstudio').value);
+  const p = Object.assign({}, getPatient($('paId').value), { criterios: PA_CRIT, estudioId: $('paEstudio').value });
+  const txt = narrTexto(p, st);
+  location.href = 'mailto:?subject='+encodeURIComponent(T('Fundamentación de criterios – paciente ')+(p.codigo||''))+
+                  '&body='+encodeURIComponent(txt.slice(0,1800));
 });
 
 /* ================= INFORMES IMPRIMIBLES (PDF por impresión del navegador) ================= */
@@ -5852,12 +6498,34 @@ $('btnMissingPdf').addEventListener('click', ()=>{
 });
 
 /* ---------- análisis por visita y orden de laboratorio ---------- */
-const LAB_RE = /(laboratorio|hemograma|hematolog|bioqu[ií]mic|qu[ií]mica|orina|urianalisis|urin[aá]lisis|sedimento|creatinin|hep[aá]tic|hepatograma|transaminas|bilirrubin|fosfatasa|renal|urea|uremia|clearance|glucemia|glucosa|lipid|colesterol|triglic[eé]rid|serolog|hormon|tsh|t3|t4|hba1c|coagulaci[oó]n|kptt|rin\b|proteinuria|prote[ií]n|album[ií]n|proteinograma|complemento|c3\b|c4\b|ana\b|anti.?dna|anti.?ssa|anti.?ssb|factor reumatoide|igg|igm|iga\b|test de embarazo|beta.?hcg|hcg|pcr|vsg|eritrosediment|ferritina|vitamina|magnesio|calcemia|natremia|kalemia|marcador|anticuerpo|serie roja|ionograma|electrolito|[aá]cido [uú]rico|amilasa|lipasa|troponina|farmacocin[eé]tic|pk\b|inmunogeni|concentraciones de|niveles de|ada y nab|anticuerpos neutralizantes|en suero|en plasma|muestra de sangre|extracci[oó]n de sangre|panel|screening de drogas)/i;
+const LAB_RE = /(laboratorio|hemograma|hematolog|bioqu[ií]mic|qu[ií]mica|orina|uro?an[aá]lisis|urianalisis|urin[aá]lisis|sedimento|creatinin|hep[aá]tic|hepatograma|transaminas|bilirrubin|fosfatasa|renal|urea|uremia|clearance|glucemia|glucosa|lipid|colesterol|triglic[eé]rid|serolog|hormon|tsh|t3|t4|hba1c|coagulaci[oó]n|\baptt\b|\bkptt\b|\bptt\b|\btp\b|\binr\b|protrombina|tromboplastina|coombs|proteinuria|prote[ií]n|album[ií]n|proteinograma|complemento|\bc3\b|\bc4\b|\bana\b|anti.?ds.?dna|anti.?dna|anti.?ssa|anti.?ssb|anti.?sm\b|anti.?rnp|\bapla\b|antifosfol[ií]pid|anticoagulante l[uú]pico|\bcic\b|complejos inmunes|factor reumatoide|\bigg\b|\bigm\b|\biga\b|\bige\b|inmunoglobulin|isotipo|subclase|interfer[oó]n|\bifn\b|\bada\b|\badas\b|anticuerpos antif[aá]rmaco|inmunogenicidad|inmunogenia|test de embarazo|beta.?hcg|\bhcg\b|gonadotrofina|\bpcr\b|\bvsg\b|eritrosediment|ferritina|vitamina|magnesio|calcemia|natremia|kalemia|marcador|autoanticuerpo|anticuerpo|serie roja|ionograma|electrolito|[aá]cido [uú]rico|amilasa|lipasa|troponina|farmacocin[eé]tic|\bpk\b|biomarcador|citometr[ií]a|\bpbmc\b|\brna\b|\barn\b|\bdna\b|\badn\b|sangre entera|gen[eé]tic|genotip|concentraciones de|niveles de|anticuerpos neutralizantes|en suero|s[eé]ric|en plasma|muestra de sangre|extracci[oó]n de sangre|venopunci[oó]n|panel|screening de drogas|drogas de abuso|alcohol|nicotina|cotinina)/i
 const COMP_RE = /(ecg|electrocardiograma|radiograf|rx\b|tomograf|resonancia|ecograf|ecocardiograma|espirometr[ií]a|densitometr[ií]a|holter|endoscop|biopsia)/i;
 
-/* tareas marcadas manualmente por el usuario como análisis (clave: idVisita|tarea) */
+/* ================= CLASIFICACIÓN DE PROCEDIMIENTOS =================
+   Qué procedimiento va a cada orden (laboratorio, cardiología, imágenes, otros)
+   se detecta por el nombre, pero ninguna regla acierta siempre: hay análisis que
+   no parecen y estudios que sí lo parecen y no lo son. Por eso la detección
+   automática es solo la propuesta inicial: lo que el usuario decide queda
+   guardado por nombre de procedimiento y manda sobre el automático.
+   Se guarda por NOMBRE, no por visita ni por estudio: una vez que definís que
+   «Inmunogenicidad» es laboratorio, vale para todas las visitas de todos los
+   protocolos. */
+
+const CLASIF_OPC = {
+  lab:    'Laboratorio',
+  cardio: 'Cardiología',
+  imagen: 'Imágenes',
+  otros:  'Otro estudio complementario',
+  no:     'No es un análisis'
+};
+
+/* decisiones del usuario: { claveDelProcedimiento: 'lab'|'cardio'|'imagen'|'otros'|'no' } */
+let PROC_CLASIF = loadJSON('ecx_procclasif') || {};
+/* compatibilidad: lo que se había marcado antes como análisis suelto */
 let LAB_EXTRA = loadJSON('ecx_labextra') || {};
 function labKey(v,t){ return (v.id||v.nombre)+'|'+t; }
+function procKey(t){ return normKey(t); }
+
 /* los complementarios van a servicios distintos: cada uno lleva su propia orden */
 const CARDIO_RE = /(ecg|electrocardiograma|holter|ecocardiograma|ergometr[ií]a|presurometr[ií]a|mapa\b|prueba de esfuerzo)/i;
 const IMAGEN_RE = /(radiograf|rx\b|t[oó]rax|tomograf|tac\b|resonancia|rmn?\b|ecograf|ultrasonido|densitometr[ií]a|centellograf|mamograf|angiograf)/i;
@@ -5867,20 +6535,66 @@ const DESTINOS = {
   imagen: { n:'Diagnóstico por imágenes', titulo:'Orden de diagnóstico por imágenes', servicio:'Servicio de Diagnóstico por Imágenes' },
   otros:  { n:'Otros estudios complementarios', titulo:'Orden de estudios complementarios', servicio:'Servicio correspondiente' }
 };
-function destinoDe(t){
+
+/* propuesta automática, por el nombre del procedimiento */
+function clasifAuto(t){
   if(CARDIO_RE.test(t)) return 'cardio';
   if(IMAGEN_RE.test(t)) return 'imagen';
-  return 'otros';
+  if(COMP_RE.test(t))   return 'otros';
+  if(LAB_RE.test(t))    return 'lab';
+  return 'no';
 }
+/* clasificación vigente: manda la decisión del usuario si existe */
+function clasifDe(t){
+  const k = procKey(t);
+  if(PROC_CLASIF[k]) return PROC_CLASIF[k];
+  return clasifAuto(t);
+}
+function clasifEsManual(t){ return !!PROC_CLASIF[procKey(t)]; }
+function clasifFijar(t, valor){
+  const k = procKey(t);
+  if(!k) return;
+  if(valor) PROC_CLASIF[k] = valor; else delete PROC_CLASIF[k];
+  saveJSON('ecx_procclasif', PROC_CLASIF);
+}
+/* se importa una sola vez lo que estaba marcado con el mecanismo anterior */
+(function migrarLabExtra(){
+  if(loadJSON('ecx_procclasif_mig')) return;
+  let n = 0;
+  for(const k of Object.keys(LAB_EXTRA||{})){
+    const t = k.slice(k.indexOf('|')+1);
+    if(t && !PROC_CLASIF[procKey(t)]){ PROC_CLASIF[procKey(t)] = 'lab'; n++; }
+  }
+  if(n) saveJSON('ecx_procclasif', PROC_CLASIF);
+  saveJSON('ecx_procclasif_mig', true);
+})();
+
+/* todos los procedimientos distintos de un estudio, con su clasificación */
+function procsDeEstudio(st){
+  const vistos = new Map();
+  for(const v of (st.visitas||[])){
+    for(const t of (v.tareas||[])){
+      const nombre = String(t||'').trim();
+      if(nombre.length < 2) continue;
+      const k = procKey(nombre);
+      if(!k) continue;
+      if(!vistos.has(k)) vistos.set(k, { nombre, visitas:1 });
+      else vistos.get(k).visitas++;
+    }
+  }
+  return Array.from(vistos.values())
+    .map(x=>Object.assign(x, { clasif:clasifDe(x.nombre), manual:clasifEsManual(x.nombre) }))
+    .sort((a,b)=>a.nombre.localeCompare(b.nombre));
+}
+
 function labsOfVisit(v){
-  const tareas = v.tareas||[];
   const lab = [], comp = [], otras = [];
   const grupos = { lab:[], cardio:[], imagen:[], otros:[] };
-  for(const t of tareas){
-    if(LAB_EXTRA[labKey(v,t)]) { lab.push(t); grupos.lab.push(t); continue; }
-    if(COMP_RE.test(t)){ comp.push(t); grupos[destinoDe(t)].push(t); }
-    else if(LAB_RE.test(t)){ lab.push(t); grupos.lab.push(t); }
-    else otras.push(t);
+  for(const t of (v.tareas||[])){
+    const c = clasifDe(t);
+    if(c === 'no'){ otras.push(t); continue; }
+    if(c === 'lab'){ lab.push(t); grupos.lab.push(t); }
+    else { comp.push(t); grupos[c].push(t); }
   }
   return { lab, comp, otras, grupos };
 }
@@ -5896,6 +6610,111 @@ function fillLabSelectors(){
     pacs.map(p=>'<option value="'+p.id+'">'+esc(p.codigo)+(p.iniciales?' ('+esc(p.iniciales)+')':'')+'</option>').join('');
   if(prevP && pacs.some(p=>p.id===prevP)) $('labPatient').value = prevP;
 }
+
+/* ---------- panel de clasificación de procedimientos ---------- */
+let CLASIF_TMP = {};          /* cambios en curso, se confirman al aplicar */
+
+function openClasifModal(){
+  const st = getStudy($('labStudy').value);
+  if(!st){ toast(T('Elegí un estudio primero.')); return; }
+  if(!procsDeEstudio(st).length){
+    toast(T('Este protocolo no tiene procedimientos cargados en sus visitas.')); return;
+  }
+  CLASIF_TMP = {};
+  $('clasifBuscar').value = '';
+  $('clasifFiltro').value = '';
+  renderClasif();
+  $('clasifModal').classList.remove('hidden');
+}
+
+function clasifActual(nombre){
+  const k = procKey(nombre);
+  return (k in CLASIF_TMP) ? CLASIF_TMP[k] : clasifDe(nombre);
+}
+
+function renderClasif(){
+  const st = getStudy($('labStudy').value);
+  if(!st) return;
+  const todos = procsDeEstudio(st);
+  const q = normKey($('clasifBuscar').value||'');
+  const f = $('clasifFiltro').value;
+  const lista = todos.filter(x=>{
+    if(q && !normKey(x.nombre).includes(q)) return false;
+    const c = clasifActual(x.nombre);
+    if(f==='pend') return !clasifEsManual(x.nombre) && !(procKey(x.nombre) in CLASIF_TMP);
+    if(f==='lab')  return c==='lab';
+    if(f==='comp') return c==='cardio'||c==='imagen'||c==='otros';
+    if(f==='no')   return c==='no';
+    return true;
+  });
+
+  /* resumen de cómo queda la distribución */
+  const cnt = { lab:0, cardio:0, imagen:0, otros:0, no:0 };
+  todos.forEach(x=>{ cnt[clasifActual(x.nombre)]++; });
+  const sinRevisar = todos.filter(x=>!clasifEsManual(x.nombre) && !(procKey(x.nombre) in CLASIF_TMP)).length;
+  $('clasifResumen').innerHTML =
+    '<div class="banner '+(sinRevisar?'warn':'ok')+'">'+
+      '<b>'+todos.length+'</b> '+T('procedimientos distintos')+': '+
+      cnt.lab+' '+T('laboratorio')+' · '+cnt.cardio+' '+T('cardiología')+' · '+
+      cnt.imagen+' '+T('imágenes')+' · '+cnt.otros+' '+T('otros')+' · '+cnt.no+' '+T('no son análisis')+'.'+
+      (sinRevisar ? '<br>⚠ '+sinRevisar+' '+T('con la clasificación automática sin revisar: son los que conviene mirar.') : '')+
+    '</div>';
+
+  $('clasifLista').innerHTML = lista.length ? lista.map(x=>{
+    const c = clasifActual(x.nombre);
+    const manual = clasifEsManual(x.nombre) || (procKey(x.nombre) in CLASIF_TMP);
+    return '<div class="doc-line" style="align-items:center">'+
+      '<div class="dinfo">'+esc(x.nombre)+
+        ' <span class="muted small">('+x.visitas+' '+(x.visitas===1?T('visita'):T('visitas'))+')</span>'+
+        (manual ? ' <span class="chip acc">'+T('definido')+'</span>'
+                : ' <span class="chip gray">'+T('automático')+'</span>')+
+      '</div>'+
+      '<select data-cp="'+esc(procKey(x.nombre))+'" data-nom="'+esc(x.nombre)+'" style="width:250px">'+
+        Object.entries(CLASIF_OPC).map(([k,n])=>
+          '<option value="'+k+'"'+(c===k?' selected':'')+'>'+T(n)+'</option>').join('')+
+      '</select></div>';
+  }).join('') : '<div class="empty">'+T('Ningún procedimiento coincide con el filtro.')+'</div>';
+
+  $('clasifLista').querySelectorAll('select[data-cp]').forEach(sel=>{
+    sel.addEventListener('change', e=>{
+      CLASIF_TMP[e.target.dataset.cp] = e.target.value;
+      renderClasif();
+    });
+  });
+}
+
+$('btnClasifProc').addEventListener('click', openClasifModal);
+$('btnClasifClose').addEventListener('click', ()=>$('clasifModal').classList.add('hidden'));
+$('clasifBuscar').addEventListener('input', renderClasif);
+$('clasifFiltro').addEventListener('change', renderClasif);
+
+$('btnClasifAplicar').addEventListener('click', ()=>{
+  const st = getStudy($('labStudy').value);
+  let n = 0;
+  /* se guarda la decisión de TODOS los procedimientos mostrados, no solo los
+     tocados: así el usuario confirma también lo que el automático propuso bien
+     y deja de aparecer como «sin revisar» */
+  for(const x of procsDeEstudio(st)){
+    const k = procKey(x.nombre);
+    const valor = (k in CLASIF_TMP) ? CLASIF_TMP[k] : clasifDe(x.nombre);
+    if(!clasifEsManual(x.nombre) || (k in CLASIF_TMP)){ clasifFijar(x.nombre, valor); n++; }
+  }
+  auditar('estudio','clasificacion_procedimientos', st?st.id:'', (st?st.codigo+': ':'')+n+' procedimientos');
+  CLASIF_TMP = {};
+  $('clasifModal').classList.add('hidden');
+  renderLabs();
+  toast(T('Clasificación guardada.')+' '+n+' '+T('procedimientos.'));
+});
+
+$('btnClasifReset').addEventListener('click', ()=>{
+  const st = getStudy($('labStudy').value);
+  if(!st) return;
+  if(!confirm(T('Se borran tus decisiones para los procedimientos de este protocolo y vuelve la propuesta automática. ¿Continuar?'))) return;
+  for(const x of procsDeEstudio(st)) clasifFijar(x.nombre, null);
+  CLASIF_TMP = {};
+  renderClasif();
+  toast(T('Se restauró la clasificación automática.'));
+});
 
 function renderLabs(){
   fillLabSelectors();
@@ -6247,6 +7066,7 @@ const FEAT_EXTRA = {
   'cal.monitor':{ g:'cal', n:'Simulacro de monitoreo' },
   'cal.firmas':{ g:'cal', n:'Firmas y registros faltantes' },
   'ia.evalCriterios':{ g:'ia', n:'Evaluación automática de criterios' },
+  'ia.narrCriterios':{ g:'ia', n:'Fundamentación de criterios por paciente' },
   'ia.importProt':{ g:'ia', n:'Importar criterios y visitas del protocolo' },
   'ia.flowchart':{ g:'ia', n:'Leer la tabla de procedimientos' },
   'ia.askCi':{ g:'ia', n:'Consultar el consentimiento informado' },
@@ -6319,6 +7139,7 @@ function applyFeatures(){
   featNode('btnImportVis','ia.importProt');
   featNode('btnStudyAsk','ia.askDocs');
   featNode('btnEvalCrit','ia.evalCriterios');
+  featNode('btnCritNarr','ia.narrCriterios');
   featNode('btnMissingPdf','rep.faltantes');
   featNode('btnAgIcs','ag.ics');
   featNode('btnAgPrint','ag.agendaPrint');
@@ -9248,7 +10069,7 @@ $('btnCopySql').addEventListener('click', async ()=>{
 $('btnExport').addEventListener('click', ()=>{
   const data = { app:'evoluciones-ec', version:4, exportado:new Date().toISOString(),
                  studies:DB.studies, patients:DB.patients, visits:DB.visits, docs:DB.docs||[],
-                 logs:LOGS, labExtra:LAB_EXTRA, checklists:CHK, features:FEAT, auditoria:AUDIT };
+                 logs:LOGS, labExtra:LAB_EXTRA, procClasif:PROC_CLASIF, checklists:CHK, features:FEAT, auditoria:AUDIT };
   const blob = new Blob([JSON.stringify(data,null,2)], { type:'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -9282,6 +10103,7 @@ $('importFile').addEventListener('change', async e=>{
     if(data.labExtra && typeof data.labExtra==='object'){
       LAB_EXTRA = Object.assign(LAB_EXTRA, data.labExtra);
       saveJSON('ecx_labextra', LAB_EXTRA);
+      if(data.procClasif){ PROC_CLASIF = Object.assign(PROC_CLASIF, data.procClasif); saveJSON('ecx_procclasif', PROC_CLASIF); }
     }
     if(data.checklists && typeof data.checklists==='object'){
       CHK = Object.assign(CHK, data.checklists); saveJSON('ecx_chk', CHK);
