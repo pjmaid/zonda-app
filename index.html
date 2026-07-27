@@ -1025,7 +1025,8 @@ details>summary{color:var(--acc-dark)}
     <div class="row" style="margin-top:8px">
       <div style="flex:0 0 340px"><label>Cómo leer el PDF</label>
         <select id="flowMethod">
-          <option value="visual">Visual: cada página como imagen (recomendado)</option>
+          <option value="geom">Geometría del PDF: exacto y sin costo (recomendado)</option>
+          <option value="visual">Visual con IA: cada página como imagen</option>
           <option value="texto">Solo el texto del PDF (método anterior)</option>
         </select>
       </div>
@@ -5045,6 +5046,173 @@ async function aiFlowchartVisual(lote, visitasPrevias){
 }
 
 /* elige las páginas que contienen la tabla y las manda por lotes */
+/* ================= LECTOR GEOMÉTRICO DE LA TABLA DE PROCEDIMIENTOS =================
+   Reconstruye la matriz leyendo las coordenadas reales de cada palabra del PDF:
+   ubica la fila de encabezado con las visitas, y asigna cada marca (X) a la
+   columna cuyo centro le queda más cerca. No usa IA, no consume créditos y no
+   se equivoca por alineación de espacios. Solo funciona con PDF con texto
+   (no escaneados) y con tablas de una marca por celda, que es el formato
+   habitual del cronograma de actividades. */
+
+const FLOW_MARCA = /^[xX×✓✔●•■□◆]$/;
+const FLOW_COL   = /^(?:D?-?\d+\s*[a-z]?\*{0,2}|ET|EF|SFU|SF|FU|EOS|EOT|V\d+)$/i;
+
+async function flowPaginaGeom(page){
+  const vp = page.getViewport({ scale:1 });
+  const tc = await page.getTextContent();
+  const palabras = [];
+  for(const it of tc.items){
+    const s = (it.str||'').trim();
+    if(!s) continue;
+    const m = pdfjsLib.Util.transform(vp.transform, it.transform);
+    const alto = Math.hypot(m[2], m[3]) || 10;
+    const ancho = (it.width||0) * Math.abs(vp.transform[0] || 1);
+    /* se conserva el item entero: partirlo rompe nombres como "PGIS-Fatiga" */
+    palabras.push({ x0:m[4], x1:m[4]+ancho, x:m[4]+ancho/2, y:m[5], t:s, h:alto, f:it.fontName||'' });
+  }
+  return palabras;
+}
+
+/* une los fragmentos de una fila respetando la separación real: si dos items
+   están pegados en el PDF no se les mete un espacio, y así "FACIT" + "-" +
+   "Fatiga" vuelve a ser "FACIT-Fatiga" y no "FACIT - Fatiga". */
+function flowUnir(items){
+  if(!items.length) return '';
+  const o = items.slice().sort((a,b)=>a.x0-b.x0);
+  let t = o[0].t;
+  for(let i=1;i<o.length;i++){
+    const hueco = o[i].x0 - o[i-1].x1;
+    const umbral = (o[i].h||10) * 0.22;
+    t += (hueco > umbral ? ' ' : '') + o[i].t;
+  }
+  return t.replace(/\s+/g,' ').trim();
+}
+
+function flowAgruparFilas(palabras){
+  if(!palabras.length) return [];
+  const alturas = palabras.map(p=>p.h).sort((a,b)=>a-b);
+  const hMed = alturas[Math.floor(alturas.length/2)] || 10;
+  const tol = Math.max(2, hMed*0.45);
+  const orden = palabras.slice().sort((a,b)=>(a.y-b.y)||(a.x-b.x));
+  const filas = []; let cur=[orden[0]], baseY=orden[0].y;
+  for(let i=1;i<orden.length;i++){
+    if(Math.abs(orden[i].y-baseY) <= tol) cur.push(orden[i]);
+    else { filas.push(cur.sort((a,b)=>a.x-b.x)); cur=[orden[i]]; baseY=orden[i].y; }
+  }
+  filas.push(cur.sort((a,b)=>a.x-b.x));
+  return filas;
+}
+
+/* nombre de la columna -> día del protocolo */
+function flowDiaDeColumna(rot, unidad){
+  const t = String(rot||'').trim();
+  if(/^(ET|EF|SFU|SF|FU|EOS|EOT)$/i.test(t)) return null;
+  const m = t.match(/-?\d+/);
+  if(!m) return null;
+  const n = parseInt(m[0],10);
+  if(unidad==='dia') return n;
+  return n===0 ? 0 : n*7;          /* semanas -> días */
+}
+
+async function flowRunGeometrico(blob, st){
+  await ensurePdfJs();
+  const doc = await pdfjsLib.getDocument({ data: await blob.arrayBuffer() }).promise;
+  const total = doc.numPages;
+  if(total > 400) throw new Error(T('El PDF es demasiado extenso para la lectura por geometría.'));
+  st.textContent = T('Leyendo la geometría de la tabla...');
+
+  const listas = [], paginas = [];
+  let unidad = 'semana', ventana = 0, textoTodo = '';
+
+  for(let i=1;i<=total;i++){
+    const pg = await doc.getPage(i);
+    const palabras = await flowPaginaGeom(pg);
+    if(!palabras.length) continue;
+    const filas = flowAgruparFilas(palabras);
+    const plano = filas.map(f=>f.map(w=>w.t).join(' ')).join('\n');
+    textoTodo += plano + '\n';
+
+    /* ventana entre visitas, declarada una sola vez en el encabezado */
+    const mv = plano.match(/±\s*(\d+)\s*d[ií]as?/i);
+    if(mv && !ventana) ventana = parseInt(mv[1],10);
+
+    /* fila de encabezado: menciona visita/semana/día y trae varias columnas */
+    let hdr=null, hy=null;
+    for(const f of filas){
+      const txt = f.map(w=>w.t).join(' ');
+      if(!/(semana|visita|d[ií]a|week|visit|day)/i.test(txt)) continue;
+      const cols = f.filter(w=>FLOW_COL.test(w.t));
+      if(cols.length>=4){
+        /* columnas repartidas de forma regular: descarta párrafos con números sueltos */
+        const xs = cols.map(c=>c.x);
+        const pasos = xs.slice(1).map((x,k)=>x-xs[k]);
+        const medio = pasos.slice().sort((a,b)=>a-b)[Math.floor(pasos.length/2)];
+        if(medio>4 && pasos.filter(p=>Math.abs(p-medio) > medio*1.6).length <= pasos.length*0.35){
+          hdr = cols; hy = f[0].y;
+          if(/d[ií]a|day/i.test(txt) && !/semana|week/i.test(txt)) unidad='dia';
+          break;
+        }
+      }
+    }
+    if(!hdr) continue;
+    paginas.push(i);
+
+    const paso = (hdr[hdr.length-1].x - hdr[0].x) / Math.max(1, hdr.length-1);
+    const tolX = paso*0.55;
+    const izq  = hdr[0].x - tolX;
+
+    const visitas = hdr.map(h=>({ nombre:h.t, dia:flowDiaDeColumna(h.t, unidad),
+                                  ventanaAntes:ventana, ventanaDespues:ventana, procedimientos:[] }));
+
+    /* Primero se separan las filas con marcas (datos) de las que no las tienen.
+       Una fila sin marcas puede ser el título de una sección —que hay que
+       descartar— o la continuación del nombre de un procedimiento partido en
+       dos líneas —que hay que unir—. Se distinguen por la tipografía: los
+       títulos de sección van en una fuente distinta a la de los datos. */
+    const datos = [], sueltas = [];
+    for(const f of filas){
+      if(f[0].y <= hy) continue;
+      const marcas = f.filter(w=>FLOW_MARCA.test(w.t) && w.x >= izq);
+      const etiqW  = f.filter(w=>w.x0 < izq);
+      const etiq   = flowUnir(etiqW);
+      if(!etiq && !marcas.length) continue;
+      if(/^(fase|per[ií]odo|notas?|semana|visita)\b/i.test(etiq)) continue;
+      if(marcas.length) datos.push({ y:f[0].y, h:f[0].h, etiq, marcas, f:(etiqW[0]||f[0]).f });
+      else if(etiq && etiq.length<90) sueltas.push({ y:f[0].y, h:f[0].h, etiq, f:(etiqW[0]||f[0]).f });
+    }
+    /* tipografía dominante de las filas de datos */
+    const cuenta = {};
+    datos.forEach(d=>{ cuenta[d.f]=(cuenta[d.f]||0)+1; });
+    const fuenteDatos = Object.keys(cuenta).sort((a,b)=>cuenta[b]-cuenta[a])[0] || '';
+
+    for(const su of sueltas){
+      if(fuenteDatos && su.f && su.f !== fuenteDatos) continue;   /* título de sección */
+      let mejor=null, dmin=Infinity;
+      for(const d of datos){
+        const dist = Math.abs(d.y - su.y);
+        if(dist < dmin){ dmin = dist; mejor = d; }
+      }
+      if(!mejor || dmin > su.h*1.7) continue;
+      mejor.etiq = (su.y < mejor.y) ? (su.etiq+' '+mejor.etiq) : (mejor.etiq+' '+su.etiq);
+    }
+
+    for(const d of datos){
+      const nombre = d.etiq.replace(/\s+/g,' ').trim();
+      if(nombre.length<3) continue;
+      for(const m of d.marcas){
+        let mejor=0, dmin=Infinity;
+        hdr.forEach((h,k)=>{ const dd=Math.abs(h.x-m.x); if(dd<dmin){ dmin=dd; mejor=k; } });
+        if(dmin<=tolX) visitas[mejor].procedimientos.push(nombre);
+      }
+    }
+    if(visitas.some(v=>v.procedimientos.length)) listas.push(visitas);
+  }
+
+  if(!listas.length)
+    throw new Error(T('No se encontró una tabla con columnas de visita en este PDF. Probá con la lectura visual.'));
+  return { listas, errores:[], nPartes:listas.length, texto:textoTodo, paginas, total };
+}
+
 async function flowRunVisual(blob, st){
   await ensurePdfJs();
   const doc = await pdfjsLib.getDocument({ data: await blob.arrayBuffer() }).promise;
@@ -5122,18 +5290,17 @@ function openFlowModal(){
                    .sort((a,b)=>String(b.subido||'').localeCompare(String(a.subido||'')))[0];
   if(prot){ $('flowSource').value = 'doc'; $('flowDoc').value = prot.id; }
   else $('flowSource').value = 'file';
-  $('flowMethod').value = 'visual';
+  $('flowMethod').value = 'geom';
   onFlowSource();
   $('flowStatus').textContent = '';
   $('flowResults').classList.add('hidden');
-  $('flowIntro').innerHTML = !aiConfigured()
-    ? '<b>'+T('Necesitás configurar una clave de API en Configuración para leer la tabla de procedimientos.')+'</b>'
-    : (prot
+  $('flowIntro').innerHTML = (prot
         ? T('La tabla de procedimientos se toma del protocolo adjunto; la IA busca sola las páginas de la tabla, las lee como imagen y arma la matriz de procedimientos por visita para que la revises antes de aplicarla.')+
           ' <b>'+esc(prot.filename)+'</b>'+(prot.version?' ('+esc(prot.version)+')':'')+'. '+
           T('Apretá «Leer la tabla». También podés elegir otro documento o subir un PDF.')
-        : T('Este estudio no tiene el protocolo adjunto. Subí el PDF de la tabla acá, o mejor: adjuntá el protocolo en «Documentos del estudio» y la próxima vez la tabla se toma de ahí automáticamente.'));
-  $('btnFlowAnalyze').disabled = !aiConfigured();
+        : T('Este estudio no tiene el protocolo adjunto. Subí el PDF de la tabla acá, o mejor: adjuntá el protocolo en «Documentos del estudio» y la próxima vez la tabla se toma de ahí automáticamente.'))+
+    (aiConfigured() ? '' : ' <span class="chip warn">'+T('Sin clave de IA: se usa la lectura por geometría, que no la necesita.')+'</span>');
+  $('btnFlowAnalyze').disabled = false;
   $('flowModal').classList.remove('hidden');
 }
 function onFlowSource(){
@@ -5151,7 +5318,8 @@ function onFlowMethod(){
   const v = $('flowSource').value, m = $('flowMethod').value;
   $('flowMethodHelp').textContent =
     v==='paste' ? T('Con texto pegado se usa el método de texto.')
-    : m==='visual' ? T('Recomendado: lee la geometría de la tabla y funciona con PDF escaneados. Si falla, cae automáticamente al método de texto.')
+    : m==='geom' ? T('Lee las coordenadas reales de la tabla y asigna cada X a su columna. Es exacto y no consume créditos de IA. Requiere un PDF con texto (no escaneado); si falla, cae solo a la lectura visual.')
+    : m==='visual' ? T('La IA mira cada página como imagen. Sirve para PDF escaneados. Consume créditos y puede equivocarse en tablas grandes.')
     : T('Solo para PDF con texto y tablas simples: reconstruye las columnas por espacios y puede perder la alineación.');
 }
 $('flowSource').addEventListener('change', onFlowSource);
@@ -5181,14 +5349,26 @@ $('btnFlowAnalyze').addEventListener('click', async ()=>{
       filename = doc.filename;
     }
     const esPdf = !!blob && ((filename||'').toLowerCase().endsWith('.pdf') || (blob.type||'').toLowerCase().includes('pdf'));
-    const usarVisual = esPdf && $('flowMethod').value !== 'texto';
+    const modo = $('flowMethod').value;
+    const usarGeom   = esPdf && modo === 'geom';
+    const usarVisual = esPdf && modo !== 'texto' && aiConfigured();
 
     let listas=[], errores=[], nPartes=0, texto='', metodo='', extra='';
-    if(usarVisual){
+    /* 1) geometría del PDF: exacto, determinista y sin costo */
+    if(usarGeom){
+      try{
+        const r = await flowRunGeometrico(blob, st);
+        listas=r.listas; nPartes=r.nPartes; texto=r.texto;
+        metodo = T('geometría del PDF');
+        extra = ' '+T('Páginas con tabla')+': '+r.paginas.join(', ')+'/'+r.total+'.';
+      }catch(e){ errores.push(e.message); }
+    }
+    /* 2) respaldo: la IA mira las páginas como imagen */
+    if(!listas.some(l=>l&&l.length) && usarVisual){
       try{
         const r = await flowRunVisual(blob, st);
-        listas=r.listas; errores=r.errores; nPartes=r.nPartes; texto=r.texto;
-        metodo = T('lectura visual del PDF');
+        listas=r.listas; errores=errores.concat(r.errores); nPartes=r.nPartes; texto=r.texto;
+        metodo = usarGeom ? T('lectura visual (respaldo)') : T('lectura visual del PDF');
         extra = ' '+T('Páginas leídas')+': '+r.paginas.join(', ')+'/'+r.total+'.'+
                 (r.recortado ? ' ⚠ '+T('Se leyeron solo las primeras páginas con tabla; si falta alguna, subila aparte.') : '');
       }catch(e){ errores.push(e.message); }
@@ -5199,7 +5379,7 @@ $('btnFlowAnalyze').addEventListener('click', async ()=>{
       try{
         const r = await flowRunTexto(blob, filename, pasteTxt, st);
         listas=r.listas; errores=previos.concat(r.errores); nPartes=r.nPartes; texto=r.texto;
-        metodo = usarVisual ? T('lectura del texto (respaldo)') : T('lectura del texto');
+        metodo = (usarGeom||usarVisual) ? T('lectura del texto (respaldo)') : T('lectura del texto');
       }catch(e){
         /* si falló el respaldo, el error que importa es el del método principal */
         throw new Error(previos.length ? previos[0] : e.message);
@@ -5221,7 +5401,7 @@ $('btnFlowAnalyze').addEventListener('click', async ()=>{
                      (!FLOW.procs.length ? ' '+T('No se reconoció ningún procedimiento: agregalos abajo a mano.') : '');
   }catch(e){
     st.style.color='var(--bad)'; st.textContent='⚠ '+e.message;
-  }finally{ btn.disabled = !aiConfigured(); }
+  }finally{ btn.disabled = false; }
 });
 
 function renderFlowMatrix(){
