@@ -995,6 +995,10 @@ details>summary{color:var(--acc-dark)}
       <button id="btnCloseCi">✕ Cerrar</button>
     </div>
     <div id="ciModalMeta" class="muted small" style="margin-bottom:8px"></div>
+    <details id="ciFuentesBox" style="margin-bottom:8px">
+      <summary class="small" style="cursor:pointer;color:var(--acc-dark)">📚 Fuentes consultadas <span id="ciFuentesN" class="chip gray"></span></summary>
+      <div id="ciFuentes" class="small" style="padding:6px 0 0 4px"></div>
+    </details>
     <div id="ciModalNotice"></div>
     <div id="ciChat" style="max-height:46vh;overflow:auto;margin-bottom:10px"></div>
     <div id="ciSuggest" class="small" style="margin-bottom:8px"></div>
@@ -4256,7 +4260,7 @@ function parseVisits(raw){
 
 /* --- extracción del protocolo con IA (mucho más confiable que las reglas de texto) --- */
 function protocolChunks(text, maxLen){
-  maxLen = maxLen || 90000;
+  maxLen = maxLen || aiCtxMax();
   text = normText(text);
   if(text.length <= maxLen) return text;
   const keys = [/criterios?\s+de\s+inclusi[oó]n/gi, /criterios?\s+de\s+exclusi[oó]n/gi,
@@ -4337,6 +4341,13 @@ const AI_PROVIDERS = {
   openai:   { nombre:'OpenAI (ChatGPT)',   modelo:'gpt-5.1',          keyPh:'sk-...',     consola:'platform.openai.com/api-keys' }
 };
 function aiProvider(){ return AI_PROVIDERS[CFG.aiProvider] ? CFG.aiProvider : 'anthropic'; }
+
+/* Cuánto texto acepta de una sola vez cada proveedor, en caracteres, dejando
+   margen para el prompt y la respuesta. Los modelos actuales admiten un
+   protocolo entero: no hace falta trocearlo ni recortarlo, y recortarlo es
+   justamente lo que hacía que las respuestas fueran inservibles. */
+const AI_CTX = { gemini: 2000000, openai: 1000000, anthropic: 600000 };
+function aiCtxMax(){ return AI_CTX[aiProvider()] || 500000; }
 function aiModelName(){ return (CFG.aiModel||'').trim() || AI_PROVIDERS[aiProvider()].modelo; }
 
 function aiHttpError(status, j){
@@ -4446,7 +4457,7 @@ function seccionCriterios(texto, tipo){
 async function aiCriteriosSeccion(texto, tipo, imagenes){
   const cual = tipo==='inclusion' ? 'INCLUSIÓN' : 'EXCLUSIÓN';
   const seccion = seccionCriterios(texto, tipo);
-  const doc = protocolChunks(seccion || texto, 60000);
+  const doc = protocolChunks(seccion || texto, aiCtxMax());
   const prompt =
     'Sos un asistente de un equipo de investigación clínica. Del siguiente fragmento de protocolo, extraé ÚNICAMENTE los criterios de '+cual+'.\n\n'+
     'FRAGMENTO:\n<<<\n'+doc+'\n>>>\n\n'+
@@ -4473,7 +4484,7 @@ async function aiCriteriosSeccion(texto, tipo, imagenes){
 
 /* Las visitas y el cronograma, en su propia consulta. */
 async function aiVisitasProtocolo(texto, imagenes){
-  const doc = protocolChunks(texto, 70000);
+  const doc = protocolChunks(texto, aiCtxMax());
   const prompt =
     'Sos un asistente de un equipo de investigación clínica. Del siguiente protocolo, extraé el calendario de visitas.\n\n'+
     'PROTOCOLO:\n<<<\n'+doc+'\n>>>\n\n'+
@@ -4882,6 +4893,8 @@ function openStudyAsk(stId){
   $('ciModalFoot').textContent = T('Las respuestas salen únicamente del texto de los documentos del estudio, cada una con su cita y el documento de origen. Ante cualquier duda, consultá el documento original.');
   $('ciModalMeta').innerHTML = '<b>'+esc(st.codigo||'')+'</b> — '+docs.length+' '+T('documentos')+': '+
     docs.map(d=>esc(DOC_TIPOS[d.tipo]||d.tipo)+' («'+esc(d.filename)+'»)').join(' · ');
+  CI_DOCS.forEach(d=>{ delete d._off; });
+  renderCiFuentes([]);
   ciModalShow(DOCS_SUGERIDAS);
 }
 $('btnCloseCi').addEventListener('click', ()=>$('ciModal').classList.add('hidden'));
@@ -4892,6 +4905,33 @@ $('btnStudyAsk').addEventListener('click', ()=>{
   if(!stId){ toast(T('Guardá el estudio primero para poder adjuntar documentos.')); return; }
   openStudyAsk(stId);
 });
+
+/* muestra qué documentos se están consultando y cuánto texto se leyó de cada
+   uno: sin eso el usuario no sabe si la respuesta salió del documento entero o
+   de un pedazo, que es la diferencia entre confiar y no confiar en la respuesta */
+function renderCiFuentes(medidas){
+  const box = $('ciFuentes'); if(!box) return;
+  const tope = aiCtxMax();
+  const total = (medidas||[]).reduce((a,m)=>a+m.chars,0);
+  $('ciFuentesN').textContent = (CI_DOCS||[]).length + ' ' + T('documentos');
+  box.innerHTML = (CI_DOCS||[]).map(d=>{
+    const m = (medidas||[]).find(x=>x.nombre===d.filename);
+    const marca = !m ? '<span class="chip gray">'+T('sin leer aún')+'</span>'
+      : (m.recortado ? '<span class="chip warn">'+T('leído en parte')+'</span>'
+                     : '<span class="chip ok">'+T('leído completo')+'</span>');
+    return '<label style="display:block;font-weight:400;color:var(--ink);margin:3px 0">'+
+      '<input type="checkbox" class="ciFu" value="'+d.id+'"'+(d._off?'':' checked')+' style="width:auto;margin-right:7px">'+
+      esc(DOC_TIPOS[d.tipo]||d.tipo)+' — '+esc(d.filename)+
+      (m ? ' <span class="muted">('+Math.round(m.chars/1000)+' mil caracteres)</span> ' : ' ')+marca+'</label>';
+  }).join('') +
+  (total ? '<div class="muted" style="margin-top:6px">'+T('Total enviado')+': '+
+    Math.round(total/1000)+' '+T('mil caracteres, de un máximo de')+' '+Math.round(tope/1000)+' '+T('mil con')+' '+
+    AI_PROVIDERS[aiProvider()].nombre+'.</div>' : '');
+  box.querySelectorAll('input.ciFu').forEach(cb=>cb.addEventListener('change', e=>{
+    const d = (CI_DOCS||[]).find(x=>x.id===e.target.value);
+    if(d) d._off = !e.target.checked;
+  }));
+}
 
 function renderCiChat(){
   $('ciChat').innerHTML = CI_HIST.map(m=>{
@@ -4920,11 +4960,18 @@ function ciSearch(texto, pregunta){
 /* pregunta sobre uno o varios documentos; cada respuesta con citas y su documento de origen */
 async function aiAskDocs(fuentes, pregunta){
   const esCi = (CI_MODE==='ci' && fuentes.length===1);
-  const porDoc = Math.max(15000, Math.floor(90000/Math.max(1,fuentes.length)));
+  /* se manda el texto COMPLETO de cada documento mientras entre en la ventana
+     del proveedor; solo si no entra se reparte y se avisa qué se recortó */
+  const total = fuentes.reduce((a,f)=>a+f.texto.length, 0);
+  const tope = aiCtxMax() - 4000;
+  const recortados = [];
   let cuerpo = '';
   fuentes.forEach((f,i)=>{
     let t = f.texto;
-    if(t.length > porDoc) t = t.slice(0, porDoc) + '\n[TEXTO TRUNCADO]';
+    if(total > tope){
+      const cuota = Math.floor(tope * (f.texto.length/total));
+      if(t.length > cuota){ t = t.slice(0, cuota) + '\n[TEXTO TRUNCADO POR LONGITUD]'; recortados.push(f.nombre); }
+    }
     cuerpo += '\n\nDOCUMENTO '+(i+1)+' — «'+f.nombre+'» ('+f.tipo+'):\n<<<\n'+t+'\n>>>';
   });
   const prompt =
@@ -4942,10 +4989,11 @@ async function aiAskDocs(fuentes, pregunta){
     '- Escribí la respuesta en '+AI_LANG_NAME()+', de forma clara y breve.';
   const res = await aiChat({
     system:'Respondés exclusivamente con un objeto JSON válido, sin texto antes ni después y sin bloques de código.',
-    content: prompt, maxTokens: 2500
+    content: prompt, maxTokens: 8000
   });
   const o = parseAiObjectLoose(res.text);
   if(!o || !o.respuesta) throw new Error(T('La IA no devolvió un resultado interpretable.'));
+  if(recortados.length) o.respuesta += '\n\n⚠ '+T('Por longitud se leyó solo una parte de')+': '+recortados.join(', ')+'.';
   let citas = Array.isArray(o.citas) ? o.citas : [];
   if(!citas.length && o.cita) citas = [{ documento: fuentes.length===1 ? fuentes[0].nombre : '', cita:o.cita }];
   citas = citas.map(c=>({ documento:String((c&&c.documento)||'').slice(0,120), cita:String((c&&c.cita)||'').slice(0,600) }))
@@ -4970,12 +5018,19 @@ async function askCi(){
   st.style.color='var(--muted)';
   st.textContent = T(CI_MODE==='ci' ? 'Leyendo el consentimiento...' : 'Leyendo los documentos...');
   try{
+    const elegidos = CI_DOCS.filter(d=>!d._off);
+    if(!elegidos.length) throw new Error(T('Seleccioná al menos un documento en «Fuentes consultadas».'));
     const fuentes = [], fallidos = [];
-    for(const d of CI_DOCS){
+    for(const d of elegidos){
       try{ fuentes.push({ nombre:d.filename, tipo:(DOC_TIPOS[d.tipo]||d.tipo), texto:await ciDocText(d) }); }
-      catch(e){ if(CI_DOCS.length===1) throw e; fallidos.push(d.filename); }
+      catch(e){ if(elegidos.length===1) throw e; fallidos.push(d.filename); }
     }
     if(!fuentes.length) throw new Error(T('Ninguno de los documentos tiene texto legible (pueden ser PDF escaneados).'));
+    /* medida de lo que efectivamente se manda, para mostrarlo */
+    const topeM = aiCtxMax() - 4000;
+    const totalM = fuentes.reduce((a,f)=>a+f.texto.length,0);
+    renderCiFuentes(fuentes.map(f=>({ nombre:f.nombre, chars:f.texto.length,
+      recortado: totalM > topeM && f.texto.length > Math.floor(topeM*(f.texto.length/totalM)) })));
     let nota = fallidos.length ? '\n\n⚠ '+T('Sin texto legible (no se consultaron):')+' '+fallidos.join(', ') : '';
     if(aiConfigured()){
       st.textContent = T('Consultando a la IA (puede tardar unos segundos)...');
@@ -5004,7 +5059,7 @@ let FLOW = { procs:[], visitas:[], matriz:{} };   /* matriz['idxProc|idxVisita']
 async function pdfToPages(blob){
   await ensurePdfJs();
   const doc = await pdfjsLib.getDocument({ data: await blob.arrayBuffer() }).promise;
-  const nPages = Math.min(doc.numPages, 60);
+  const nPages = Math.min(doc.numPages, 600);
   const pages = [];
   for(let i=1;i<=nPages;i++) pages.push(await pdfPageText(await doc.getPage(i)));
   return pages;
@@ -5810,7 +5865,7 @@ function openEvalModal(){
 
 async function aiEvalCriteria(st, text, imagenes){
   const inc = st.criteriosInclusion||[], exc = st.criteriosExclusion||[];
-  const MAXC = 60000;
+  const MAXC = aiCtxMax() - 6000;
   let doc = text;
   if(doc.length > MAXC) doc = doc.slice(0, MAXC) + '\n[TEXTO TRUNCADO POR LONGITUD]';
   const prompt =
@@ -6278,7 +6333,7 @@ function openNarrModal(){
 
 async function aiNarrarCriterios(st, texto, p, imagenes){
   const items = narrCriterios(st);
-  const MAXC = 60000;
+  const MAXC = aiCtxMax() - 6000;
   let doc = texto;
   if(doc.length > MAXC) doc = doc.slice(0, MAXC) + '\n[TEXTO TRUNCADO POR LONGITUD]';
   const resp = p.criterios || {};
