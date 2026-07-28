@@ -6592,8 +6592,8 @@ async function aiEvalCriteria(st, text, imagenes, paciente){
       return x.clave+' ('+x.tipo+'): '+x.criterio+'\nEVIDENCIA RELACIONADA: '+(ev ? '• '+ev : 'No se encontró evidencia textual relacionada.');
     }).join('\n\n');
     const prompt='Sos un asistente de investigación clínica. Evaluá cada criterio usando ÚNICAMENTE los datos estructurados y la evidencia textual incluida. No uses conocimiento externo ni supongas datos ausentes.\n\n'+
-      datos+'\n\n'+bloque+'\n\nCONTEXTO DOCUMENTAL COMPLETO DEL PACIENTE:\n<<<\n'+textoPaciente+'\n>>>\n\nRespondé ÚNICAMENTE con un array JSON, un objeto por criterio: '+
-      '[{"clave":"i0","respuesta":"si|no|pendiente","justificacion":"cita textual breve o dato estructurado","falta":"dato faltante, solo si pendiente"}].\n\n'+
+      datos+'\n\n'+bloque+'\n\nCONTEXTO DOCUMENTAL COMPLETO DEL PACIENTE:\n<<<\n'+textoPaciente+'\n>>>\n\n'+
+      'Respondé SOLO con una línea por criterio, sin introducción ni viñetas. Formato exacto: clave | si, no o pendiente | justificación breve. Ejemplo: i0 | si | Tiene 36 años, según fecha de nacimiento 06/06/1990.\n\n'+
       'Reglas: para inclusión, “si” solo con evidencia explícita; para exclusión, “si” si la condición está presente y “no” si está explícitamente descartada. Si no hay prueba suficiente, respondé “pendiente”.';
     /* Una respuesta ocasionalmente puede venir vacía o con texto extra. Se
        reintenta sin imágenes (que suelen ser lo más pesado) y, si Gemini no
@@ -6604,10 +6604,10 @@ async function aiEvalCriteria(st, text, imagenes, paciente){
         : prompt;
       try{
         const r=await aiChat({
-          system:'Respondés exclusivamente con un array JSON válido, sin texto extra. Empezá con [ y terminá con ].',
-          content:contenido, maxTokens:Math.max(1200,lote.length*260), json:!reintento
+          system:'Respondés solamente con las líneas solicitadas, sin encabezados, viñetas ni explicaciones adicionales.',
+          content:contenido, maxTokens:Math.max(1200,lote.length*260)
         });
-        const parte = parseAiArray(String(r.text||'').replace(/```json|```/g,'').trim());
+        const parte = parseEvalLineas(String(r.text||'').replace(/```json|```/g,'').trim(), lote);
         return { parte, error:parte.length ? '' : 'La IA respondió sin una lista de criterios utilizable.' };
       }catch(e){ return { parte:[], error:String((e&&e.message)||e||'Error al consultar la IA.') }; }
     };
@@ -6640,6 +6640,21 @@ function parseAiArray(txt){
   let m2;
   while((m2 = re.exec(txt))){
     try{ const o = JSON.parse(m2[0]); if(o && o.clave) out.push(o); }catch(e){}
+  }
+  return out;
+}
+
+/* La evaluación acepta también líneas simples, porque algunos modelos de
+   Gemini respetan el contenido clínico pero agregan texto alrededor del JSON.
+   El formato de una línea es deliberadamente muy fácil de producir y leer. */
+function parseEvalLineas(txt, lote){
+  const json = parseAiArray(txt);
+  if(json.length) return json;
+  const out=[];
+  for(const linea of String(txt||'').split(/\r?\n/)){
+    const m=linea.match(/\b([ie]\d{1,2})\b\s*(?:\||;|:|—|-)\s*(si|sí|no|pendiente|cumple|descartado|no\s+cumple)\b\s*(?:\||;|:|—|-)?\s*(.*)/i);
+    if(!m) continue;
+    out.push({clave:m[1].toLowerCase(),respuesta:m[2],justificacion:m[3]||''});
   }
   return out;
 }
