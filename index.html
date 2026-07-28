@@ -2675,12 +2675,12 @@ function renderStudies(){
         '</div>'+
       '</div>'+
       '<div class="actions">'+
+        '<button class="primary" data-act="edit" style="font-size:15px;padding:9px 16px">'+T('Editar')+'</button>'+
         (ci?'<button class="ghost" data-act="ci" title="'+T('Ver la última versión del consentimiento informado')+'">📄 '+T('CI vigente')+'</button>'+
             (featOn('ia.askCi')?'<button class="ghost" data-act="ciask" title="'+T('Consultar el consentimiento informado')+'">❓</button>':'')+
             '<button class="ghost" data-act="ciprint" title="'+T('Imprimir')+'">🖨</button>':'')+
         (featOn('ia.askDocs') && docsOf(s.id).some(d=>d.tipo!=='ci')
           ?'<button class="ghost" data-act="docsask" title="'+T('Consultar los documentos del estudio')+'">🔎 '+T('Protocolo')+'</button>':'')+
-        '<button class="ghost" data-act="edit">'+T('Editar')+'</button>'+
         '<button class="ghost" data-act="dup">'+T('Duplicar')+'</button>'+
         '<button class="ghost" data-act="del" style="color:var(--bad)">'+T('Eliminar')+'</button>'+
       '</div>';
