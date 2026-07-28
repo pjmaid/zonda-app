@@ -10799,11 +10799,11 @@ function userForm(id){
       '<b>💵 '+T('Acceso al módulo de facturación')+'</b> — '+
       T('ve el contrato, el tarifario y arma la factura del período. Los administradores lo tienen siempre.')+'</label>'+
     '<div id="uf_estBox"><label>'+T('Protocolos en los que participa')+'</label>'+
-      (DB.studies.length ? '<div style="max-height:160px;overflow:auto;border:1px solid var(--line);border-radius:6px;padding:8px">'+
-        DB.studies.map(s=>'<label style="display:block;font-weight:400;color:var(--ink);margin:2px 0">'+
+      (DB.studies.filter(noAnulado).length ? '<div style="max-height:160px;overflow:auto;border:1px solid var(--line);border-radius:6px;padding:8px">'+
+        DB.studies.filter(noAnulado).map(s=>'<label style="display:block;font-weight:400;color:var(--ink);margin:2px 0">'+
           '<input type="checkbox" class="uf_est" value="'+s.id+'"'+((u.estudios||[]).includes(s.id)?' checked':'')+' style="width:auto;margin-right:7px">'+
           esc(s.codigo)+(s.nombre?' — '+esc(s.nombre):'')+'</label>').join('')+'</div>'
-        : '<div class="muted small">'+T('Todavía no hay estudios cargados.')+'</div>')+
+        : '<div class="muted small">'+T('Todavía no hay estudios activos cargados.')+'</div>')+
     '</div>'+
     '<div class="toolbar" style="margin-top:10px;margin-bottom:0">'+
       '<button class="primary" id="uf_save">'+T('Guardar')+'</button>'+
