@@ -358,7 +358,7 @@ details>summary{color:var(--acc-dark)}
 
     <div class="toolbar">
       <button class="primary" id="btnSaveStudy">Guardar estudio</button>
-      <button id="btnCancelStudy">Cancelar</button>
+      <button id="btnCancelStudy">Cerrar</button>
     </div>
   </section>
 
@@ -457,7 +457,7 @@ details>summary{color:var(--acc-dark)}
 
     <div class="toolbar">
       <button class="primary" id="btnSavePatient">Guardar paciente</button>
-      <button id="btnCancelPatient">Cancelar</button>
+      <button id="btnCancelPatient">Cerrar</button>
     </div>
   </section>
 
@@ -2803,7 +2803,13 @@ $('btnSaveStudy').addEventListener('click', async ()=>{
   } else if(prev && hadPatients){
     toast('Estudio guardado. Si cambiaste las visitas, revisá los pacientes ya cargados.');
   }
-  showView('view-studies');
+  /* Guardar no cierra el formulario: permite seguir revisando, adjuntando
+     documentos o corrigiendo datos. Al crear uno nuevo se fija su id para
+     que una segunda guarda actualice el mismo estudio. */
+  $('stId').value = id;
+  $('studyEditTitle').textContent = 'Editar estudio: '+s.codigo;
+  renderDocsList();
+  renderCiPanel();
 });
 $('btnCancelStudy').addEventListener('click', ()=>showView('view-studies'));
 $('btnNewStudy').addEventListener('click', ()=>openStudyEditor(null));
@@ -3066,7 +3072,11 @@ $('btnSavePatient').addEventListener('click', async ()=>{
   await persist('patients', p, 'Paciente guardado.');
   if(!p.fechaBasal && (p.estado==='activo'||p.estado==='screening'))
     toast('Paciente guardado. Cargá la fecha basal para calcular las próximas visitas.');
-  showView('view-patients');
+  /* Mantener el formulario abierto evita perder el contexto y habilita los
+     documentos del paciente recién creado para continuar trabajando. */
+  $('paId').value = p.id;
+  $('patientEditTitle').textContent = 'Editar paciente: '+p.codigo;
+  renderPaDocs();
 });
 $('btnCancelPatient').addEventListener('click', ()=>showView('view-patients'));
 
