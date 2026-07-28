@@ -6579,13 +6579,30 @@ async function aiEvalCriteria(st, text, imagenes, paciente){
       datos+'\n\n'+bloque+'\n\nRespondé ÚNICAMENTE con un array JSON, un objeto por criterio: '+
       '[{"clave":"i0","respuesta":"si|no|pendiente","justificacion":"cita textual breve o dato estructurado","falta":"dato faltante, solo si pendiente"}].\n\n'+
       'Reglas: para inclusión, “si” solo con evidencia explícita; para exclusión, “si” si la condición está presente y “no” si está explícitamente descartada. Si no hay prueba suficiente, respondé “pendiente”.';
-    const contenido = (imagenes&&imagenes.length&&pos===0)
-      ? [{t:'text',text:'Imágenes de documentos clínicos: usalas solo como evidencia adicional para este lote.'}].concat(imagenes.slice(0,8),[{t:'text',text:prompt}])
-      : prompt;
-    const r=await aiChat({system:'Respondés exclusivamente con un array JSON válido, sin texto extra.',content:contenido,maxTokens:Math.max(1200,lote.length*260)});
-    const parte=parseAiArray(String(r.text||'').replace(/```json|```/g,'').trim());
-    if(!parte.length) throw new Error('La IA no devolvió una evaluación interpretable para uno de los grupos de criterios.');
-    salida.push(...parte);
+    /* Una respuesta ocasionalmente puede venir vacía o con texto extra. Se
+       reintenta sin imágenes (que suelen ser lo más pesado) y, si Gemini no
+       responde de todos modos, se conserva el resto de la evaluación. */
+    const consultar = async reintento => {
+      const contenido = (!reintento && imagenes&&imagenes.length&&pos===0)
+        ? [{t:'text',text:'Imágenes de documentos clínicos: usalas solo como evidencia adicional para este lote.'}].concat(imagenes.slice(0,8),[{t:'text',text:prompt}])
+        : prompt;
+      try{
+        const r=await aiChat({
+          system:'Respondés exclusivamente con un array JSON válido, sin texto extra. Empezá con [ y terminá con ].',
+          content:contenido, maxTokens:Math.max(1200,lote.length*260)
+        });
+        return parseAiArray(String(r.text||'').replace(/```json|```/g,'').trim());
+      }catch(e){ return []; }
+    };
+    let parte=await consultar(false);
+    if(!parte.length) parte=await consultar(true);
+    if(!parte.length){
+      salida.push(...lote.map(x=>({
+        clave:x.clave, respuesta:'pendiente',
+        justificacion:'La IA no pudo interpretar este grupo de criterios en esta ejecución.',
+        falta:'Revisar manualmente la documentación del paciente'
+      })));
+    } else salida.push(...parte);
   }
   items.forEach(x=>{ if(!salida.some(r=>String(r.clave).toLowerCase()===x.clave)) salida.push({clave:x.clave,respuesta:'pendiente',justificacion:'sin dato en la documentación',falta:'evidencia clínica o de laboratorio'}); });
   return salida;
