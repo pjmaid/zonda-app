@@ -6652,7 +6652,7 @@ function parseEvalLineas(txt, lote){
   if(json.length) return json;
   const out=[];
   for(const linea of String(txt||'').split(/\r?\n/)){
-    const m=linea.match(/\b([ie]\d{1,2})\b\s*(?:\||;|:|—|-)\s*(si|sí|no|pendiente|cumple|descartado|no\s+cumple)\b\s*(?:\||;|:|—|-)?\s*(.*)/i);
+    const m=linea.match(/\b([ie]\d{1,2})\b\s*(?:\||;|:|—|-)\s*(?:(?:respuesta|estado)\s*[:=-]\s*)?(pendiente|descartado|no\s+cumple|cumple|sí|si|no)(?=\s*(?:\||;|:|—|-|$))\s*(?:\||;|:|—|-)?\s*(.*)/i);
     if(!m) continue;
     out.push({clave:m[1].toLowerCase(),respuesta:m[2],justificacion:m[3]||''});
   }
