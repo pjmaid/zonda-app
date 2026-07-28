@@ -2886,7 +2886,9 @@ async function confirmarBorrado(detalle){
 
 async function deleteStudy(id){
   const s = getStudy(id); if(!s) return;
-  const n = DB.patients.filter(p=>p.estudioId===id).length;
+  /* Los pacientes anulados se conservan por trazabilidad, pero no deben
+     impedir que se anule un estudio que ya no tiene participantes activos. */
+  const n = DB.patients.filter(p=>p.estudioId===id && !p.anulado).length;
   if(n>0){ alert('No se puede eliminar: hay '+n+' paciente(s) asignados a este estudio. Reasignalos o eliminalos primero.'); return; }
   const nd = docsOf(id).length;
   await anularRegistro('studies', id,
