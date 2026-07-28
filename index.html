@@ -903,9 +903,15 @@ details>summary{color:var(--acc-dark)}
         <input type="checkbox" id="cfgRagOn" style="width:auto;margin-right:7px">
         <b>Usar búsqueda documental cuando esté disponible</b> — para consultar documentos y extraer criterios.
       </label>
+      <label style="display:block;font-weight:400;color:var(--ink);margin:2px 0 6px">
+        <input type="checkbox" id="cfgRagSolo" style="width:auto;margin-right:7px">
+        <b>Modo estricto: solo búsqueda documental</b> — no se consulta ningún otro motor de IA.
+        Si el índice falla, la operación falla con un aviso en vez de resolverse por otra vía.
+      </label>
       <div class="toolbar" style="margin-top:8px;margin-bottom:0">
         <button id="btnRagTest">Probar conexión</button>
         <button id="btnRagIndexAll">⬆ Indexar los documentos de este estudio</button>
+        <button id="btnRagList">📋 Ver qué hay indexado</button>
       </div>
       <div id="ragMsg" class="small" style="margin-top:6px"></div>
     </div>
@@ -4458,6 +4464,181 @@ async function aiChat(opt){
   }
   return { text, cut };
 }
+/* ================= CAPA ÚNICA DE CONSULTA A DOCUMENTOS =================
+   Todo lo que en la app se responde a partir de documentos pasa por acá.
+   Con la búsqueda documental activa se consulta el índice de Vertex AI Search
+   y no interviene ningún otro motor. Si además está tildado el modo estricto,
+   no hay alternativa: si el índice falla, la operación falla con un mensaje
+   claro en vez de resolverse por otra vía sin avisar. */
+
+function ragEstricto(){ return CFG.ragSolo === true; }
+
+/* Pregunta al índice esperando JSON. answerQuery genera la respuesta con
+   Gemini sobre los fragmentos recuperados, así que se le puede pedir una
+   estructura; el preámbulo se la impone y acá se interpreta con tolerancia. */
+async function ragJson(pregunta, filtros, formato){
+  const pre =
+    'Sos un asistente de un equipo de investigación clínica. Respondés EXCLUSIVAMENTE con JSON válido, '+
+    'sin texto antes ni después y sin bloques de código. '+
+    'Usás únicamente lo que dicen los fragmentos recuperados: no completás con conocimiento externo. '+
+    'Si un dato no figura en los fragmentos, lo declarás ausente en lugar de inventarlo. '+
+    (formato ? 'Formato exacto de la respuesta: '+formato : '');
+  const r = await ragLlamar(Object.assign({ accion:'preguntar', pregunta, preambulo:pre,
+                                            max_fragmentos:30 }, filtros||{}));
+  const txt = String(r.respuesta||'').replace(/```json|```/g,'').trim();
+  return { texto: txt, citas: r.citas||[] };
+}
+
+/* Decide la vía y deja constancia de cuál se usó.
+   - conRag: función que resuelve con el índice
+   - conIA:  función que resuelve con el motor de IA configurado (respaldo)  */
+async function viaDocumental(conRag, conIA, etiqueta){
+  if(ragActivo()){
+    try{ const r = await conRag(); return Object.assign({ via:'rag' }, r); }
+    catch(e){
+      if(ragEstricto() || !aiConfigured())
+        throw new Error(T('Búsqueda documental')+(etiqueta?' ('+etiqueta+')':'')+': '+e.message+
+          (ragEstricto()? ' — '+T('el modo estricto impide usar otro motor.') : ''));
+      const r = await conIA();
+      return Object.assign({ via:'ia', avisoRag:e.message }, r);
+    }
+  }
+  if(ragEstricto())
+    throw new Error(T('El modo estricto exige búsqueda documental, pero no está activada.'));
+  if(!aiConfigured())
+    throw new Error(T('Activá la búsqueda documental o cargá una clave de IA en Configuración.'));
+  const r = await conIA();
+  return Object.assign({ via:'ia' }, r);
+}
+
+/* interpretación tolerante de listas devueltas en prosa numerada */
+function ragLista(txt){
+  const out = []; let actual = '';
+  for(const linea of String(txt||'').split('\n')){
+    const l = linea.trim();
+    if(!l || /^#{1,3}\s/.test(l)) continue;
+    const m = l.match(/^(?:\*{0,2})(?:\d{1,3}[.)]|[-•])\s+(.*)$/);
+    if(m){ if(actual) out.push(actual); actual = m[1].trim(); }
+    else if(actual) actual += ' ' + l;
+    else actual = l;
+  }
+  if(actual) out.push(actual);
+  return out.map(x=>x.replace(/\*{1,2}/g,'').replace(/\[\d+\]/g,'').replace(/\s+/g,' ').trim())
+            .filter(x=>x.length>=8).filter((x,i,a)=>a.indexOf(x)===i);
+}
+
+/* Extrae los criterios preguntándole al índice, como se le preguntaría a
+   NotebookLM. Se pide una lista numerada y se interpreta con el mismo parser
+   determinista que usa el puente de NotebookLM: lo que devuelve el buscador es
+   lo que queda cargado, sin una segunda pasada de IA que pueda desvirtuarlo. */
+/* calendario de visitas desde el índice */
+async function ragExtraerVisitas(estudioId){
+  const r = await ragJson(
+    'Listá el calendario de visitas del protocolo: nombre de cada visita, día respecto de la basal '+
+    '(negativo para screening; si se define por semanas, semana N = día N×7) y la ventana en días.',
+    { estudio_id: estudioId, max_fragmentos: 30 },
+    '{"visitas":[{"nombre":"Visita 2","dia":15,"ventanaAntes":3,"ventanaDespues":3}]}'
+  );
+  const o = parseAiObjectLoose(r.texto);
+  const arr = (o && Array.isArray(o.visitas)) ? o.visitas : [];
+  return arr.map(v=>({
+    nombre: String(v.nombre||'').trim() || ('Día '+v.dia),
+    dia: parseInt(v.dia,10),
+    venAntes: Math.abs(parseInt(v.ventanaAntes,10)||0),
+    venDesp: Math.abs(parseInt(v.ventanaDespues,10)||0),
+    tareas: []
+  })).filter(v=>!isNaN(v.dia) && Math.abs(v.dia)<=2000).sort((a,b)=>a.dia-b.dia).slice(0,60);
+}
+
+/* evaluación de los criterios de un paciente desde el índice */
+async function ragEvalCriterios(st, pacienteId){
+  const inc = st.criteriosInclusion||[], exc = st.criteriosExclusion||[];
+  const items = inc.map((c,i)=>({k:'i'+i,c})).concat(exc.map((c,i)=>({k:'e'+i,c})));
+  const salida = {};
+  for(let i=0;i<items.length;i+=10){
+    const lote = items.slice(i,i+10);
+    const preg =
+      'Para cada criterio de elegibilidad de la lista, decidí si la documentación clínica de este participante lo satisface.\n\n'+
+      'CRITERIOS:\n'+lote.map(x=>x.k+'. '+x.c).join('\n')+'\n\n'+
+      'Para los de inclusión (clave que empieza con i): "si" si la documentación dice que lo cumple, "no" si dice que no, "pendiente" si el dato no figura.\n'+
+      'Para los de exclusión (clave que empieza con e): "si" si PRESENTA la condición, "no" si está descartada explícitamente, "pendiente" si no figura.\n'+
+      'Ante cualquier duda, "pendiente".';
+    try{
+      const r = await ragJson(preg, { paciente_id: pacienteId, max_fragmentos: 25 },
+        '[{"clave":"i0","respuesta":"si|no|pendiente","justificacion":"cita textual del documento","falta":"qué dato haría falta"}]');
+      for(const o of parseAiArray(r.texto)){
+        const k = String(o.clave||'').trim().toLowerCase();
+        if(/^[ie]\d{1,2}$/.test(k)) salida[k] = o;
+      }
+    }catch(e){ /* la tanda que falle queda pendiente */ }
+  }
+  return Object.keys(salida).map(k=>Object.assign({clave:k}, salida[k]));
+}
+
+/* fundamentación de un lote de criterios desde el índice */
+async function ragNarrarLote(lote, p){
+  const resp = p.criterios || {};
+  const yaResp = lote.map(it=>it.clave+'='+(resp[it.clave]||'pendiente')).join(', ');
+  const sexo = p.sexo==='F' ? 'femenino' : (p.sexo==='M' ? 'masculino' : 'no consignado');
+  const preg =
+    'Redactá una fundamentación breve para cada criterio, referida a este participante (sexo '+sexo+'), usando su documentación clínica.\n\n'+
+    'CRITERIOS:\n'+lote.map(it=>it.clave+'. ['+(it.tipo==='inclusion'?'INCLUSIÓN':'EXCLUSIÓN')+' '+it.n+'] '+it.criterio).join('\n')+'\n\n'+
+    'RESPUESTAS YA REGISTRADAS POR EL INVESTIGADOR (respetalas): '+(yaResp||'ninguna')+'\n\n'+
+    'Escribí en tercera persona, prosa clínica sobria, mencionando el dato concreto (valor, fecha, diagnóstico, fármaco) tal como figura. '+
+    'La conclusión va DENTRO de la misma oración: cerrá con «…, por lo que cumple con el criterio», «…, por lo que no cumple con el criterio» '+
+    'o «…, por lo que el criterio queda pendiente de documentación». Máximo 45 palabras, oración completa. No identifiques al participante por nombre.';
+  const r = await ragJson(preg, { paciente_id: p.id, max_fragmentos: 25 },
+    '[{"clave":"i0","texto":"la fundamentación","estado":"cumple|no_cumple|pendiente"}]');
+  const porClave = {};
+  for(const o of parseAiArray(r.texto)){
+    const k = String(o.clave||'').trim().toLowerCase();
+    if(/^[ie]\d{1,2}$/.test(k)) porClave[k]=o;
+  }
+  return porClave;
+}
+
+async function ragExtraerCriterios(estudioId){
+  const pedir = async (tipo) => {
+    const cual = tipo==='inclusion' ? 'INCLUSIÓN' : 'EXCLUSIÓN';
+    const preg =
+      'Listá TODOS los criterios de '+cual+' del protocolo, sin omitir ninguno.\n'+
+      'Respondé solo con una lista numerada, un criterio por línea, transcrito completo y textual, sin resumir.\n'+
+      'Un criterio con su «Nota:» aclaratoria va en la misma línea. No incluyas los subtítulos temáticos '+
+      'que agrupan criterios, ni encabezados, ni introducciones, ni conclusiones.';
+    const r = await ragPreguntar(preg, {
+      estudio_id: estudioId,
+      max_fragmentos: 30,
+      preambulo: 'Sos un asistente de investigación clínica. Transcribís los criterios de elegibilidad '+
+                 'exactamente como figuran en el protocolo recuperado, en una lista numerada, sin resumir '+
+                 'ni interpretar. No agregás criterios que no estén en el texto.'
+    });
+    return { texto: r.a, citas: r.citas };
+  };
+
+  const [inc, exc] = await Promise.all([pedir('inclusion'), pedir('exclusion')]);
+
+  /* se reutiliza el parser de listas: acepta numeración, viñetas y líneas partidas */
+  const lista = txt => {
+    const out = []; let actual = '';
+    for(const linea of String(txt||'').split('\n')){
+      const l = linea.trim();
+      if(!l) continue;
+      if(/^#{1,3}\s/.test(l)) continue;
+      const m = l.match(/^(?:\*{0,2})(?:\d{1,3}[.)]|[-•])\s+(.*)$/);
+      if(m){ if(actual) out.push(actual); actual = m[1].trim(); }
+      else if(actual) actual += ' ' + l;
+      else actual = l;
+    }
+    if(actual) out.push(actual);
+    return out.map(x=>x.replace(/\*{1,2}/g,'').replace(/\[\d+\]/g,'').replace(/\s+/g,' ').trim())
+              .filter(x=>x.length>=8)
+              .filter((x,i,a)=>a.indexOf(x)===i);
+  };
+
+  return { incl: lista(inc.texto), excl: lista(exc.texto),
+           citas: (inc.citas||[]).concat(exc.citas||[]).length };
+}
+
 /* Aísla la sección de inclusión o de exclusión dentro del texto del protocolo.
    Devuelve '' si no encuentra el encabezado, y en ese caso se usa todo el texto. */
 function seccionCriterios(texto, tipo){
@@ -4665,6 +4846,15 @@ async function ragPreguntar(pregunta, filtros){
 /* ---------- configuración ---------- */
 /* la preferencia se guarda al tildar: el botón Guardar vive en otra tarjeta y
    dejarla sin persistir confundía */
+$('cfgRagSolo').addEventListener('change', e=>{
+  CFG.ragSolo = !!e.target.checked;
+  saveJSON(LS.CFG, CFG);
+  const m = $('ragMsg'); m.style.color = 'var(--ok)';
+  m.textContent = CFG.ragSolo
+    ? '✔ '+T('Modo estricto activado: la app no va a usar ningún otro motor de IA.')
+    : T('Modo estricto desactivado: si el índice falla, se usa el motor de IA configurado.');
+});
+
 $('cfgRagOn').addEventListener('change', e=>{
   CFG.ragOn = !!e.target.checked;
   saveJSON(LS.CFG, CFG);
@@ -4687,6 +4877,23 @@ $('btnRagTest').addEventListener('click', async ()=>{
     } else {
       m.style.color='var(--bad)'; m.textContent = '⚠ '+(j.error||T('No se pudo conectar.'));
     }
+  }catch(e){ m.style.color='var(--bad)'; m.textContent = '⚠ '+e.message; }
+});
+
+$('btnRagList').addEventListener('click', async ()=>{
+  const m = $('ragMsg');
+  m.style.color='var(--muted)'; m.textContent = T('Consultando el índice...');
+  try{
+    const j = await ragLlamar({ accion:'listar' });
+    if(!j.total){
+      m.style.color='var(--warn)';
+      m.textContent = '⚠ '+T('El índice está vacío. Indexá los documentos y esperá a que Google los procese.');
+      return;
+    }
+    m.style.color='var(--ok)';
+    m.innerHTML = '✔ '+j.total+' '+T('documento(s) en el índice')+':<br>'+
+      j.documentos.map(d=>'· '+esc(d.titulo||d.id)).join('<br>')+
+      '<br><span class="muted">'+T('Si acabás de indexarlos, Google puede tardar hasta 30 minutos en dejarlos consultables.')+'</span>';
   }catch(e){ m.style.color='var(--bad)'; m.textContent = '⚠ '+e.message; }
 });
 
@@ -4819,6 +5026,32 @@ $('btnAnalyze').addEventListener('click', async ()=>{
     }
     if((text||'').trim().length<50 && !($('impVisual').checked && IMP_BLOB))
       throw new Error('El documento no tiene texto legible (puede ser un PDF escaneado). Tildá «Leer las páginas como imagen» o pegá el texto.');
+    /* con búsqueda documental se le pregunta al índice, igual que a NotebookLM */
+    if(ragActivo() && src === 'doc'){
+      const stIdRag = $('stId').value;
+      try{
+        st.textContent = T('Consultando el índice de búsqueda documental...');
+        const rr = await ragExtraerCriterios(stIdRag);
+        try{ IMP_VISITS = await ragExtraerVisitas(stIdRag); }catch(eV){ IMP_VISITS = []; }
+        if(rr.incl.length || rr.excl.length || IMP_VISITS.length){
+          $('impIncl').value = rr.incl.join('\n');
+          $('impExcl').value = rr.excl.join('\n');
+          renderImpVisits();
+          $('impResults').classList.remove('hidden');
+          st.style.color = (rr.incl.length && rr.excl.length) ? 'var(--ok)' : 'var(--warn)';
+          st.textContent = ((rr.incl.length && rr.excl.length)?'✔ ':'⚠ ')+
+            rr.incl.length+' '+T('criterios de inclusión')+', '+rr.excl.length+' '+T('de exclusión y')+
+            ' '+IMP_VISITS.length+' '+T('visitas')+' — '+T('búsqueda documental')+'. '+
+            (!rr.incl.length || !rr.excl.length ? T('Falta una de las dos secciones: puede que el documento se esté indexando todavía. ') : '')+
+            T('Revisá y aplicá.');
+          return;
+        }
+        st.textContent = T('El índice no devolvió criterios; se intenta leyendo el documento...');
+      }catch(eR){
+        st.textContent = T('Búsqueda documental no disponible')+' ('+eR.message+'). '+T('Se lee el documento...');
+      }
+    }
+
     /* si el texto pegado tiene el formato de NotebookLM, se usa tal cual:
        es la transcripción que hizo NotebookLM, no hace falta reinterpretarla */
     const nlm = (src==='paste') ? parseNotebookLM(text) : null;
@@ -6232,6 +6465,31 @@ $('btnRunEval').addEventListener('click', async ()=>{
     if($('evalPaste').value.trim()) text += '\n=== Texto pegado ===\n' + $('evalPaste').value.trim();
     if(text.trim().length < 30) throw new Error('No hay texto para analizar. Seleccioná documentos con texto legible o pegá los datos del paciente.');
     const study = getStudy($('paEstudio').value);
+    /* con búsqueda documental se consulta el índice del paciente */
+    if(ragActivo()){
+      const pidR = $('paId').value;
+      try{
+        stEl.textContent = T('Consultando el índice de búsqueda documental...');
+        const res = await ragEvalCriterios(study, pidR);
+        if(res.length){
+          const nR = applyEvalResults(res);
+          renderPaCriterios();
+          $('paAiNotice').innerHTML = '<div class="banner warn">🔎 '+T('Respuestas sugeridas por búsqueda documental a partir de los documentos indexados del paciente')+
+            ' ('+nR.resp+' '+T('respondidas')+', '+nR.pend+' '+T('pendientes')+'). '+
+            T('Confirmá cada criterio antes de guardar: la decisión final es siempre del investigador.')+'</div>';
+          $('evalModal').classList.add('hidden');
+          toast(T('Criterios evaluados con búsqueda documental.'));
+          return;
+        }
+        if(ragEstricto()) throw new Error(T('El índice no devolvió respuestas. ¿Están indexados los documentos de este paciente?'));
+        stEl.textContent = T('El índice no devolvió respuestas; se intenta con el texto...');
+      }catch(eR){
+        if(ragEstricto() || !aiConfigured()) throw eR;
+        stEl.textContent = T('Búsqueda documental no disponible')+' ('+eR.message+'). '+T('Se lee el texto...');
+      }
+    } else if(ragEstricto()){
+      throw new Error(T('El modo estricto exige búsqueda documental, pero no está activada.'));
+    }
     if(aiConfigured()){
       let imgs = [];
       if($('evalVisual') && $('evalVisual').checked){
@@ -6641,7 +6899,17 @@ async function aiNarrarCriterios(st, texto, p, imagenes, st_el){
     if(st_el) st_el.textContent = T('Redactando')+' '+(i*NARR_LOTE+1)+'–'+Math.min(items.length,(i+1)*NARR_LOTE)+
                                   ' '+T('de')+' '+items.length+' '+T('criterios')+'...';
     try{
-      Object.assign(porClave, await aiNarrarLote(lotes[i], st, texto, p, imagenes));
+      if(ragActivo()){
+        try{ Object.assign(porClave, await ragNarrarLote(lotes[i], p)); }
+        catch(eR){
+          if(ragEstricto() || !aiConfigured()) throw eR;
+          Object.assign(porClave, await aiNarrarLote(lotes[i], st, texto, p, imagenes));
+        }
+      } else if(ragEstricto()){
+        throw new Error(T('El modo estricto exige búsqueda documental, pero no está activada.'));
+      } else {
+        Object.assign(porClave, await aiNarrarLote(lotes[i], st, texto, p, imagenes));
+      }
     }catch(e){ fallados++; }
     /* las imágenes se mandan solo en la primera tanda: repetirlas multiplica el costo */
     if(imagenes && imagenes.length) imagenes = null;
@@ -8734,6 +9002,22 @@ $('btnFactLeer').addEventListener('click', async ()=>{
       '- En "extras" van los conceptos que no son una visita: screen failure, procedimientos no programados, reembolsos, overhead, pagos por hito.\n'+
       '- En "condiciones" resumí plazo de pago, forma de facturación y notas relevantes, con su cita.\n'+
       '- Si el contrato no especifica el tarifario, devolvé listas vacías.';
+    /* con búsqueda documental el tarifario se consulta al índice */
+    if(ragActivo()){
+      try{
+        stt.textContent = T('Consultando el índice de búsqueda documental...');
+        const rr = await ragJson(pide, { estudio_id: stId || '', max_fragmentos: 30 },
+          '{"moneda":"USD","visitas":[{"nombre":"V1","valor":300,"cita":"..."}],"extras":[{"concepto":"...","valor":0,"cita":"..."}],"condiciones":{"plazoPago":"...","facturacion":"...","notas":"...","cita":"..."}}');
+        const oR = parseAiObjectLoose(rr.texto);
+        if(oR && (oR.visitas || oR.extras)) return oR;
+        if(ragEstricto()) throw new Error(T('El índice no devolvió el tarifario. ¿Está indexado el contrato?'));
+      }catch(eR){
+        if(ragEstricto() || !aiConfigured()) throw eR;
+        stt.textContent = T('Búsqueda documental no disponible; se lee el contrato...');
+      }
+    } else if(ragEstricto()){
+      throw new Error(T('El modo estricto exige búsqueda documental, pero no está activada.'));
+    }
     stt.textContent = T('Consultando a la IA (puede tardar unos segundos)...');
     const res = await aiChat({
       system:'Respondés exclusivamente con un objeto JSON válido, sin texto antes ni después y sin bloques de código.',
@@ -9018,6 +9302,19 @@ async function airGenerate(){
       '- Cada sección debe llevar al menos una cita textual con el nombre del archivo del que sale.\n'+
       '- Si un punto no figura en los documentos, escribilo explícitamente («no lo especifica») y dejá "citas" vacío en esa sección.\n'+
       '- "texto" en '+AI_LANG_NAME()+', claro y breve, con viñetas separadas por saltos de línea cuando ayude.';
+    if(ragActivo()){
+      try{
+        const rr = await ragJson(def.pide+ctx, { estudio_id: def.todos ? '' : ($('airStudy').value||''), max_fragmentos: 30 },
+          '{"titulo":"...","secciones":[{"titulo":"...","texto":"...","citas":[{"documento":"archivo","cita":"fragmento textual"}]}]}');
+        const oR = parseAiObjectLoose(rr.texto);
+        if(oR && Array.isArray(oR.secciones) && oR.secciones.length) return oR;
+        if(ragEstricto()) throw new Error(T('El índice no devolvió contenido para este informe.'));
+      }catch(eR){
+        if(ragEstricto() || !aiConfigured()) throw eR;
+      }
+    } else if(ragEstricto()){
+      throw new Error(T('El modo estricto exige búsqueda documental, pero no está activada.'));
+    }
     const res = await aiChat({
       system:'Respondés exclusivamente con un objeto JSON válido, sin texto antes ni después y sin bloques de código.',
       content: prompt, maxTokens: 8000
@@ -10372,6 +10669,7 @@ function initConfigUI(){
   $('cfgAiModel').value = CFG.aiModel || AI_PROVIDERS[aiProvider()].modelo;
   renderAiProviderUi(false);
   if($('cfgRagOn')) $('cfgRagOn').checked = CFG.ragOn === true;
+  if($('cfgRagSolo')) $('cfgRagSolo').checked = CFG.ragSolo === true;
   $('cfgCiIni').value = CFG.ciPlantilla || CI_PLANTILLA_INI;
   $('cfgCiRe').value = CFG.ciPlantillaRe || CI_PLANTILLA_RE;
   $('sqlBox').textContent = SQL_SCRIPT;
