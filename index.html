@@ -885,31 +885,6 @@ details>summary{color:var(--acc-dark)}
       </div>
     </div>
 
-    <div class="card" id="ragCard">
-      <h3>🔎 Búsqueda documental (RAG con Vertex AI Search)</h3>
-      <div class="muted small" style="margin-bottom:8px">
-        Es el mismo motor que usa NotebookLM por debajo. En vez de mandarle a la IA el texto completo de cada documento,
-        Google los indexa una vez y en cada consulta recupera solo los fragmentos que importan, con su cita.
-        Funciona mejor con protocolos largos y sale más barato por consulta.
-        Requiere un proyecto de Google Cloud y la función <b>rag</b> desplegada en Supabase (ver la guía).
-      </div>
-      <label style="display:block;font-weight:400;color:var(--ink);margin:6px 0">
-        <input type="checkbox" id="cfgRagOn" style="width:auto;margin-right:7px">
-        <b>Usar búsqueda documental cuando esté disponible</b> — para consultar documentos y extraer criterios.
-      </label>
-      <label style="display:block;font-weight:400;color:var(--ink);margin:2px 0 6px">
-        <input type="checkbox" id="cfgRagSolo" style="width:auto;margin-right:7px">
-        <b>Modo estricto: solo búsqueda documental</b> — no se consulta ningún otro motor de IA.
-        Si el índice falla, la operación falla con un aviso en vez de resolverse por otra vía.
-      </label>
-      <div class="toolbar" style="margin-top:8px;margin-bottom:0">
-        <button id="btnRagTest">Probar conexión</button>
-        <button id="btnRagIndexAll">⬆ Indexar los documentos de este estudio</button>
-        <button id="btnRagList">📋 Ver qué hay indexado</button>
-      </div>
-      <div id="ragMsg" class="small" style="margin-top:6px"></div>
-    </div>
-
     <div class="card">
       <h3>Modo de datos</h3>
       <div class="muted small" style="margin-bottom:8px">
@@ -4467,7 +4442,7 @@ async function aiChat(opt){
    no hay alternativa: si el índice falla, la operación falla con un mensaje
    claro en vez de resolverse por otra vía sin avisar. */
 
-function ragEstricto(){ return CFG.ragSolo === true; }
+function ragEstricto(){ return false; }
 
 /* Pregunta al índice esperando JSON. answerQuery genera la respuesta con
    Gemini sobre los fragmentos recuperados, así que se le puede pedir una
@@ -4852,7 +4827,7 @@ $('btnImportVis').addEventListener('click', openImportModal);
    Todo pasa por la Edge Function «rag»: la credencial de Google Cloud vive
    en el servidor y nunca llega al navegador. */
 
-function ragActivo(){ return Store.online() && CFG.ragOn === true; }
+function ragActivo(){ return false; }
 
 async function ragLlamar(payload){
   if(!Store.online()) throw new Error(T('La búsqueda documental necesita el modo online.'));
@@ -4923,20 +4898,11 @@ function pintarAvisoIA(){
     av.id = 'aiEstadoUso'; av.className = 'banner';
     cont.insertBefore(av, cont.children[1] || null);
   }
-  if(CFG.ragSolo){
-    av.className = 'banner gray';
-    av.innerHTML = '🔎 <b>'+T('Modo estricto activo')+'</b> — '+
-      T('este motor no se usa: todo se responde con búsqueda documental. La clave queda guardada por si desactivás el modo estricto.');
-  } else if(CFG.ragOn){
-    av.className = 'banner acc';
-    av.innerHTML = '🔎 '+T('La búsqueda documental responde primero. Este motor queda como respaldo si el índice falla.');
-  } else {
-    av.className = 'banner gray';
-    av.innerHTML = T('Este motor responde todas las consultas sobre documentos. Para usar búsqueda documental, activala más abajo.');
-  }
+  av.className = 'banner gray';
+  av.innerHTML = T('Este motor responde las consultas sobre documentos y la evaluación asistida de criterios.');
 }
 
-$('cfgRagSolo').addEventListener('change', e=>{
+$('cfgRagSolo')?.addEventListener('change', e=>{
   CFG.ragSolo = !!e.target.checked;
   saveJSON(LS.CFG, CFG);
   pintarAvisoIA();
@@ -4946,7 +4912,7 @@ $('cfgRagSolo').addEventListener('change', e=>{
     : T('Modo estricto desactivado: si el índice falla, se usa el motor de IA configurado.');
 });
 
-$('cfgRagOn').addEventListener('change', e=>{
+$('cfgRagOn')?.addEventListener('change', e=>{
   CFG.ragOn = !!e.target.checked;
   saveJSON(LS.CFG, CFG);
   pintarAvisoIA();
@@ -4957,7 +4923,7 @@ $('cfgRagOn').addEventListener('change', e=>{
     : T('Búsqueda documental desactivada. Las consultas vuelven al método anterior.');
 });
 
-$('btnRagTest').addEventListener('click', async ()=>{
+$('btnRagTest')?.addEventListener('click', async ()=>{
   const m = $('ragMsg');
   m.style.color='var(--muted)'; m.textContent = T('Probando...');
   try{
@@ -5005,7 +4971,7 @@ $('btnNarrIndex').addEventListener('click', async ()=>{
     T('Google tarda unos minutos en procesarlos: esperá y volvé a redactar.');
 });
 
-$('btnRagList').addEventListener('click', async ()=>{
+$('btnRagList')?.addEventListener('click', async ()=>{
   const m = $('ragMsg');
   m.style.color='var(--muted)'; m.textContent = T('Consultando el índice...');
   try{
@@ -5022,7 +4988,7 @@ $('btnRagList').addEventListener('click', async ()=>{
   }catch(e){ m.style.color='var(--bad)'; m.textContent = '⚠ '+e.message; }
 });
 
-$('btnRagIndexAll').addEventListener('click', async ()=>{
+$('btnRagIndexAll')?.addEventListener('click', async ()=>{
   const m = $('ragMsg');
   const stId = $('stId') ? $('stId').value : '';
   const docs = stId ? docsOf(stId) : (DB.docs||[]).filter(d=>d.estudioId);
@@ -10480,6 +10446,8 @@ async function renderSitios(){
         '<div class="muted small">'+esc(s.contacto||'—')+' · '+T('desde')+' '+fmtDate(String(s.creado_en||'').slice(0,10))+'</div>'+
       '</div>'+
       '<button class="ghost" data-stog="'+s.id+'">'+(s.activo===false?T('Activar'):T('Desactivar'))+'</button>'+
+      (s.activo===false && s.id!==(MEMBRESIA&&MEMBRESIA.org_id)
+        ? '<button class="danger" data-sdel="'+s.id+'">Eliminar definitivamente</button>' : '')+
     '</div>').join('') : '<div class="muted small">'+T('Todavía no hay otros sitios.')+'</div>';
   $('sitiosList').querySelectorAll('[data-stog]').forEach(b=>b.addEventListener('click', async ()=>{
     const s = SITIOS.find(x=>x.id===b.dataset.stog); if(!s) return;
@@ -10490,6 +10458,17 @@ async function renderSitios(){
       });
       if(!r.ok) throw new Error(T('No se pudo actualizar el sitio.'));
       toast(T('Sitio actualizado.')); renderSitios();
+    }catch(e){ toast('⚠ '+e.message); }
+  }));
+  $('sitiosList').querySelectorAll('[data-sdel]').forEach(b=>b.addEventListener('click', async ()=>{
+    const s = SITIOS.find(x=>x.id===b.dataset.sdel); if(!s) return;
+    if(s.id===(MEMBRESIA&&MEMBRESIA.org_id)){ toast('No podés eliminar tu propio sitio.'); return; }
+    if(s.activo!==false){ toast('Primero desactivá el sitio.'); return; }
+    if(!confirm('¿Eliminar definitivamente el sitio “'+s.nombre+'”? Se eliminarán los datos asociados a ese sitio y no se podrá deshacer.')) return;
+    try{
+      const r = await supaFetch('/rest/v1/ec_orgs?id=eq.'+encodeURIComponent(s.id), { method:'DELETE', headers:{ 'Prefer':'return=minimal' } });
+      if(!r.ok) throw new Error('No se pudo eliminar el sitio.');
+      toast('Sitio eliminado.'); renderSitios();
     }catch(e){ toast('⚠ '+e.message); }
   }));
 }
@@ -11118,7 +11097,7 @@ $('btnSaveAi').addEventListener('click', ()=>{
   CFG.aiProvider = $('cfgAiProvider').value;
   CFG.aiKey = $('cfgAiKey').value.trim();
   CFG.aiModel = $('cfgAiModel').value.trim() || AI_PROVIDERS[aiProvider()].modelo;
-  CFG.ragOn = !!($('cfgRagOn') && $('cfgRagOn').checked);
+  CFG.ragOn = false; CFG.ragSolo = false;
   saveJSON(LS.CFG, CFG);
   const m = $('aiMsg');
   if(CFG.aiKey){ m.textContent='✔ '+T('Clave guardada en este navegador. Las funciones de IA usarán')+' '+AI_PROVIDERS[aiProvider()].nombre+' ('+aiModelName()+').'; m.style.color='var(--ok)'; }
