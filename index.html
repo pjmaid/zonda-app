@@ -1000,7 +1000,7 @@ details>summary{color:var(--acc-dark)}
       <textarea id="impIncl" rows="6"></textarea>
       <h3 style="margin-top:12px">Criterios de exclusión detectados</h3>
       <textarea id="impExcl" rows="6"></textarea>
-      <details id="impCritPreview" style="margin-top:10px">
+      <details id="impCritPreview" open style="margin-top:10px">
         <summary class="small" style="cursor:pointer;color:var(--acc-dark)">Vista previa estructurada de criterios</summary>
         <div id="impCritPreviewBody" class="small" style="margin-top:8px"></div>
       </details>
@@ -5264,8 +5264,9 @@ function renderImpCriteriaPreview(){
   const grupo = (titulo, valor) => {
     const items = String(valor||'').split('\n').map(x=>x.trim()).filter(Boolean);
     if(!items.length) return '';
+    const formato = x => esc(x).replace(/\s*([•])\s*/g, '<br><span style="padding-left:12px">$1 </span>');
     return '<h4 style="margin:8px 0 4px">'+titulo+'</h4><ol style="margin:0;padding-left:22px">'+
-      items.map(x=>'<li style="white-space:pre-wrap;margin:4px 0">'+esc(x)+'</li>').join('')+'</ol>';
+      items.map(x=>'<li style="white-space:pre-wrap;margin:4px 0">'+formato(x)+'</li>').join('')+'</ol>';
   };
   box.innerHTML = grupo('Inclusión', $('impIncl').value) + grupo('Exclusión', $('impExcl').value) ||
     '<span class="muted">Todavía no hay criterios para mostrar.</span>';
