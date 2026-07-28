@@ -253,17 +253,6 @@ details>summary{color:var(--acc-dark)}
         <div class="grow"><label>Indicación / Patología</label><input type="text" id="stIndic"></div>
         <div style="flex:0 0 190px"><label>Día que corresponde a la fecha basal</label><input type="number" id="stDiaBase" value="1" title="Si la visita basal/randomización es 'Día 1' poné 1; si es 'Día 0' poné 0."></div>
       </div>
-      <div class="row">
-        <div style="flex:0 0 320px"><label>El protocolo exige método anticonceptivo a</label>
-          <select id="stAnticon">
-            <option value="">No lo exige / no aplica</option>
-            <option value="f">Participantes de sexo femenino</option>
-            <option value="m">Participantes de sexo masculino</option>
-            <option value="ambos">Ambos sexos</option>
-          </select>
-        </div>
-        <div class="grow"><label>Detalle del requisito (opcional)</label><input type="text" id="stAnticonDet" placeholder="Ej: doble método desde el screening hasta 90 días después de la última dosis"></div>
-      </div>
       <details style="margin-top:10px" id="ciTplDetails">
         <summary style="cursor:pointer;font-weight:600">🖊️ Plantilla del consentimiento de este protocolo</summary>
         <div style="padding-top:10px">
@@ -303,8 +292,6 @@ details>summary{color:var(--acc-dark)}
           </details>
         </div>
       </details>
-      <label>Notas del protocolo</label>
-      <textarea id="stNotas" placeholder="Dosis, brazos, contactos del monitor, teléfonos, etc."></textarea>
     </div>
 
     <div class="card">
@@ -2721,7 +2708,6 @@ function openStudyEditor(id){
   $('stPatro').value = s ? (s.patrocinador||'') : '';
   $('stIndic').value = s ? (s.indicacion||'') : '';
   $('stDiaBase').value = s ? (s.diaBase===undefined?1:s.diaBase) : 1;
-  $('stAnticon').value = s ? (s.anticonReq||'') : '';
   ['stTitulo:tituloCompleto','stTituloAbrev:tituloAbrev','stNroProt:nroProtocolo','stFase:fase',
    'stVersionProt:versionProtocolo','stEstadoProt:estadoProtocolo','stIdEstudio:idEstudio',
    'stInvestigador:investigador','stCiTpl:ciPlantilla','stCiTplRe:ciPlantillaRe']
@@ -2729,8 +2715,6 @@ function openStudyEditor(id){
   renderCiChips();
   $('ciPreviewBox').classList.add('hidden');
   $('ciTplDetails').open = !!(s && ((s.ciPlantilla||'').trim() || (s.ciPlantillaRe||'').trim()));
-  $('stAnticonDet').value = s ? (s.anticonReqDet||'') : '';
-  $('stNotas').value = s ? (s.notas||'') : '';
   $('stIncl').value = s ? criteriaTextarea((s.criteriosInclusion||[])) : '';
   $('stExcl').value = s ? criteriaTextarea((s.criteriosExclusion||[])) : '';
   renderStudyCriteriaEditor();
@@ -2815,7 +2799,6 @@ $('btnSaveStudy').addEventListener('click', async ()=>{
     patrocinador: $('stPatro').value.trim(),
     indicacion: $('stIndic').value.trim(),
     diaBase: parseInt($('stDiaBase').value,10)||0,
-    anticonReq: $('stAnticon').value,
     tituloCompleto: $('stTitulo').value.trim(),
     tituloAbrev: $('stTituloAbrev').value.trim(),
     nroProtocolo: $('stNroProt').value.trim(),
@@ -2826,8 +2809,6 @@ $('btnSaveStudy').addEventListener('click', async ()=>{
     investigador: $('stInvestigador').value.trim(),
     ciPlantilla: $('stCiTpl').value.trim(),
     ciPlantillaRe: $('stCiTplRe').value.trim(),
-    anticonReqDet: $('stAnticonDet').value.trim(),
-    notas: $('stNotas').value.trim(),
     criteriosInclusion: parseCriteriaTextarea($('stIncl').value),
     criteriosExclusion: parseCriteriaTextarea($('stExcl').value),
     visitas
