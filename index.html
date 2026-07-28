@@ -410,6 +410,7 @@ details>summary{color:var(--acc-dark)}
             <option value="x">Otro / no informa</option>
           </select>
         </div>
+        <div style="flex:0 0 190px"><label>Fecha de nacimiento</label><input type="date" id="paFechaNac"></div>
         <div class="grow" id="paAntiBox"><label>Método anticonceptivo</label>
           <select id="paAnti">
             <option value="">(sin registrar)</option>
@@ -2660,7 +2661,6 @@ function renderStudies(){
             '<button class="ghost" data-act="ciprint" title="'+T('Imprimir')+'">🖨</button>':'')+
         (featOn('ia.askDocs') && docsOf(s.id).some(d=>d.tipo!=='ci')
           ?'<button class="ghost" data-act="docsask" title="'+T('Consultar los documentos del estudio')+'">🔎 '+T('Protocolo')+'</button>':'')+
-        '<button class="ghost" data-act="dup">'+T('Duplicar')+'</button>'+
         '<button class="ghost" data-act="del" style="color:var(--bad)">'+T('Eliminar')+'</button>'+
       '</div>';
     if(ci){
@@ -2672,7 +2672,6 @@ function renderStudies(){
     const bDocs = div.querySelector('[data-act=docsask]');
     if(bDocs) bDocs.addEventListener('click', ()=>openStudyAsk(s.id));
     div.querySelector('[data-act=edit]').addEventListener('click', ()=>openStudyEditor(s.id));
-    div.querySelector('[data-act=dup]').addEventListener('click', ()=>duplicateStudy(s.id));
     div.querySelector('[data-act=del]').addEventListener('click', ()=>deleteStudy(s.id));
     box.appendChild(div);
   }
@@ -2931,9 +2930,9 @@ function renderPatients(){
       '<td>'+fmtDate(p.fechaBasal)+'</td>'+
       '<td>'+nvTxt+'</td>'+
       '<td class="actions">'+
+        '<button class="primary" data-act="edit" style="font-size:14px;padding:7px 13px">'+T('Editar')+'</button>'+
         '<button class="ghost" data-act="visit" title="'+T('Registrar visita')+'">'+T('+ Visita')+'</button>'+
-        '<button class="ghost" data-act="edit">'+T('Editar')+'</button>'+
-        '<button class="ghost" data-act="del" style="color:var(--bad)">✕</button>'+
+        '<button class="ghost" data-act="del" style="color:var(--bad);margin-left:8px" title="Eliminar paciente">✕</button>'+
       '</td>';
     tr.querySelector('[data-act=edit]').addEventListener('click', ()=>openPatientEditor(p.id));
     tr.querySelector('[data-act=visit]').addEventListener('click', ()=>openVisitForm(null, p.id));
@@ -2957,6 +2956,7 @@ function openPatientEditor(id){
   $('paEstado').value = p ? (p.estado||'screening') : 'screening';
   $('paNotas').value = p ? (p.notas||'') : '';
   $('paSexo').value = p ? (p.sexo||'') : '';
+  $('paFechaNac').value = p ? (p.fechaNacimiento||'') : '';
   $('paAnti').value = p ? (p.anticoncepcion||'') : '';
   $('paAntiDet').value = p ? (p.anticoncepcionDet||'') : '';
   togglePaSexo();
@@ -3070,6 +3070,7 @@ $('btnSavePatient').addEventListener('click', async ()=>{
     estado: $('paEstado').value,
     notas: $('paNotas').value.trim(),
     sexo: $('paSexo').value,
+    fechaNacimiento: $('paFechaNac').value || '',
     anticoncepcion: $('paAnti').value,
     anticoncepcionDet: $('paAntiDet').value.trim(),
     criterios: Object.assign({}, PA_CRIT),
