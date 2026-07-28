@@ -342,15 +342,12 @@ details>summary{color:var(--acc-dark)}
         <button id="btnClearCrit">🧹 Vaciar criterios</button>
         <button id="btnImportCrit">⚡ Importar desde documento</button>
       </div>
-      <div class="muted small">Editá cada criterio y sus condiciones internas. Esta estructura es la que se usa después para evaluar a los pacientes.</div>
-      <div id="stInclEditor" style="margin-top:8px"></div>
-      <button type="button" class="ghost" id="btnAddIncl" style="margin-top:6px">+ Agregar criterio de inclusión</button>
+      <div class="muted small">Todos los criterios de inclusión, uno por línea. Esta lista es la que se usa después para evaluar a los pacientes.</div>
+      <textarea id="stIncl" rows="8" placeholder="Edad ≥ 18 años&#10;Diagnóstico confirmado de...&#10;Consentimiento informado firmado"></textarea>
       <h3 style="margin-top:16px">Criterios de exclusión</h3>
-      <div class="muted small">Un criterio principal por bloque; las condiciones internas se muestran debajo.</div>
-      <div id="stExclEditor" style="margin-top:8px"></div>
-      <button type="button" class="ghost" id="btnAddExcl" style="margin-top:6px">+ Agregar criterio de exclusión</button>
-      <textarea id="stIncl" class="hidden"></textarea>
-      <textarea id="stExcl" class="hidden"></textarea>
+      <div class="muted small">Todos los criterios de exclusión, uno por línea.</div>
+      <textarea id="stExcl" rows="8" placeholder="Embarazo o lactancia&#10;Insuficiencia renal severa..."></textarea>
+      <div class="toolbar" style="margin-top:8px"><button type="button" id="btnPrintCriteria">🖨 Imprimir criterios / PDF</button></div>
     </div>
 
     <div class="card">
@@ -2785,10 +2782,12 @@ function renderStVisitas(){
         '</div>'+
       '</div>'+
       '<label>Tareas / procedimientos (uno por línea)</label>'+
-      '<textarea class="v-tareas" rows="4" placeholder="Signos vitales&#10;Laboratorio&#10;Registro de EAs y medicación concomitante">'+esc((v.tareas||[]).join('\n'))+'</textarea>';
+      '<textarea class="v-tareas" rows="4" placeholder="Signos vitales&#10;Laboratorio&#10;Registro de EAs y medicación concomitante">'+esc((v.tareas||[]).join('\n'))+'</textarea>'+
+      '<div class="small muted v-proc-count" style="margin-top:4px"><b>'+(v.tareas||[]).filter(Boolean).length+'</b> procedimiento(s) cargado(s) en esta visita.</div>';
     d.querySelector('.v-del').addEventListener('click', ()=>{ EDIT_VISITAS = collectStVisitas(); EDIT_VISITAS.splice(idx,1); renderStVisitas(); });
     d.querySelector('.v-up').addEventListener('click', ()=>{ if(idx===0) return; EDIT_VISITAS = collectStVisitas(); const t=EDIT_VISITAS[idx-1]; EDIT_VISITAS[idx-1]=EDIT_VISITAS[idx]; EDIT_VISITAS[idx]=t; renderStVisitas(); });
     d.querySelector('.v-down').addEventListener('click', ()=>{ EDIT_VISITAS = collectStVisitas(); if(idx>=EDIT_VISITAS.length-1) return; const t=EDIT_VISITAS[idx+1]; EDIT_VISITAS[idx+1]=EDIT_VISITAS[idx]; EDIT_VISITAS[idx]=t; renderStVisitas(); });
+    d.querySelector('.v-tareas').addEventListener('input', e=>{ const n=e.target.value.split('\n').map(x=>x.trim()).filter(Boolean).length; d.querySelector('.v-proc-count').innerHTML='<b>'+n+'</b> procedimiento(s) cargado(s) en esta visita.'; });
     box.appendChild(d);
   });
 }
@@ -4848,6 +4847,17 @@ $('btnClearCrit').addEventListener('click', ()=>{
   toast('Criterios vaciados. Importalos de nuevo o cargalos a mano, y guardá el estudio.');
 });
 $('btnImportCrit').addEventListener('click', openImportModal);
+$('btnPrintCriteria').addEventListener('click', ()=>{
+  const incl = $('stIncl').value.split('\n').map(x=>x.trim()).filter(Boolean);
+  const excl = $('stExcl').value.split('\n').map(x=>x.trim()).filter(Boolean);
+  if(!incl.length && !excl.length){ toast('Primero cargá al menos un criterio.'); return; }
+  const fmt = x => esc(x).replace(/\u2028/g,'<br>');
+  const lista = (titulo, items) => items.length
+    ? '<h2>'+titulo+'</h2><ol>'+items.map(x=>'<li>'+fmt(x)+'</li>').join('')+'</ol>'
+    : '<h2>'+titulo+'</h2><p>Sin criterios cargados.</p>';
+  const nombre = $('stCodigo').value.trim() || 'Estudio';
+  openReport('Criterios del estudio', '<h1>Criterios del estudio</h1><div class="meta"><b>'+esc(nombre)+'</b></div>'+lista('Criterios de inclusión',incl)+lista('Criterios de exclusión',excl));
+});
 $('btnImportVis').addEventListener('click', openImportModal);
 /* ================= BÚSQUEDA DOCUMENTAL (RAG con Vertex AI Search) =================
    Es el motor que usa NotebookLM por debajo. La diferencia con mandarle a la IA
@@ -5282,48 +5292,9 @@ function renderImpCriteriaPreview(){
   };
   box.innerHTML = grupo('Inclusión', $('impIncl').value) + grupo('Exclusión', $('impExcl').value) || '<span class="muted">Todavía no hay criterios para mostrar.</span>';
 }
-function criteriaEditorItems(value){
-  return String(value||'').split('\n').map(x=>x.trim()).filter(Boolean);
-}
-function criteriaEditorText(value){
-  return String(value||'').replace(/\u2028/g,'\n');
-}
-function criteriaStoredText(value){
-  const lines = String(value||'').split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
-  if(!lines.length) return '';
-  return lines[0] + (lines.length>1 ? '\u2028'+lines.slice(1).map(x=>/^([•])\s*/.test(x)?x:'• '+x).join('\u2028') : '');
-}
-function syncStudyCriteriaEditor(group){
-  const selector = group==='incl' ? '#stInclEditor textarea' : '#stExclEditor textarea';
-  const target = group==='incl' ? $('stIncl') : $('stExcl');
-  target.value = Array.from(document.querySelectorAll(selector)).map(x=>criteriaStoredText(x.value)).filter(Boolean).join('\n');
-}
-function renderCriteriaEditor(group){
-  const isIncl = group==='incl', source = isIncl ? $('stIncl').value : $('stExcl').value;
-  const box = isIncl ? $('stInclEditor') : $('stExclEditor');
-  const items = criteriaEditorItems(source);
-  box.innerHTML = items.length ? items.map((item,i)=>
-    '<div class="card" style="padding:10px 12px;margin:0 0 8px;background:#fbfcfe">'+
-      '<div class="small" style="font-weight:700;color:var(--acc-dark);margin-bottom:4px">'+(isIncl?'Inclusión':'Exclusión')+' '+(i+1)+'</div>'+
-      '<textarea rows="'+Math.max(3,criteriaEditorText(item).split('\n').length+1)+'" data-crit="'+group+'" data-index="'+i+'">'+esc(criteriaEditorText(item))+'</textarea>'+
-      '<button type="button" class="ghost" data-remove-crit="'+group+'" data-index="'+i+'" style="margin-top:5px;color:var(--bad)">Quitar criterio</button>'+
-    '</div>').join('') : '<div class="muted small">Todavía no hay criterios cargados.</div>';
-  box.querySelectorAll('textarea[data-crit]').forEach(t=>t.addEventListener('input', ()=>syncStudyCriteriaEditor(group)));
-  box.querySelectorAll('[data-remove-crit]').forEach(b=>b.addEventListener('click', ()=>{
-    const all = criteriaEditorItems(isIncl ? $('stIncl').value : $('stExcl').value);
-    all.splice(Number(b.dataset.index),1);
-    (isIncl ? $('stIncl') : $('stExcl')).value = all.join('\n');
-    renderCriteriaEditor(group);
-  }));
-}
-function renderStudyCriteriaEditor(){
-  renderCriteriaEditor('incl');
-  renderCriteriaEditor('excl');
-}
+function renderStudyCriteriaEditor(){ /* los campos de texto son la fuente editable */ }
 $('impIncl').addEventListener('input', renderImpCriteriaPreview);
 $('impExcl').addEventListener('input', renderImpCriteriaPreview);
-$('btnAddIncl').addEventListener('click', ()=>{ $('stIncl').value = ($('stIncl').value.trim() ? $('stIncl').value.trim()+'\n' : '')+'Nuevo criterio de inclusión'; renderCriteriaEditor('incl'); });
-$('btnAddExcl').addEventListener('click', ()=>{ $('stExcl').value = ($('stExcl').value.trim() ? $('stExcl').value.trim()+'\n' : '')+'Nuevo criterio de exclusión'; renderCriteriaEditor('excl'); });
 
 function renderImpVisits(){
   const box = $('impVisitsBox'); box.innerHTML='';
