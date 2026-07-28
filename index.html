@@ -4371,7 +4371,8 @@ async function aiChat(opt){
       systemInstruction:{ parts:[{ text:opt.system||'' }] },
       contents:[{ role:'user',
         parts: blocks.map(b => b.t==='img' ? { inlineData:{ mimeType:b.mime, data:b.data } } : { text:b.text }) }],
-      generationConfig:{ maxOutputTokens: opt.maxTokens||8000 }
+      generationConfig:Object.assign({ maxOutputTokens: opt.maxTokens||8000 },
+        opt.json ? { responseMimeType:'application/json' } : {})
     };
   } else if(prov==='openai'){
     url = 'https://api.openai.com/v1/chat/completions';
@@ -6568,6 +6569,14 @@ async function aiEvalCriteria(st, text, imagenes, paciente){
     '; fecha de nacimiento: '+(paciente.fechaNacimiento||'no registrada')+
     (edad ? '; edad al '+referencia+': '+edad+' años' : '')+
     '; fecha basal: '+(paciente.fechaBasal||'no registrada')+'.' : '';
+  /* Además de los fragmentos más relacionados, cada grupo recibe contexto
+     clínico real. Antes se enviaban solo coincidencias literales entre el
+     criterio y el PDF; por ejemplo, «LES» podía no relacionarse con «lupus»
+     y la IA no llegaba a ver ningún dato concreto del paciente. */
+  const limiteContexto = Math.min(36000, Math.max(12000, aiCtxMax()-14000));
+  const textoPaciente = text.length>limiteContexto
+    ? text.slice(0,Math.floor(limiteContexto*0.72))+'\n[... documentación intermedia omitida por longitud ...]\n'+text.slice(-Math.floor(limiteContexto*0.28))
+    : text;
   const salida=[];
   for(let pos=0;pos<items.length;pos+=6){
     const lote=items.slice(pos,pos+6);
@@ -6576,7 +6585,7 @@ async function aiEvalCriteria(st, text, imagenes, paciente){
       return x.clave+' ('+x.tipo+'): '+x.criterio+'\nEVIDENCIA RELACIONADA: '+(ev ? '• '+ev : 'No se encontró evidencia textual relacionada.');
     }).join('\n\n');
     const prompt='Sos un asistente de investigación clínica. Evaluá cada criterio usando ÚNICAMENTE los datos estructurados y la evidencia textual incluida. No uses conocimiento externo ni supongas datos ausentes.\n\n'+
-      datos+'\n\n'+bloque+'\n\nRespondé ÚNICAMENTE con un array JSON, un objeto por criterio: '+
+      datos+'\n\n'+bloque+'\n\nCONTEXTO DOCUMENTAL COMPLETO DEL PACIENTE:\n<<<\n'+textoPaciente+'\n>>>\n\nRespondé ÚNICAMENTE con un array JSON, un objeto por criterio: '+
       '[{"clave":"i0","respuesta":"si|no|pendiente","justificacion":"cita textual breve o dato estructurado","falta":"dato faltante, solo si pendiente"}].\n\n'+
       'Reglas: para inclusión, “si” solo con evidencia explícita; para exclusión, “si” si la condición está presente y “no” si está explícitamente descartada. Si no hay prueba suficiente, respondé “pendiente”.';
     /* Una respuesta ocasionalmente puede venir vacía o con texto extra. Se
@@ -6589,7 +6598,7 @@ async function aiEvalCriteria(st, text, imagenes, paciente){
       try{
         const r=await aiChat({
           system:'Respondés exclusivamente con un array JSON válido, sin texto extra. Empezá con [ y terminá con ].',
-          content:contenido, maxTokens:Math.max(1200,lote.length*260)
+          content:contenido, maxTokens:Math.max(1200,lote.length*260), json:!reintento
         });
         return parseAiArray(String(r.text||'').replace(/```json|```/g,'').trim());
       }catch(e){ return []; }
