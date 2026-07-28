@@ -4559,51 +4559,89 @@ async function ragExtraerVisitas(estudioId){
   })).filter(v=>!isNaN(v.dia) && Math.abs(v.dia)<=2000).sort((a,b)=>a.dia-b.dia).slice(0,60);
 }
 
+/* answerQuery está pensado para responder en prosa: pedirle JSON por el
+   preámbulo falla la mitad de las veces. En cambio respeta bien un formato de
+   líneas con separador, que además se parsea sin ambigüedad. */
+function ragParseLineas(txt, campos){
+  const out = [];
+  for(const linea of String(txt||'').split('\n')){
+    const l = linea.trim().replace(/^[-•*\d.)\s]+/,'');
+    if(!l || l.indexOf('|') < 0) continue;
+    const p = l.split('|').map(x=>x.trim().replace(/\*{1,2}/g,'').replace(/\[\d+\]/g,'').trim());
+    if(p.length < 2) continue;
+    const clave = p[0].toLowerCase().replace(/[^ie0-9]/g,'');
+    if(!/^[ie]\d{1,2}$/.test(clave)) continue;
+    const o = { clave };
+    campos.forEach((c,k)=>{ o[c] = p[k+1] || ''; });
+    out.push(o);
+  }
+  return out;
+}
+
+/* pregunta al índice esperando líneas «clave | campo | campo» */
+async function ragLineas(pregunta, filtros, campos, ejemplo){
+  const pre =
+    'Sos un asistente de un equipo de investigación clínica. Respondés SOLO con líneas en el formato indicado, '+
+    'una por elemento, sin encabezados, sin introducción y sin conclusión. '+
+    'Usás únicamente lo que dicen los fragmentos recuperados: si un dato no figura, lo declarás ausente en vez de inventarlo. '+
+    'Formato exacto de cada línea: '+ejemplo;
+  const r = await ragLlamar(Object.assign({ accion:'preguntar', pregunta, preambulo:pre,
+                                            max_fragmentos:30 }, filtros||{}));
+  return { items: ragParseLineas(r.respuesta, campos), crudo: String(r.respuesta||'') };
+}
+
 /* evaluación de los criterios de un paciente desde el índice */
-async function ragEvalCriterios(st, pacienteId){
+async function ragEvalCriterios(st, pacienteId, estudioId){
   const inc = st.criteriosInclusion||[], exc = st.criteriosExclusion||[];
   const items = inc.map((c,i)=>({k:'i'+i,c})).concat(exc.map((c,i)=>({k:'e'+i,c})));
-  const salida = {};
+  const salida = []; let crudo = '';
   for(let i=0;i<items.length;i+=10){
     const lote = items.slice(i,i+10);
     const preg =
       'Para cada criterio de elegibilidad de la lista, decidí si la documentación clínica de este participante lo satisface.\n\n'+
       'CRITERIOS:\n'+lote.map(x=>x.k+'. '+x.c).join('\n')+'\n\n'+
-      'Para los de inclusión (clave que empieza con i): "si" si la documentación dice que lo cumple, "no" si dice que no, "pendiente" si el dato no figura.\n'+
-      'Para los de exclusión (clave que empieza con e): "si" si PRESENTA la condición, "no" si está descartada explícitamente, "pendiente" si no figura.\n'+
-      'Ante cualquier duda, "pendiente".';
+      'Respondé una línea por criterio. En los de inclusión (clave i): «si» si la documentación dice que lo cumple, '+
+      '«no» si dice que no, «pendiente» si el dato no figura. En los de exclusión (clave e): «si» si PRESENTA la '+
+      'condición, «no» si está descartada, «pendiente» si no figura. Ante cualquier duda, «pendiente».';
     try{
-      const r = await ragJson(preg, { paciente_id: pacienteId, max_fragmentos: 25 },
-        '[{"clave":"i0","respuesta":"si|no|pendiente","justificacion":"cita textual del documento","falta":"qué dato haría falta"}]');
-      for(const o of parseAiArray(r.texto)){
-        const k = String(o.clave||'').trim().toLowerCase();
-        if(/^[ie]\d{1,2}$/.test(k)) salida[k] = o;
-      }
-    }catch(e){ /* la tanda que falle queda pendiente */ }
+      const r = await ragLineas(preg, { paciente_id: pacienteId, estudio_id: estudioId||'' },
+        ['respuesta','justificacion'],
+        'clave | si|no|pendiente | cita textual del documento     (ejemplo: i0 | si | «Edad: 36 años»)');
+      salida.push(...r.items);
+      if(!crudo) crudo = r.crudo;
+    }catch(e){}
   }
-  return Object.keys(salida).map(k=>Object.assign({clave:k}, salida[k]));
+  return { items: salida, crudo };
 }
 
 /* fundamentación de un lote de criterios desde el índice */
-async function ragNarrarLote(lote, p){
+async function ragNarrarLote(lote, p, estudioId){
   const resp = p.criterios || {};
   const yaResp = lote.map(it=>it.clave+'='+(resp[it.clave]||'pendiente')).join(', ');
   const sexo = p.sexo==='F' ? 'femenino' : (p.sexo==='M' ? 'masculino' : 'no consignado');
   const preg =
-    'Redactá una fundamentación breve para cada criterio, referida a este participante (sexo '+sexo+'), usando su documentación clínica.\n\n'+
+    'Redactá una fundamentación breve para cada criterio, referida a este participante (sexo '+sexo+'), '+
+    'usando su historia clínica y sus estudios, y el enunciado del criterio en el protocolo.\n\n'+
     'CRITERIOS:\n'+lote.map(it=>it.clave+'. ['+(it.tipo==='inclusion'?'INCLUSIÓN':'EXCLUSIÓN')+' '+it.n+'] '+it.criterio).join('\n')+'\n\n'+
     'RESPUESTAS YA REGISTRADAS POR EL INVESTIGADOR (respetalas): '+(yaResp||'ninguna')+'\n\n'+
-    'Escribí en tercera persona, prosa clínica sobria, mencionando el dato concreto (valor, fecha, diagnóstico, fármaco) tal como figura. '+
-    'La conclusión va DENTRO de la misma oración: cerrá con «…, por lo que cumple con el criterio», «…, por lo que no cumple con el criterio» '+
-    'o «…, por lo que el criterio queda pendiente de documentación». Máximo 45 palabras, oración completa. No identifiques al participante por nombre.';
-  const r = await ragJson(preg, { paciente_id: p.id, max_fragmentos: 25 },
-    '[{"clave":"i0","texto":"la fundamentación","estado":"cumple|no_cumple|pendiente"}]');
+    'Una línea por criterio. En tercera persona, prosa clínica sobria, mencionando el dato concreto '+
+    '(valor, fecha, diagnóstico, fármaco) tal como figura. La conclusión va DENTRO de la misma oración: '+
+    'cerrá con «…, por lo que cumple con el criterio», «…, por lo que no cumple con el criterio» o '+
+    '«…, por lo que el criterio queda pendiente de documentación». Máximo 45 palabras. '+
+    'No identifiques al participante por nombre.';
+  const r = await ragLineas(preg, { paciente_id: p.id, estudio_id: estudioId||'' },
+    ['estado','texto'],
+    'clave | cumple|no_cumple|pendiente | la fondamentación     (ejemplo: i0 | cumple | La participante tiene 36 años, por lo que cumple con el criterio.)');
   const porClave = {};
-  for(const o of parseAiArray(r.texto)){
-    const k = String(o.clave||'').trim().toLowerCase();
-    if(/^[ie]\d{1,2}$/.test(k)) porClave[k]=o;
+  for(const o of r.items){
+    const est = String(o.estado||'').toLowerCase().replace(/\s/g,'_');
+    porClave[o.clave] = {
+      clave: o.clave,
+      texto: o.texto || '',
+      estado: ['cumple','no_cumple','pendiente'].includes(est) ? est : 'pendiente'
+    };
   }
-  return porClave;
+  return { porClave, crudo: r.crudo };
 }
 
 async function ragExtraerCriterios(estudioId){
@@ -6552,7 +6590,8 @@ $('btnRunEval').addEventListener('click', async ()=>{
       const pidR = $('paId').value;
       try{
         stEl.textContent = T('Consultando el índice de búsqueda documental...');
-        const res = await ragEvalCriterios(study, pidR);
+        const rEv = await ragEvalCriterios(study, pidR, $('paEstudio').value);
+        const res = rEv.items;
         if(res.length){
           const nR = applyEvalResults(res);
           renderPaCriterios();
@@ -6563,7 +6602,8 @@ $('btnRunEval').addEventListener('click', async ()=>{
           toast(T('Criterios evaluados con búsqueda documental.'));
           return;
         }
-        if(ragEstricto()) throw new Error(T('El índice no devolvió respuestas. ¿Están indexados los documentos de este paciente?'));
+        if(ragEstricto()) throw new Error(T('El índice no devolvió respuestas en el formato esperado.')+
+          (rEv.crudo ? ' '+T('Respondió')+': «'+rEv.crudo.slice(0,220)+'…»' : ' '+T('No devolvió nada: puede que los documentos sigan procesándose.')));
         stEl.textContent = T('El índice no devolvió respuestas; se intenta con el texto...');
       }catch(eR){
         if(ragEstricto() || !aiConfigured()) throw eR;
@@ -6973,7 +7013,9 @@ async function aiNarrarLote(items, st, texto, p, imagenes){
   return porClave;
 }
 
+let NARR_CRUDO = '';
 async function aiNarrarCriterios(st, texto, p, imagenes, st_el){
+  NARR_CRUDO = '';
   const items = narrCriterios(st);
   const lotes = [];
   for(let i=0;i<items.length;i+=NARR_LOTE) lotes.push(items.slice(i, i+NARR_LOTE));
@@ -6985,7 +7027,11 @@ async function aiNarrarCriterios(st, texto, p, imagenes, st_el){
                                   ' '+T('de')+' '+items.length+' '+T('criterios')+'...';
     try{
       if(ragActivo()){
-        try{ Object.assign(porClave, await ragNarrarLote(lotes[i], p)); }
+        try{
+          const rL = await ragNarrarLote(lotes[i], p, p.estudioId || '');
+          Object.assign(porClave, rL.porClave);
+          if(!Object.keys(rL.porClave).length && rL.crudo) NARR_CRUDO = rL.crudo;
+        }
         catch(eR){
           if(ragEstricto() || !aiConfigured()) throw eR;
           Object.assign(porClave, await aiNarrarLote(lotes[i], st, texto, p, imagenes));
@@ -7000,7 +7046,8 @@ async function aiNarrarCriterios(st, texto, p, imagenes, st_el){
     if(imagenes && imagenes.length) imagenes = null;
   }
   if(!Object.keys(porClave).length)
-    throw new Error(T('La IA no devolvió ninguna fundamentación interpretable.'));
+    throw new Error(T('No se obtuvo ninguna fundamentación interpretable.')+
+      (NARR_CRUDO ? ' '+T('El buscador respondió')+': «'+NARR_CRUDO.slice(0,240)+'…»' : ''));
 
   /* una oración que llegó cortada se marca como pendiente en lugar de guardarse a medias */
   const cortada = t => {
@@ -7151,6 +7198,7 @@ $('btnNarrRun').addEventListener('click', async ()=>{
     if(texto.trim().length < 30) throw new Error(T('No hay texto legible en los documentos seleccionados.'));
     const st = getStudy($('paEstudio').value);
     const p = Object.assign({}, getPatient($('paId').value), {
+      id: $('paId').value,
       criterios: PA_CRIT, estudioId: $('paEstudio').value, sexo: ($('paSexo')||{}).value || ''
     });
     let imgs = [];
