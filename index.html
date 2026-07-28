@@ -6648,12 +6648,20 @@ function applyEvalResults(res){
   if(!Array.isArray(res)) throw new Error('Respuesta de IA inválida.');
   let resp=0, pend=0;
   for(const r of res){
-    const k = String(r.clave||'').trim().toLowerCase();
+    const k = String(r.clave||r.id||r.criterioId||'').trim().toLowerCase();
     if(!/^[ie]\d{1,2}$/.test(k)) continue;
-    const v = String(r.respuesta||'').toLowerCase().replace('í','i');
+    const bruto = stripAcc(r.respuesta||r.estado||r.resultado||'').trim();
+    /* Gemini a veces expresa el dictamen clínico («cumple», «descartado»)
+       aunque se le pida Sí/No. Se traduce a los radios de esta pantalla sin
+       perder la lógica: inclusión cumple = Sí; exclusión descartada = No. */
+    let v = bruto;
+    if(['cumple','elegible','apto','apta'].includes(bruto)) v = k[0]==='i' ? 'si' : 'no';
+    else if(['descartado','descartada'].includes(bruto)) v = k[0]==='e' ? 'no' : 'si';
+    else if(['no cumple','nocumple','no elegible','noelegible','excluido','excluida'].includes(bruto)) v = k[0]==='i' ? 'no' : 'si';
+    else if(['pendiente','indeterminado','indeterminada','no evaluable'].includes(bruto)) v = 'pendiente';
     if(v!=='si' && v!=='no' && v!=='pendiente') continue;
     PA_CRIT[k] = v;
-    PA_JUST[k] = { ai:true, just:String(r.justificacion||'').slice(0,300), falta:String(r.falta||'').slice(0,300) };
+    PA_JUST[k] = { ai:true, just:String(r.justificacion||r.fundamentacion||r.explicacion||'').slice(0,300), falta:String(r.falta||r.pendientePor||'').slice(0,300) };
     if(v==='pendiente') pend++; else resp++;
   }
   return { resp, pend };
