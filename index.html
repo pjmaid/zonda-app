@@ -1000,6 +1000,10 @@ details>summary{color:var(--acc-dark)}
       <textarea id="impIncl" rows="6"></textarea>
       <h3 style="margin-top:12px">Criterios de exclusión detectados</h3>
       <textarea id="impExcl" rows="6"></textarea>
+      <details id="impCritPreview" style="margin-top:10px">
+        <summary class="small" style="cursor:pointer;color:var(--acc-dark)">Vista previa estructurada de criterios</summary>
+        <div id="impCritPreviewBody" class="small" style="margin-top:8px"></div>
+      </details>
       <h3 style="margin-top:12px">Visitas detectadas <span class="muted small">(destildá las que no correspondan)</span></h3>
       <div id="impVisitsBox"></div>
       <div class="row" style="margin-top:12px">
@@ -2941,7 +2945,6 @@ function renderPatients(){
   const f = $('patFilterStudy').value || 'all';
   const list = DB.patients.filter(p=>(f==='all'||p.estudioId===f) && canSeeStudy(p.estudioId) && !p.anulado)
     .slice().sort((a,b)=>(a.codigo||'').localeCompare(b.codigo||''));
-  const anulados = DB.patients.filter(p=>(f==='all'||p.estudioId===f) && canSeeStudy(p.estudioId) && p.anulado);
   $('patientsEmpty').classList.toggle('hidden', list.length>0);
   for(const p of list){
     const st = getStudy(p.estudioId);
@@ -2971,14 +2974,6 @@ function renderPatients(){
     tr.querySelector('[data-act=edit]').addEventListener('click', ()=>openPatientEditor(p.id));
     tr.querySelector('[data-act=visit]').addEventListener('click', ()=>openVisitForm(null, p.id));
     tr.querySelector('[data-act=del]').addEventListener('click', ()=>deletePatient(p.id));
-    tb.appendChild(tr);
-  }
-  for(const p of anulados){
-    const tr = document.createElement('tr');
-    tr.style.opacity = '0.55';
-    tr.innerHTML = '<td colspan="7"><span class="chip bad">'+T('ANULADO')+'</span> <b>'+esc(p.codigo||'')+'</b>'+
-      (p.iniciales?' ('+esc(p.iniciales)+')':'')+' — '+esc(p.motivoAnulacion||'')+
-      ' <span class="muted small">('+esc(p.anuladoPor||'')+', '+fmtDate((p.anuladoEn||'').slice(0,10))+')</span></td>';
     tb.appendChild(tr);
   }
 }
@@ -5167,6 +5162,7 @@ $('btnAnalyze').addEventListener('click', async ()=>{
         if(rr.incl.length || rr.excl.length || IMP_VISITS.length){
           $('impIncl').value = rr.incl.join('\n');
           $('impExcl').value = rr.excl.join('\n');
+          renderImpCriteriaPreview();
           renderImpVisits();
           $('impResults').classList.remove('hidden');
           st.style.color = (rr.incl.length && rr.excl.length) ? 'var(--ok)' : 'var(--warn)';
@@ -5189,6 +5185,7 @@ $('btnAnalyze').addEventListener('click', async ()=>{
     if(nlm && (nlm.incl.length || nlm.excl.length)){
       $('impIncl').value = nlm.incl.join('\n');
       $('impExcl').value = nlm.excl.join('\n');
+      renderImpCriteriaPreview();
       IMP_VISITS = [];
       renderImpVisits();
       $('impResults').classList.remove('hidden');
@@ -5224,6 +5221,7 @@ $('btnAnalyze').addEventListener('click', async ()=>{
     }
     $('impIncl').value = crit.incl.join('\n');
     $('impExcl').value = crit.excl.join('\n');
+    renderImpCriteriaPreview();
     renderImpVisits();
     $('impResults').classList.remove('hidden');
     const tot = crit.incl.length + crit.excl.length + IMP_VISITS.length;
@@ -5257,6 +5255,23 @@ $('btnAnalyze').addEventListener('click', async ()=>{
     st.style.color='var(--bad)'; st.textContent='⚠ '+e.message;
   }
 });
+
+/* Vista de lectura: conserva un criterio por ítem, como NotebookLM, antes de
+   que el usuario lo aplique. Los textarea siguen siendo editables. */
+function renderImpCriteriaPreview(){
+  const box = $('impCritPreviewBody');
+  if(!box) return;
+  const grupo = (titulo, valor) => {
+    const items = String(valor||'').split('\n').map(x=>x.trim()).filter(Boolean);
+    if(!items.length) return '';
+    return '<h4 style="margin:8px 0 4px">'+titulo+'</h4><ol style="margin:0;padding-left:22px">'+
+      items.map(x=>'<li style="white-space:pre-wrap;margin:4px 0">'+esc(x)+'</li>').join('')+'</ol>';
+  };
+  box.innerHTML = grupo('Inclusión', $('impIncl').value) + grupo('Exclusión', $('impExcl').value) ||
+    '<span class="muted">Todavía no hay criterios para mostrar.</span>';
+}
+$('impIncl').addEventListener('input', renderImpCriteriaPreview);
+$('impExcl').addEventListener('input', renderImpCriteriaPreview);
 
 function renderImpVisits(){
   const box = $('impVisitsBox'); box.innerHTML='';
