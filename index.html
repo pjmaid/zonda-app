@@ -7054,22 +7054,25 @@ async function aiNarrarLote(items, st, texto, p, imagenes){
   const resp = p.criterios || {};
   const yaResp = items.map(it=>it.clave+'='+(resp[it.clave]||'pendiente')).join(', ');
   const sexo = p.sexo==='F' ? 'femenino' : (p.sexo==='M' ? 'masculino' : 'no consignado');
+  const edad = p.fechaNacimiento ? edadEnFecha(p.fechaNacimiento, p.fechaBasal || todayISO()) : null;
   const MAXC = aiCtxMax() - 8000;
   let doc = texto;
   if(doc.length > MAXC) doc = doc.slice(0, MAXC) + '\n[TEXTO TRUNCADO POR LONGITUD]';
 
   const prompt =
     'Sos un asistente de un equipo de investigación clínica. Para CADA criterio de elegibilidad listado, redactá una fundamentación breve referida a ESTE paciente, usando ÚNICAMENTE la documentación que se incluye más abajo.\n\n'+
-    'PACIENTE: código '+(p.codigo||'')+', sexo '+sexo+'.\n'+
+    'PACIENTE: código '+(p.codigo||'')+', sexo '+sexo+
+      (p.fechaNacimiento ? ', fecha de nacimiento '+fmtDate(p.fechaNacimiento) : '')+
+      (edad!==null ? ', edad '+edad+' años' : '')+'.\n'+
     'RESPUESTAS YA REGISTRADAS POR EL INVESTIGADOR (respetalas): '+(yaResp||'ninguna')+'\n\n'+
     'CRITERIOS:\n'+items.map(it=>it.clave+'. ['+(it.tipo==='inclusion'?'INCLUSIÓN':'EXCLUSIÓN')+' '+it.n+'] '+it.criterio).join('\n')+'\n\n'+
     'DOCUMENTACIÓN DEL PACIENTE:\n<<<\n'+doc+'\n>>>\n\n'+
     'Respondé ÚNICAMENTE con un array JSON válido, un objeto por criterio:\n'+
-    '[{"clave":"i0","texto":"fundamentación de 1 a 3 oraciones referida a este paciente","estado":"cumple|no_cumple|pendiente"}]\n\n'+
+    '[{"clave":"i0","texto":"fundamentación de 1 a 3 oraciones referida a este paciente","estado":"cumple|no_cumple|pendiente","cita":"documento y fecha o sección, si constan"}]\n\n'+
     'REGLAS — usá exclusivamente la DOCUMENTACIÓN incluida arriba:\n'+
     '- Escribí en tercera persona, en prosa clínica sobria, sin adjetivos valorativos y sin repetir el enunciado del criterio palabra por palabra: explicá el dato del paciente que lo satisface o lo contradice.\n'+
-    '- La conclusión tiene que quedar escrita DENTRO de la misma oración, no como etiqueta aparte. Cerrá con «…, por lo que cumple con el criterio» o «…, por lo que no cumple con el criterio», tanto en inclusión como en exclusión.\n'+
-    '- Si el dato no figura, cerrá con «…, por lo que el criterio queda pendiente de documentación» e indicá con precisión qué estudio o dato hay que obtener.\n'+
+    '- La respuesta del investigador define el veredicto y no puede ser contradicha. Si es inclusión y figura "si", empezá exactamente con "Cumple:". Si es exclusión y figura "no", empezá exactamente con "Descartado:". Si es pendiente, empezá con "Pendiente:" y precisá qué dato falta.\n'+
+    '- Si no hay una respuesta del investigador, decidí solo con evidencia documental: para inclusión usá "Cumple:" cuando está demostrada; para exclusión usá "Descartado:" cuando la condición está descartada en los documentos. En caso contrario, usá "Pendiente:".\n'+
     '- Escribí cada oración COMPLETA: nunca la dejes cortada a mitad de frase. Máximo 45 palabras por fundamentación.\n'+
     '- Mencioná el dato concreto (valor, fecha, diagnóstico, fármaco) tal como figura en la documentación.\n'+
     '- No uses conocimiento médico general ni valores de referencia externos. No infieras ni completes lo que no esté escrito.\n'+
@@ -7164,21 +7167,26 @@ async function aiNarrarCriterios(st, texto, p, imagenes, st_el){
 /* Devuelve la fundamentación con la conclusión dentro de la misma oración.
    Si el texto redactado ya la declara, se usa tal cual; si no (por ejemplo en
    fundamentaciones hechas con la versión anterior), se le agrega el cierre. */
-function narrOracion(it){
-  let t = String(it.texto||'').trim();
-  const yaLoDice = /(por lo que|de modo que|motivo por el cual|en consecuencia)[^.]*\b(cumple|no cumple|queda pendiente|pendiente)\b/i.test(t)
-                 || /\b(cumple|no cumple)\s+(con\s+)?(el|este)\s+criterio\b/i.test(t);
-  if(yaLoDice) return t;
-  const cierre = it.estado==='cumple' ? T('por lo que cumple con el criterio')
-               : it.estado==='no_cumple' ? T('por lo que no cumple con el criterio')
-               : T('por lo que el criterio queda pendiente de documentación');
-  t = t.replace(/\s*[.;]\s*$/,'');
-  return t + ', ' + cierre + '.';
+function narrEtiqueta(it){
+  if(it.estado==='pendiente') return T('Pendiente');
+  if(it.tipo==='exclusion' && it.estado==='cumple') return T('Descartado');
+  if(it.estado==='cumple') return T('Cumple');
+  return T('No cumple');
 }
 
-function narrChip(e){
-  if(e==='cumple')    return '<span class="chip ok">'+T('cumple')+'</span>';
-  if(e==='no_cumple') return '<span class="chip bad">'+T('no cumple')+'</span>';
+function narrOracion(it){
+  let t = String(it.texto||'').trim();
+  if(!t) t = T('Sin fundamentación disponible.');
+  /* La salida nueva ya llega con Cumple:, Descartado: o Pendiente:. Al abrir
+     una fundamentación antigua se le incorpora el mismo encabezado para que
+     el informe mantenga una lectura uniforme. */
+  if(!/^(cumple|descartado|no cumple|pendiente)\s*:/i.test(t)) t = narrEtiqueta(it)+': '+t;
+  return t;
+}
+
+function narrChip(it){
+  if(it.estado==='cumple')    return '<span class="chip ok">'+esc(narrEtiqueta(it))+'</span>';
+  if(it.estado==='no_cumple') return '<span class="chip bad">'+esc(narrEtiqueta(it))+'</span>';
   return '<span class="chip warn">'+T('pendiente')+'</span>';
 }
 
@@ -7198,7 +7206,7 @@ function renderNarr(){
       const ref = (tipo==='inclusion'?'I':'E')+it.n;
       return '<div style="border:1px solid var(--line);border-radius:9px;padding:10px 12px;margin-bottom:8px;background:#fbfcfe">'+
         '<div class="small" style="color:var(--muted);margin-bottom:3px">'+
-          '<b>'+NARR_NRO+'.</b> <span class="chip gray">'+ref+'</span> '+esc(it.criterio)+' '+narrChip(it.estado)+
+          '<b>'+NARR_NRO+'.</b> <span class="chip gray">'+ref+'</span> '+esc(it.criterio)+' '+narrChip(it)+
         '</div>'+
         '<textarea data-narr="'+idx+'" rows="3">'+esc(narrOracion(it))+'</textarea>'+
       '</div>';
