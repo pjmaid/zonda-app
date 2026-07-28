@@ -874,6 +874,12 @@ details>summary{color:var(--acc-dark)}
     </div>
 
     <div class="card">
+      <h3>Depuración de registros anulados</h3>
+      <div class="muted small" style="margin-bottom:10px">Elimina definitivamente los estudios y pacientes que ya fueron anulados, junto con sus visitas y documentos asociados. Los registros activos no se modifican. Esta acción no se puede deshacer.</div>
+      <button id="btnPurgeDeleted" style="color:var(--bad)">Eliminar definitivamente registros anulados</button>
+    </div>
+
+    <div class="card">
       <h3>Modo de datos</h3>
       <div class="muted small" style="margin-bottom:8px">
         <b>Local:</b> los datos quedan solo en este navegador (esta computadora).<br>
@@ -2191,6 +2197,39 @@ async function anularRegistro(kind, id, detalle){
   });
   await persist(kind, nuevo, T('Registro anulado.'), motivo.trim());
   return true;
+}
+
+/* Purga administrativa: solo toma registros que YA estaban anulados. Se
+   eliminan también las visitas y documentos que quedarían sin paciente o
+   estudio. La auditoría permanece como constancia de la purga. */
+async function purgarRegistrosAnulados(){
+  const pacientes = (DB.patients||[]).filter(p=>p.anulado);
+  const estudios = (DB.studies||[]).filter(s=>s.anulado);
+  if(!pacientes.length && !estudios.length){ toast('No hay estudios ni pacientes anulados para eliminar definitivamente.'); return; }
+  const pids = new Set(pacientes.map(p=>p.id)), sids = new Set(estudios.map(s=>s.id));
+  const visitas = (DB.visits||[]).filter(v=>pids.has(v.pacienteId)||sids.has(v.estudioId));
+  const docs = (DB.docs||[]).filter(d=>pids.has(d.pacienteId)||sids.has(d.estudioId));
+  const detalle = pacientes.length+' paciente(s), '+estudios.length+' estudio(s), '+visitas.length+' visita(s) y '+docs.length+' documento(s) asociado(s).';
+  if(!confirm('Se eliminarán definitivamente '+detalle+'\n\nLos registros activos no se modificarán. Esta acción no se puede deshacer.\n\n¿Continuar?')) return;
+  if(prompt('Para confirmar, escribí ELIMINAR DEFINITIVAMENTE:','')!=='ELIMINAR DEFINITIVAMENTE'){
+    toast('No se eliminó ningún registro.'); return;
+  }
+  if(!await verificarClave()){ alert('Clave incorrecta. No se eliminó nada.'); return; }
+  try{
+    for(const d of docs){
+      try{ if(d.storage==='supabase') await storageDel(d.path); else await idbDel(d.id); }catch(e){}
+      await Store.remove('docs',d.id);
+    }
+    for(const v of visitas) await Store.remove('visits',v.id);
+    for(const p of pacientes) await Store.remove('patients',p.id);
+    for(const s of estudios) await Store.remove('studies',s.id);
+    auditar('sistema','purga_definitiva','', 'Eliminación definitiva de '+detalle);
+    renderAll();
+    toast('Registros anulados eliminados definitivamente.');
+  }catch(e){
+    toast('⚠ La purga no se completó: '+e.message);
+    renderAll();
+  }
 }
 function visitasDe(pacienteId){ return DB.visits.filter(v=>v.pacienteId===pacienteId && !v.anulado); }
 function noAnulado(x){ return !x.anulado; }
@@ -11353,6 +11392,7 @@ $('btnCopySql').addEventListener('click', async ()=>{
 });
 
 /* ---- respaldo ---- */
+$('btnPurgeDeleted').addEventListener('click', purgarRegistrosAnulados);
 $('btnExport').addEventListener('click', ()=>{
   const data = { app:'evoluciones-ec', version:4, exportado:new Date().toISOString(),
                  studies:DB.studies, patients:DB.patients, visits:DB.visits, docs:DB.docs||[],
