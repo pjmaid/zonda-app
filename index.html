@@ -891,6 +891,25 @@ details>summary{color:var(--acc-dark)}
       </div>
     </div>
 
+    <div class="card" id="ragCard">
+      <h3>🔎 Búsqueda documental (RAG con Vertex AI Search)</h3>
+      <div class="muted small" style="margin-bottom:8px">
+        Es el mismo motor que usa NotebookLM por debajo. En vez de mandarle a la IA el texto completo de cada documento,
+        Google los indexa una vez y en cada consulta recupera solo los fragmentos que importan, con su cita.
+        Funciona mejor con protocolos largos y sale más barato por consulta.
+        Requiere un proyecto de Google Cloud y la función <b>rag</b> desplegada en Supabase (ver la guía).
+      </div>
+      <label style="display:block;font-weight:400;color:var(--ink);margin:6px 0">
+        <input type="checkbox" id="cfgRagOn" style="width:auto;margin-right:7px">
+        <b>Usar búsqueda documental cuando esté disponible</b> — para consultar documentos y extraer criterios.
+      </label>
+      <div class="toolbar" style="margin-top:8px;margin-bottom:0">
+        <button id="btnRagTest">Probar conexión</button>
+        <button id="btnRagIndexAll">⬆ Indexar los documentos de este estudio</button>
+      </div>
+      <div id="ragMsg" class="small" style="margin-top:6px"></div>
+    </div>
+
     <div class="card">
       <h3>Modo de datos</h3>
       <div class="muted small" style="margin-bottom:8px">
@@ -959,6 +978,10 @@ details>summary{color:var(--acc-dark)}
         <input type="checkbox" id="impVisual" style="width:auto;margin-right:7px">
         <b>Leer las páginas como imagen</b> — para criterios en tablas o PDF escaneados. Más preciso, consume más créditos.
       </label>
+      <div class="toolbar" style="margin:8px 0 0">
+        <button id="btnNlmPrompt">📋 Copiar consulta para NotebookLM</button>
+        <span class="muted small">Pegala en NotebookLM (con el protocolo cargado) y traé la respuesta con «Pegar texto».</span>
+      </div>
       <div class="grow hidden" id="impFileBox"><label>Archivo (PDF, Word .docx o TXT)</label><input type="file" id="impFile" accept=".pdf,.docx,.txt"></div>
       <div><button class="primary" id="btnAnalyze">Analizar</button></div>
     </div>
@@ -3993,6 +4016,12 @@ $('btnUploadDoc').addEventListener('click', async ()=>{
     $('docFile').value=''; $('docVersion').value='';
     renderDocsList(); renderCiPanel(); renderStudies();
     toast(doc.tipo==='ci' ? T('Consentimiento cargado. Queda como versión vigente.') : T('Documento adjuntado.'));
+    /* si la búsqueda documental está activa, se manda al índice en segundo plano */
+    if(ragActivo()){
+      btn.textContent = T('Indexando...');
+      const ok = await ragIndexar(doc);
+      if(ok){ renderDocsList(); toast(T('Documento enviado al índice de búsqueda.')); }
+    }
   }catch(e){ alert('No se pudo adjuntar: '+e.message); }
   finally{ btn.disabled = false; btn.textContent = 'Adjuntar'; }
 });
@@ -4009,6 +4038,7 @@ function renderDocsList(){
   const ciId = (latestCI(stId)||{}).id;
   for(const doc of list){
     const d = document.createElement('div'); d.className='doc-line';
+    d.dataset.rag = doc.ragIndexado ? '1' : '';
     d.innerHTML =
       '<div class="dinfo">📄 <b>'+esc(DOC_TIPOS[doc.tipo]||doc.tipo)+'</b> '+
         (doc.id===ciId?'<span class="chip ok">'+T('CI vigente')+'</span> ':'')+
@@ -4579,6 +4609,179 @@ $('btnClearCrit').addEventListener('click', ()=>{
 });
 $('btnImportCrit').addEventListener('click', openImportModal);
 $('btnImportVis').addEventListener('click', openImportModal);
+/* ================= BÚSQUEDA DOCUMENTAL (RAG con Vertex AI Search) =================
+   Es el motor que usa NotebookLM por debajo. La diferencia con mandarle a la IA
+   el texto completo: acá Google indexa el documento una sola vez y en cada
+   consulta recupera únicamente los fragmentos pertinentes, con su cita. Para un
+   protocolo de cientos de páginas eso es más preciso y mucho más barato.
+   Todo pasa por la Edge Function «rag»: la credencial de Google Cloud vive
+   en el servidor y nunca llega al navegador. */
+
+function ragActivo(){ return Store.online() && CFG.ragOn === true; }
+
+async function ragLlamar(payload){
+  if(!Store.online()) throw new Error(T('La búsqueda documental necesita el modo online.'));
+  const r = await supaFetch('/functions/v1/rag', { method:'POST', body: JSON.stringify(payload) });
+  const j = await r.json().catch(()=>({}));
+  if(!r.ok || j.error) throw new Error(j.error || ('No se pudo consultar ('+r.status+').'));
+  return j;
+}
+
+/* identificador estable del documento dentro del índice */
+function ragDocId(doc){ return 'doc-' + String(doc.id||'').replace(/[^A-Za-z0-9_-]/g,'').slice(0,50); }
+
+/* sube un documento al índice; devuelve true si quedó enviado */
+async function ragIndexar(doc, texto){
+  if(!ragActivo()) return false;
+  try{
+    if(!texto){
+      const b = await docBlob(doc);
+      if(!b) return false;
+      texto = await extractTextTablas(b, doc.filename);
+    }
+    if((texto||'').trim().length < 50) return false;
+    await ragLlamar({ accion:'indexar', doc_id:ragDocId(doc), texto,
+                      estudio_id:doc.estudioId||'', paciente_id:doc.pacienteId||'',
+                      titulo:doc.filename||'', tipo:doc.tipo||'' });
+    doc.ragIndexado = new Date().toISOString();
+    try{ await Store.upsert('docs', doc); }catch(e){}
+    return true;
+  }catch(e){ return false; }
+}
+
+async function ragBorrar(doc){
+  if(!ragActivo()) return;
+  try{ await ragLlamar({ accion:'borrar', doc_id:ragDocId(doc) }); }catch(e){}
+}
+
+/* consulta con recuperación: devuelve { a, citas } como el resto del panel */
+async function ragPreguntar(pregunta, filtros){
+  const j = await ragLlamar(Object.assign({ accion:'preguntar', pregunta }, filtros||{}));
+  if(j.sinRespuesta && !j.respuesta)
+    throw new Error(T('El buscador no encontró contenido para responder. Puede que los documentos todavía se estén indexando.'));
+  return { a: j.respuesta || T('Sin respuesta.'), citas: j.citas || [] };
+}
+
+/* ---------- configuración ---------- */
+$('btnRagTest').addEventListener('click', async ()=>{
+  const m = $('ragMsg');
+  m.style.color='var(--muted)'; m.textContent = T('Probando...');
+  try{
+    const j = await ragLlamar({ accion:'estado' });
+    if(j.ok){
+      m.style.color='var(--ok)';
+      m.textContent = '✔ '+(j.mensaje||T('Conexión correcta.'))+' '+T('Data store')+': '+(j.dataStore||'')+
+                      ' · '+T('región')+': '+(j.location||'')+(j.engine?' · engine: '+j.engine:'');
+    } else {
+      m.style.color='var(--bad)'; m.textContent = '⚠ '+(j.error||T('No se pudo conectar.'));
+    }
+  }catch(e){ m.style.color='var(--bad)'; m.textContent = '⚠ '+e.message; }
+});
+
+$('btnRagIndexAll').addEventListener('click', async ()=>{
+  const m = $('ragMsg');
+  const stId = $('stId') ? $('stId').value : '';
+  const docs = stId ? docsOf(stId) : (DB.docs||[]).filter(d=>d.estudioId);
+  if(!docs.length){ m.style.color='var(--warn)'; m.textContent = T('No hay documentos para indexar. Abrí un estudio con documentos adjuntos.'); return; }
+  if(!CFG.ragOn){ m.style.color='var(--warn)'; m.textContent = T('Activá primero la casilla de búsqueda documental y guardá la configuración.'); return; }
+  let ok=0, mal=0;
+  for(let i=0;i<docs.length;i++){
+    m.style.color='var(--muted)';
+    m.textContent = T('Indexando')+' '+(i+1)+'/'+docs.length+': '+docs[i].filename+'...';
+    if(await ragIndexar(docs[i])) ok++; else mal++;
+  }
+  m.style.color = mal ? 'var(--warn)' : 'var(--ok)';
+  m.textContent = (mal?'⚠ ':'✔ ')+ok+' '+T('documento(s) enviados al índice')+
+                  (mal? ', '+mal+' '+T('no se pudieron leer.') : '.')+
+                  ' '+T('Google tarda unos minutos en procesarlos antes de poder consultarlos.');
+});
+
+/* ================= PUENTE CON NOTEBOOKLM =================
+   NotebookLM (hoy «Gemini Notebook») no tiene API pública: solo la versión
+   Enterprise de Google Cloud la expone. No se puede consultar desde acá.
+   Lo que sí se puede es sacarle provecho sin depender de la IA de Zonda:
+   la app arma la consulta con el formato exacto que necesita, se pega en
+   NotebookLM —que ya tiene el protocolo cargado y lo lee mejor que nadie— y
+   la respuesta vuelve por «Pegar texto». El texto pegado se interpreta con un
+   parser determinista, sin IA de por medio: lo que escribió NotebookLM es
+   exactamente lo que queda cargado. */
+
+const NLM_PROMPT =
+'Del protocolo cargado, listá TODOS los criterios de elegibilidad.\n\n'+
+'Respondé EXACTAMENTE con este formato, sin comentarios ni texto adicional:\n\n'+
+'### INCLUSION\n'+
+'1. [enunciado completo del primer criterio de inclusión]\n'+
+'2. [enunciado completo del segundo criterio de inclusión]\n'+
+'(y así con todos)\n\n'+
+'### EXCLUSION\n'+
+'1. [enunciado completo del primer criterio de exclusión]\n'+
+'2. [enunciado completo del segundo criterio de exclusión]\n'+
+'(y así con todos)\n\n'+
+'Reglas:\n'+
+'- Transcribí cada criterio COMPLETO y textual, sin resumir ni abreviar.\n'+
+'- Un criterio va en UNA sola línea numerada, aunque en el protocolo ocupe varios renglones. Si tiene una "Nota:" aclaratoria, incluila en la misma línea.\n'+
+'- No incluyas los subtítulos temáticos que agrupan criterios (por ejemplo "Afecciones médicas e infecciones"): solo los criterios en sí.\n'+
+'- No agregues encabezados, introducciones, conclusiones ni notas al pie.\n'+
+'- Respetá los dos encabezados "### INCLUSION" y "### EXCLUSION" tal cual, en mayúsculas y sin tilde.';
+
+/* interpreta la respuesta de NotebookLM sin usar IA */
+function parseNotebookLM(txt){
+  const t = String(txt||'').replace(/\r/g,'');
+  /* el encabezado tiene que estar SOLO en su línea (admite ### y **): si las
+     palabras aparecen sueltas dentro de un párrafo, no es una respuesta con el
+     formato pedido y no se interpreta */
+  const reIn = /^[#*\s]{0,8}(?:CRITERIOS?\s+DE\s+)?INCLUSI[OÓ]N\s*:?[#*\s]*$/im;
+  const reEx = /^[#*\s]{0,8}(?:CRITERIOS?\s+DE\s+)?EXCLUSI[OÓ]N\s*:?[#*\s]*$/im;
+  const mIn = t.match(reIn), mEx = t.match(reEx);
+  if(!mIn && !mEx) return null;                  /* no tiene el formato: que siga el camino normal */
+  const corte = (desde, hasta) => t.slice(desde, hasta===undefined ? t.length : hasta);
+  let bIn = '', bEx = '';
+  if(mIn && mEx){
+    if(mIn.index < mEx.index){ bIn = corte(mIn.index+mIn[0].length, mEx.index); bEx = corte(mEx.index+mEx[0].length); }
+    else { bEx = corte(mEx.index+mEx[0].length, mIn.index); bIn = corte(mIn.index+mIn[0].length); }
+  } else if(mIn){ bIn = corte(mIn.index+mIn[0].length); }
+  else { bEx = corte(mEx.index+mEx[0].length); }
+
+  const items = b => {
+    const out = [];
+    let actual = '';
+    for(const linea of String(b||'').split('\n')){
+      const l = linea.trim();
+      if(!l){ continue; }
+      if(/^#{1,3}\s/.test(l)) break;                       /* otro encabezado: se corta */
+      const m = l.match(/^(?:\*{0,2})(?:\d{1,3}[.)]|[-•])\s+(.*)$/);  /* nueva viñeta o número */
+      if(m){ if(actual) out.push(actual); actual = m[1].trim(); }
+      else if(actual) actual += ' ' + l;                    /* continuación del anterior */
+    }
+    if(actual) out.push(actual);
+    return out.map(x=>x.replace(/\*{1,2}/g,'')          /* negrita de markdown */
+                       .replace(/\[\d+\]/g,'')             /* marcadores de cita de NotebookLM */
+                       .replace(/\s+/g,' ').trim())
+              .filter(x=>x.length>=8)
+              .filter((x,i,a)=>a.indexOf(x)===i);
+  };
+  return { incl: items(bIn), excl: items(bEx) };
+}
+
+$('btnNlmPrompt').addEventListener('click', async ()=>{
+  try{
+    await navigator.clipboard.writeText(NLM_PROMPT);
+    toast(T('Consulta copiada. Pegala en NotebookLM y traé la respuesta con «Pegar texto».'));
+  }catch(e){
+    /* si el navegador no deja copiar, se muestra para copiar a mano */
+    const back = document.createElement('div'); back.className='modal-back';
+    back.innerHTML = '<div class="modal" style="max-width:640px">'+
+      '<h3>'+T('Consulta para NotebookLM')+'</h3>'+
+      '<div class="muted small" style="margin-bottom:8px">'+T('Copiá este texto y pegalo en NotebookLM, con el protocolo cargado como fuente.')+'</div>'+
+      '<textarea rows="14" id="nlmTxt"></textarea>'+
+      '<div class="toolbar" style="margin-top:10px;margin-bottom:0"><button class="primary" id="nlmOk">'+T('Cerrar')+'</button></div></div>';
+    document.body.appendChild(back);
+    back.querySelector('#nlmTxt').value = NLM_PROMPT;
+    back.querySelector('#nlmTxt').select();
+    back.querySelector('#nlmOk').addEventListener('click', ()=>back.remove());
+  }
+});
+
 $('btnCloseImport').addEventListener('click', ()=>$('importModal').classList.add('hidden'));
 
 $('btnAnalyze').addEventListener('click', async ()=>{
@@ -4604,6 +4807,20 @@ $('btnAnalyze').addEventListener('click', async ()=>{
     }
     if((text||'').trim().length<50 && !($('impVisual').checked && IMP_BLOB))
       throw new Error('El documento no tiene texto legible (puede ser un PDF escaneado). Tildá «Leer las páginas como imagen» o pegá el texto.');
+    /* si el texto pegado tiene el formato de NotebookLM, se usa tal cual:
+       es la transcripción que hizo NotebookLM, no hace falta reinterpretarla */
+    const nlm = (src==='paste') ? parseNotebookLM(text) : null;
+    if(nlm && (nlm.incl.length || nlm.excl.length)){
+      $('impIncl').value = nlm.incl.join('\n');
+      $('impExcl').value = nlm.excl.join('\n');
+      IMP_VISITS = [];
+      renderImpVisits();
+      $('impResults').classList.remove('hidden');
+      st.style.color='var(--ok)';
+      st.textContent = '✔ '+T('Respuesta de NotebookLM interpretada')+': '+nlm.incl.length+' '+
+        T('criterios de inclusión y')+' '+nlm.excl.length+' '+T('de exclusión, transcritos tal cual (sin IA de por medio). Revisá y aplicá.');
+      return;
+    }
     let crit, usoIA = false;
     IMP_ERRORES = [];
     if(aiConfigured()){
@@ -5032,7 +5249,24 @@ async function askCi(){
     renderCiFuentes(fuentes.map(f=>({ nombre:f.nombre, chars:f.texto.length,
       recortado: totalM > topeM && f.texto.length > Math.floor(topeM*(f.texto.length/totalM)) })));
     let nota = fallidos.length ? '\n\n⚠ '+T('Sin texto legible (no se consultaron):')+' '+fallidos.join(', ') : '';
-    if(aiConfigured()){
+    if(ragActivo()){
+      /* con búsqueda documental no hace falta mandar el texto: Google recupera
+         los fragmentos del índice y responde con sus citas */
+      st.textContent = T('Buscando en los documentos indexados...');
+      try{
+        const filtros = {};
+        const est = CI_DOCS[0] && CI_DOCS[0].estudioId;
+        if(est) filtros.estudio_id = est;
+        const res = await ragPreguntar(q, filtros);
+        CI_HIST.push({ q, a:res.a+nota+'\n\n'+T('(respondido con búsqueda documental)'), citas:res.citas });
+      }catch(eRag){
+        /* si el índice todavía no está listo, se sigue por el camino normal */
+        if(!aiConfigured()) throw eRag;
+        st.textContent = T('Sin índice disponible; se consulta con el texto completo...');
+        const res = await aiAskDocs(fuentes, q);
+        CI_HIST.push({ q, a:res.a+nota+'\n\n⚠ '+T('Búsqueda documental no disponible')+': '+eRag.message, citas:res.citas });
+      }
+    } else if(aiConfigured()){
       st.textContent = T('Consultando a la IA (puede tardar unos segundos)...');
       const res = await aiAskDocs(fuentes, q);
       CI_HIST.push({ q, a:res.a+nota, citas:res.citas });
@@ -5786,6 +6020,11 @@ $('btnUploadPdoc').addEventListener('click', async ()=>{
     $('pdocFile').value=''; $('pdocVersion').value='';
     renderPaDocs();
     toast('Documento del paciente adjuntado.');
+    if(ragActivo()){
+      btn.textContent = T('Indexando...');
+      const ok = await ragIndexar(doc);
+      if(ok){ renderPaDocs(); toast(T('Documento enviado al índice de búsqueda.')); }
+    }
   }catch(e){ alert('No se pudo adjuntar: '+e.message); }
   finally{ btn.disabled = false; btn.textContent = 'Adjuntar'; }
 });
@@ -10120,6 +10359,7 @@ function initConfigUI(){
   $('cfgAiKey').value = CFG.aiKey||'';
   $('cfgAiModel').value = CFG.aiModel || AI_PROVIDERS[aiProvider()].modelo;
   renderAiProviderUi(false);
+  if($('cfgRagOn')) $('cfgRagOn').checked = CFG.ragOn === true;
   $('cfgCiIni').value = CFG.ciPlantilla || CI_PLANTILLA_INI;
   $('cfgCiRe').value = CFG.ciPlantillaRe || CI_PLANTILLA_RE;
   $('sqlBox').textContent = SQL_SCRIPT;
@@ -10243,6 +10483,7 @@ $('btnSaveAi').addEventListener('click', ()=>{
   CFG.aiProvider = $('cfgAiProvider').value;
   CFG.aiKey = $('cfgAiKey').value.trim();
   CFG.aiModel = $('cfgAiModel').value.trim() || AI_PROVIDERS[aiProvider()].modelo;
+  CFG.ragOn = !!($('cfgRagOn') && $('cfgRagOn').checked);
   saveJSON(LS.CFG, CFG);
   const m = $('aiMsg');
   if(CFG.aiKey){ m.textContent='✔ '+T('Clave guardada en este navegador. Las funciones de IA usarán')+' '+AI_PROVIDERS[aiProvider()].nombre+' ('+aiModelName()+').'; m.style.color='var(--ok)'; }
