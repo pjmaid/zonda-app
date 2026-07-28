@@ -61,6 +61,7 @@ tr:hover td{background:var(--acc-soft)}
 .banner.warn{background:var(--warn-soft);color:var(--warn);border-color:#f3e2bd}
 .banner.bad{background:var(--bad-soft);color:var(--bad);border-color:#f4d3cf}
 .banner.gray{background:var(--gray-soft);color:var(--muted);border-color:var(--line)}
+.banner.acc{background:var(--acc-soft);color:var(--acc-dark);border-color:#bcdcf0}
 /* barra superior */
 #topbar{background:linear-gradient(90deg,var(--top) 0%,var(--top2) 100%);border-bottom:1px solid var(--top2);padding:0 20px;display:flex;align-items:center;gap:14px;position:sticky;top:0;z-index:20;min-height:56px;color:#eaf1f7}
 #topbar .logo{font-weight:800;font-size:18px;color:#fff;letter-spacing:-.01em;display:flex;align-items:center;gap:8px}
@@ -1143,6 +1144,10 @@ details>summary{color:var(--acc-dark)}
       <input type="checkbox" id="narrVisual" style="width:auto;margin-right:7px">
       <b>Leer las páginas como imagen</b> — para laboratorios en tablas complejas o documentos escaneados. Más preciso con tablas, consume más créditos.
     </label>
+    <div class="toolbar" id="narrRagBox" style="margin:4px 0 8px">
+      <button id="btnNarrIndex">⬆ Indexar estos documentos</button>
+      <span class="muted small">Necesario para que la búsqueda documental pueda responder sobre este paciente.</span>
+    </div>
     <div class="toolbar" style="margin-bottom:6px">
       <button class="primary" id="btnNarrRun">Redactar la fundamentación</button>
       <span class="spacer"></span>
@@ -1167,6 +1172,10 @@ details>summary{color:var(--acc-dark)}
       <input type="checkbox" id="evalVisual" style="width:auto;margin-right:7px">
       <b>Leer las páginas como imagen</b> — para laboratorios en tablas complejas o documentos escaneados. Más preciso con tablas, consume más créditos.
     </label>
+    <div class="toolbar" id="evalRagBox" style="margin:4px 0 8px">
+      <button id="btnEvalIndex">⬆ Indexar estos documentos</button>
+      <span class="muted small">Necesario para que la búsqueda documental pueda responder sobre este paciente.</span>
+    </div>
     <label>Texto adicional (opcional): pegá datos de la historia clínica, laboratorio, etc.</label>
     <textarea id="evalPaste" rows="5" placeholder="Ej: Paciente de 54 años con diagnóstico de... Laboratorio 20/07: creatinina 0,9 mg/dl..."></textarea>
     <div class="toolbar" style="margin-top:10px;margin-bottom:0">
@@ -4830,6 +4839,19 @@ async function ragIndexar(doc, texto){
   }catch(e){ return false; }
 }
 
+/* indexa una lista de documentos mostrando el avance en un elemento de estado */
+async function ragIndexarLista(docs, elEstado){
+  let ok=0, mal=0;
+  for(let i=0;i<docs.length;i++){
+    if(elEstado){
+      elEstado.style.color='var(--muted)';
+      elEstado.textContent = T('Indexando')+' '+(i+1)+'/'+docs.length+': '+docs[i].filename+'...';
+    }
+    if(await ragIndexar(docs[i])) ok++; else mal++;
+  }
+  return { ok, mal };
+}
+
 async function ragBorrar(doc){
   if(!ragActivo()) return;
   try{ await ragLlamar({ accion:'borrar', doc_id:ragDocId(doc) }); }catch(e){}
@@ -4846,9 +4868,33 @@ async function ragPreguntar(pregunta, filtros){
 /* ---------- configuración ---------- */
 /* la preferencia se guarda al tildar: el botón Guardar vive en otra tarjeta y
    dejarla sin persistir confundía */
+/* deja claro en la tarjeta de IA si ese motor se está usando o no */
+function pintarAvisoIA(){
+  const cont = $('cfgAiKey') ? $('cfgAiKey').closest('.card') : null;
+  if(!cont) return;
+  let av = cont.querySelector('#aiEstadoUso');
+  if(!av){
+    av = document.createElement('div');
+    av.id = 'aiEstadoUso'; av.className = 'banner';
+    cont.insertBefore(av, cont.children[1] || null);
+  }
+  if(CFG.ragSolo){
+    av.className = 'banner gray';
+    av.innerHTML = '🔎 <b>'+T('Modo estricto activo')+'</b> — '+
+      T('este motor no se usa: todo se responde con búsqueda documental. La clave queda guardada por si desactivás el modo estricto.');
+  } else if(CFG.ragOn){
+    av.className = 'banner acc';
+    av.innerHTML = '🔎 '+T('La búsqueda documental responde primero. Este motor queda como respaldo si el índice falla.');
+  } else {
+    av.className = 'banner gray';
+    av.innerHTML = T('Este motor responde todas las consultas sobre documentos. Para usar búsqueda documental, activala más abajo.');
+  }
+}
+
 $('cfgRagSolo').addEventListener('change', e=>{
   CFG.ragSolo = !!e.target.checked;
   saveJSON(LS.CFG, CFG);
+  pintarAvisoIA();
   const m = $('ragMsg'); m.style.color = 'var(--ok)';
   m.textContent = CFG.ragSolo
     ? '✔ '+T('Modo estricto activado: la app no va a usar ningún otro motor de IA.')
@@ -4858,6 +4904,7 @@ $('cfgRagSolo').addEventListener('change', e=>{
 $('cfgRagOn').addEventListener('change', e=>{
   CFG.ragOn = !!e.target.checked;
   saveJSON(LS.CFG, CFG);
+  pintarAvisoIA();
   const m = $('ragMsg');
   m.style.color = 'var(--ok)';
   m.textContent = CFG.ragOn
@@ -4878,6 +4925,39 @@ $('btnRagTest').addEventListener('click', async ()=>{
       m.style.color='var(--bad)'; m.textContent = '⚠ '+(j.error||T('No se pudo conectar.'));
     }
   }catch(e){ m.style.color='var(--bad)'; m.textContent = '⚠ '+e.message; }
+});
+
+/* indexar los documentos del paciente desde el diálogo de evaluación */
+$('btnEvalIndex').addEventListener('click', async ()=>{
+  const stEl = $('evalStatus'), btn = $('btnEvalIndex');
+  const docs = Array.from(document.querySelectorAll('#evalDocsBox input[type=checkbox]:checked'))
+    .map(c=>(DB.docs||[]).find(d=>d.id===c.dataset.doc)).filter(Boolean);
+  if(!docs.length){ stEl.style.color='var(--warn)'; stEl.textContent = T('Seleccioná al menos un documento.'); return; }
+  if(!ragActivo()){ stEl.style.color='var(--warn)'; stEl.textContent = T('Activá la búsqueda documental en Configuración.'); return; }
+  btn.disabled = true;
+  const r = await ragIndexarLista(docs, stEl);
+  btn.disabled = false;
+  stEl.style.color = r.mal ? 'var(--warn)' : 'var(--ok)';
+  stEl.textContent = (r.mal?'⚠ ':'✔ ')+r.ok+' '+T('documento(s) enviados al índice')+
+    (r.mal? ', '+r.mal+' '+T('no se pudieron leer.') : '.')+' '+
+    T('Google tarda unos minutos en procesarlos: esperá y volvé a evaluar.');
+  openEvalModal();
+});
+
+/* lo mismo desde el diálogo de fundamentación */
+$('btnNarrIndex').addEventListener('click', async ()=>{
+  const stEl = $('narrStatus'), btn = $('btnNarrIndex');
+  const docs = Array.from(document.querySelectorAll('#narrDocsBox input[type=checkbox]:checked'))
+    .map(c=>(DB.docs||[]).find(d=>d.id===c.dataset.ndoc)).filter(Boolean);
+  if(!docs.length){ stEl.style.color='var(--warn)'; stEl.textContent = T('Seleccioná al menos un documento.'); return; }
+  if(!ragActivo()){ stEl.style.color='var(--warn)'; stEl.textContent = T('Activá la búsqueda documental en Configuración.'); return; }
+  btn.disabled = true;
+  const r = await ragIndexarLista(docs, stEl);
+  btn.disabled = false;
+  stEl.style.color = r.mal ? 'var(--warn)' : 'var(--ok)';
+  stEl.textContent = (r.mal?'⚠ ':'✔ ')+r.ok+' '+T('documento(s) enviados al índice')+
+    (r.mal? ', '+r.mal+' '+T('no se pudieron leer.') : '.')+' '+
+    T('Google tarda unos minutos en procesarlos: esperá y volvé a redactar.');
 });
 
 $('btnRagList').addEventListener('click', async ()=>{
@@ -6326,11 +6406,13 @@ function openEvalModal(){
   const docs = (pid && getPatient(pid)) ? docsOfPatient(pid) : [];
   $('evalDocsBox').innerHTML = docs.length
     ? '<label>'+T('Documentos del paciente a analizar')+'</label>'+docs.map(d=>
-        '<div class="doc-line"><input type="checkbox" checked data-doc="'+d.id+'" style="width:16px;height:16px"> <div class="dinfo">'+esc(DOC_TIPOS[d.tipo]||d.tipo)+' — '+esc(d.filename)+(d.version?' <span class="muted small">('+esc(d.version)+')</span>':'')+'</div></div>'
+        '<div class="doc-line"><input type="checkbox" checked data-doc="'+d.id+'" style="width:16px;height:16px"> <div class="dinfo">'+esc(DOC_TIPOS[d.tipo]||d.tipo)+' — '+esc(d.filename)+(d.version?' <span class="muted small">('+esc(d.version)+')</span>':'')+
+        (ragActivo() ? (d.ragIndexado ? ' <span class="chip ok">'+T('indexado')+'</span>' : ' <span class="chip warn">'+T('sin indexar')+'</span>') : '')+'</div></div>'
       ).join('')
     : '<div class="muted small" style="margin-bottom:6px">Este paciente no tiene documentos adjuntos. Podés pegar texto abajo, o guardar el paciente y adjuntar su historia clínica.</div>';
   $('evalPaste').value='';
   $('evalStatus').textContent='';
+  if($('evalRagBox')) $('evalRagBox').classList.toggle('hidden', !ragActivo());
   $('evalModeInfo').innerHTML = aiConfigured()
     ? '<b>Modo IA activado:</b> el texto de los documentos seleccionados se envía a la API de '+AI_PROVIDERS[aiProvider()].nombre+' para sugerir la respuesta de cada criterio con su justificación. Las sugerencias siempre las confirma el investigador.'
     : '<b>Modo evidencia (sin clave de IA):</b> se busca en los documentos el texto relacionado con cada criterio y se muestra como ayuda, sin marcar respuestas. Para respuestas automáticas, cargá una clave de API en Configuración.';
@@ -6815,12 +6897,15 @@ function openNarrModal(){
     ? '<label>'+T('Documentos del paciente a usar')+'</label>'+docs.map(d=>
         '<div class="doc-line"><input type="checkbox" checked data-ndoc="'+d.id+'" style="width:16px;height:16px"> '+
         '<div class="dinfo">'+esc(DOC_TIPOS[d.tipo]||d.tipo)+' — '+esc(d.filename)+
-        (d.version?' <span class="muted small">('+esc(d.version)+')</span>':'')+'</div></div>').join('')
+        (d.version?' <span class="muted small">('+esc(d.version)+')</span>':'')+
+        (ragActivo() ? (d.ragIndexado ? ' <span class="chip ok">'+T('indexado')+'</span>' : ' <span class="chip warn">'+T('sin indexar')+'</span>') : '')+'</div></div>').join('')
     : '<div class="banner warn">'+T('Este paciente no tiene documentos adjuntos. Adjuntá su historia clínica y laboratorios: la fundamentación se redacta a partir de ellos.')+'</div>';
-  $('narrIntro').innerHTML = aiConfigured()
-    ? T('Para cada criterio se redacta un párrafo con el dato concreto de este paciente y la cita del documento que lo respalda. Sirve como documento fuente del screening. Lo que no esté documentado queda declarado como pendiente: revisá y editá antes de firmar.')
-    : '<b>'+T('Necesitás una clave de API en Configuración para redactar la fundamentación.')+'</b>';
-  $('btnNarrRun').disabled = !aiConfigured() || !docs.length;
+  $('narrIntro').innerHTML = (aiConfigured() || ragActivo())
+    ? T('Para cada criterio se redacta un párrafo con el dato concreto de este paciente y la cita del documento que lo respalda. Sirve como documento fuente del screening. Lo que no esté documentado queda declarado como pendiente: revisá y editá antes de firmar.')+
+      (ragActivo() ? ' <span class="chip acc">'+T('búsqueda documental activa')+'</span>' : '')
+    : '<b>'+T('Necesitás activar la búsqueda documental o cargar una clave de IA en Configuración.')+'</b>';
+  if($('narrRagBox')) $('narrRagBox').classList.toggle('hidden', !ragActivo());
+  $('btnNarrRun').disabled = (!aiConfigured() && !ragActivo()) || !docs.length;
   $('narrStatus').textContent = '';
   $('narrOut').classList.add('hidden');
   $('btnNarrPrint').classList.add('hidden');
@@ -7095,7 +7180,7 @@ $('btnNarrRun').addEventListener('click', async ()=>{
     auditar('paciente','fundamentacion_criterios', pac?pac.id:'', (pac&&pac.codigo)||'');
   }catch(e){
     stEl.style.color='var(--bad)'; stEl.textContent = '⚠ '+e.message;
-  }finally{ btn.disabled = !aiConfigured(); }
+  }finally{ btn.disabled = !(aiConfigured() || ragActivo()); }
 });
 
 $('btnNarrPrint').addEventListener('click', ()=>{
@@ -10665,6 +10750,7 @@ function initConfigUI(){
   $('cfgSupaKey').value = CFG.supaKey||'';
   $('cfgFirma').value = CFG.firma||'';
   $('cfgAiProvider').value = aiProvider();
+  pintarAvisoIA();
   $('cfgAiKey').value = CFG.aiKey||'';
   $('cfgAiModel').value = CFG.aiModel || AI_PROVIDERS[aiProvider()].modelo;
   renderAiProviderUi(false);
