@@ -257,6 +257,9 @@ details>summary{color:var(--acc-dark)}
         <div class="grow"><label>Indicación / Patología</label><input type="text" id="stIndic"></div>
         <div style="flex:0 0 190px"><label>Número de sitio</label><input type="text" id="stNumeroSitio" inputmode="numeric" placeholder="Ej: 0123"></div>
       </div>
+      <div class="row">
+        <div class="grow"><label>Comité de ética interviniente</label><input type="text" id="stComiteEtica" placeholder="Ej: Comité de Ética en Investigación ..."></div>
+      </div>
       <details style="margin-top:10px" id="ciTplDetails">
         <summary style="cursor:pointer;font-weight:600">🖊️ Plantilla del consentimiento de este protocolo</summary>
         <div style="padding-top:10px">
@@ -534,6 +537,7 @@ details>summary{color:var(--acc-dark)}
       <button id="btnAgPrint">🖨 Imprimir / PDF</button>
     </div>
     <div id="agToday"></div>
+    <div id="agReports"></div>
     <div id="agWeek"></div>
     <div class="card" id="agCalCard">
       <div class="toolbar" style="margin-bottom:6px">
@@ -2669,6 +2673,7 @@ function openStudyEditor(id){
   $('stPatro').value = s ? (s.patrocinador||'') : '';
   $('stIndic').value = s ? (s.indicacion||'') : '';
   $('stNumeroSitio').value = s ? (s.numeroSitio||'') : '';
+  $('stComiteEtica').value = s ? (s.comiteEtica||'') : '';
   ['stTitulo:tituloCompleto','stTituloAbrev:tituloAbrev','stNroProt:nroProtocolo','stFase:fase',
    'stVersionProt:versionProtocolo','stEstadoProt:estadoProtocolo','stIdEstudio:idEstudio',
    'stInvestigador:investigador','stCiTpl:ciPlantilla','stCiTplRe:ciPlantillaRe']
@@ -2763,6 +2768,7 @@ $('btnSaveStudy').addEventListener('click', async ()=>{
        campo del estudio. Los estudios nuevos usan Día 1 como fecha basal. */
     diaBase: prev && prev.diaBase!==undefined ? prev.diaBase : 1,
     numeroSitio: $('stNumeroSitio').value.trim(),
+    comiteEtica: $('stComiteEtica').value.trim(),
     tituloCompleto: $('stTitulo').value.trim(),
     tituloAbrev: $('stTituloAbrev').value.trim(),
     nroProtocolo: $('stNroProt').value.trim(),
@@ -8931,6 +8937,65 @@ function agendaRows(){
 }
 function agChipCls(key){ return key==='vencida'?'bad':(key==='proxima'?'gray':'ok'); }
 
+function addMonthsISO(iso, meses){
+  const [yy,mm,dd] = String(iso||'').split('-').map(Number);
+  if(!yy || !mm || !dd) return '';
+  const base = new Date(yy, mm-1+meses, 1);
+  const ultimo = new Date(base.getFullYear(), base.getMonth()+1, 0).getDate();
+  return isoOf(new Date(base.getFullYear(), base.getMonth(), Math.min(dd,ultimo)));
+}
+function proximoInformeAvance(st, hoy){
+  const cada = +st.informeAvanceCadaMeses;
+  let fecha = st.informeAvanceDesde || '';
+  if(!fecha || (cada!==3 && cada!==6)) return '';
+  /* La fecha inicial queda como ancla del ciclo; la agenda avanza sola al
+     próximo envío una vez que pasa la fecha anterior. */
+  while(fecha < hoy) fecha = addMonthsISO(fecha, cada);
+  return fecha;
+}
+function informesAvanceAgenda(){
+  const sid = ($('agStudy')||{}).value || 'all', hoy=todayISO();
+  return visibleStudies().filter(st=>sid==='all'||st.id===sid).map(st=>({
+    st, fecha:proximoInformeAvance(st,hoy)
+  })).filter(x=>x.fecha).sort((a,b)=>a.fecha.localeCompare(b.fecha));
+}
+function renderAgInformes(){
+  const box = $('agReports'); if(!box) return;
+  const sid = $('agStudy').value || 'all';
+  const st = sid==='all' ? null : getStudy(sid);
+  const items = informesAvanceAgenda(), hoy=todayISO();
+  let h = '<div class="card"><div class="toolbar" style="margin-bottom:6px"><h3 style="margin:0">📄 Informes de avance al comité de ética</h3></div>';
+  if(st){
+    const cada = +st.informeAvanceCadaMeses || 6;
+    h += '<div class="row" style="align-items:end">'+
+      '<div style="flex:0 0 180px"><label>Próximo envío</label><input type="date" id="agInformeFecha" value="'+esc(st.informeAvanceDesde||'')+'"></div>'+
+      '<div style="flex:0 0 190px"><label>Periodicidad</label><select id="agInformeCada">'+
+        '<option value="3"'+(cada===3?' selected':'')+'>Cada 3 meses</option>'+
+        '<option value="6"'+(cada===6?' selected':'')+'>Cada 6 meses</option>'+
+      '</select></div><div><button class="primary" id="btnAgInformeSave">Guardar recordatorio</button></div></div>'+
+      '<div class="small muted">'+(st.comiteEtica ? 'Comité: '+esc(st.comiteEtica)+'. ' : '')+
+      'La agenda calcula el próximo vencimiento automáticamente y la exportación de calendario lo incluye como evento recurrente.</div>';
+  } else h += '<div class="small muted">Elegí un estudio arriba para configurar el primer envío y la periodicidad de 3 o 6 meses.</div>';
+  if(items.length){
+    h += '<div style="margin-top:9px">'+items.map(x=>{
+      const d=diffDays(hoy,x.fecha), chip=d===0?'ok':(d<=14?'warn':'gray');
+      return '<div class="small" style="display:flex;gap:8px;align-items:center;margin:4px 0">'+
+        '<span class="chip '+chip+'">'+(d===0?'hoy':d>0?'en '+d+' d':Math.abs(d)+' d atrás')+'</span>'+
+        '<b>'+esc(x.st.codigo||x.st.nombre||'Estudio')+'</b><span>Informe de avance al comité</span><span class="muted">'+fmtDate(x.fecha)+' · cada '+x.st.informeAvanceCadaMeses+' meses</span></div>';
+    }).join('')+'</div>';
+  } else if(st && !st.informeAvanceDesde) h += '<div class="small muted" style="margin-top:8px">Todavía no hay un recordatorio configurado para este estudio.</div>';
+  h += '</div>';
+  box.innerHTML=h;
+  const save=$('btnAgInformeSave');
+  if(save) save.addEventListener('click', async ()=>{
+    const fecha=$('agInformeFecha').value;
+    if(!fecha){ toast('Elegí la fecha del próximo envío.'); return; }
+    const actualizado=Object.assign({}, st,{ informeAvanceDesde:fecha, informeAvanceCadaMeses:+$('agInformeCada').value });
+    await persist('studies', actualizado, 'Recordatorio de informe de avance guardado.');
+    renderAgenda();
+  });
+}
+
 function renderAgenda(){
   const sel = $('agStudy'); const prev = sel.value;
   sel.innerHTML = '<option value="all">'+T('Todos los estudios')+'</option>'+
@@ -8941,6 +9006,7 @@ function renderAgenda(){
   featNode('agPaciente','ag.calPaciente');
 
   const rows = agendaRows(), hoy = todayISO();
+  renderAgInformes();
 
   /* --- Hoy --- */
   if(featOn('ag.hoy')){
@@ -9092,7 +9158,8 @@ $('agNext').addEventListener('click', ()=>{ AG_MES = new Date(AG_MES.getFullYear
 /* --- exportar a calendario (.ics) --- */
 $('btnAgIcs').addEventListener('click', ()=>{
   const rows = agendaRows();
-  if(!rows.length){ toast(T('No hay visitas pendientes para exportar.')); return; }
+  const informes = informesAvanceAgenda();
+  if(!rows.length && !informes.length){ toast(T('No hay visitas ni recordatorios para exportar.')); return; }
   const pad = s => String(s).padStart(2,'0');
   const stamp = new Date().toISOString().replace(/[-:]/g,'').split('.')[0]+'Z';
   const L = ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Zonda//ES','CALSCALE:GREGORIAN'];
@@ -9106,11 +9173,20 @@ $('btnAgIcs').addEventListener('click', ()=>{
         ((r.nv.visit.tareas||[]).length?'\\n'+T('Tareas')+': '+(r.nv.visit.tareas||[]).join(', '):'')),
       'END:VEVENT');
   }
+  for(const it of informes){
+    const d=it.fecha.replace(/-/g,''), fin=isoOf(addDays(parseISO(it.fecha),1)).replace(/-/g,'');
+    L.push('BEGIN:VEVENT','UID:informe-'+it.st.id+'@zonda', 'DTSTAMP:'+stamp,
+      'DTSTART;VALUE=DATE:'+d, 'DTEND;VALUE=DATE:'+fin,
+      'RRULE:FREQ=MONTHLY;INTERVAL:'+it.st.informeAvanceCadaMeses,
+      'SUMMARY:'+icsEsc('Informe de avance al comité · '+(it.st.codigo||it.st.nombre||'')),
+      'DESCRIPTION:'+icsEsc((it.st.comiteEtica?'Comité de ética: '+it.st.comiteEtica+'\\n':'')+'Recordatorio periódico generado por Zonda.'),
+      'END:VEVENT');
+  }
   L.push('END:VCALENDAR');
   const blob = new Blob([L.join('\r\n')], { type:'text/calendar;charset=utf-8' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = 'visitas_'+todayISO()+'.ics';
+  a.download = 'agenda_'+todayISO()+'.ics';
   a.click(); URL.revokeObjectURL(a.href);
   toast(T('Archivo .ics descargado: importalo en Google Calendar u Outlook.'));
 });
