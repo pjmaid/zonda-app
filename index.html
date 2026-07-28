@@ -342,10 +342,10 @@ details>summary{color:var(--acc-dark)}
         <button id="btnClearCrit">🧹 Vaciar criterios</button>
         <button id="btnImportCrit">⚡ Importar desde documento</button>
       </div>
-      <div class="muted small">Todos los criterios de inclusión, uno por línea. Esta lista es la que se usa después para evaluar a los pacientes.</div>
+      <div class="muted small">Un criterio numerado por bloque. Las condiciones internas quedan debajo con viñetas. Esta lista es la que se usa después para evaluar a los pacientes.</div>
       <textarea id="stIncl" rows="8" placeholder="Edad ≥ 18 años&#10;Diagnóstico confirmado de...&#10;Consentimiento informado firmado"></textarea>
       <h3 style="margin-top:16px">Criterios de exclusión</h3>
-      <div class="muted small">Todos los criterios de exclusión, uno por línea.</div>
+      <div class="muted small">Un criterio numerado por bloque. Las condiciones internas quedan debajo con viñetas.</div>
       <textarea id="stExcl" rows="8" placeholder="Embarazo o lactancia&#10;Insuficiencia renal severa..."></textarea>
       <div class="toolbar" style="margin-top:8px"><button type="button" id="btnPrintCriteria">🖨 Imprimir criterios / PDF</button></div>
     </div>
@@ -2731,8 +2731,8 @@ function openStudyEditor(id){
   $('ciTplDetails').open = !!(s && ((s.ciPlantilla||'').trim() || (s.ciPlantillaRe||'').trim()));
   $('stAnticonDet').value = s ? (s.anticonReqDet||'') : '';
   $('stNotas').value = s ? (s.notas||'') : '';
-  $('stIncl').value = s ? (s.criteriosInclusion||[]).join('\n') : '';
-  $('stExcl').value = s ? (s.criteriosExclusion||[]).join('\n') : '';
+  $('stIncl').value = s ? criteriaTextarea((s.criteriosInclusion||[])) : '';
+  $('stExcl').value = s ? criteriaTextarea((s.criteriosExclusion||[])) : '';
   renderStudyCriteriaEditor();
   EDIT_VISITAS = s ? JSON.parse(JSON.stringify(s.visitas||[])) : [];
   if(!EDIT_VISITAS.length && !s){
@@ -2828,8 +2828,8 @@ $('btnSaveStudy').addEventListener('click', async ()=>{
     ciPlantillaRe: $('stCiTplRe').value.trim(),
     anticonReqDet: $('stAnticonDet').value.trim(),
     notas: $('stNotas').value.trim(),
-    criteriosInclusion: $('stIncl').value.split('\n').map(t=>t.trim()).filter(Boolean),
-    criteriosExclusion: $('stExcl').value.split('\n').map(t=>t.trim()).filter(Boolean),
+    criteriosInclusion: parseCriteriaTextarea($('stIncl').value),
+    criteriosExclusion: parseCriteriaTextarea($('stExcl').value),
     visitas
   };
   const hadPatients = DB.patients.some(p=>p.estudioId===id && !p.anulado);
@@ -4848,8 +4848,8 @@ $('btnClearCrit').addEventListener('click', ()=>{
 });
 $('btnImportCrit').addEventListener('click', openImportModal);
 $('btnPrintCriteria').addEventListener('click', ()=>{
-  const incl = $('stIncl').value.split('\n').map(x=>x.trim()).filter(Boolean);
-  const excl = $('stExcl').value.split('\n').map(x=>x.trim()).filter(Boolean);
+  const incl = parseCriteriaTextarea($('stIncl').value);
+  const excl = parseCriteriaTextarea($('stExcl').value);
   if(!incl.length && !excl.length){ toast('Primero cargá al menos un criterio.'); return; }
   const fmt = x => esc(x).replace(/\u2028/g,'<br>');
   const lista = (titulo, items) => items.length
@@ -5292,6 +5292,27 @@ function renderImpCriteriaPreview(){
   };
   box.innerHTML = grupo('Inclusión', $('impIncl').value) + grupo('Exclusión', $('impExcl').value) || '<span class="muted">Todavía no hay criterios para mostrar.</span>';
 }
+/* El cuadro visible muestra un criterio numerado por bloque. Al guardar se
+   conserva cada criterio limpio, con sus subítems internos, para evaluarlo en pacientes. */
+function criteriaTextarea(items){
+  return (items||[]).map((item,i)=>{
+    const lines = String(item||'').replace(/\u2028/g,'\n').split('\n').map(x=>x.trim()).filter(Boolean);
+    return (i+1)+'. '+(lines.shift()||'')+(lines.length ? '\n'+lines.map(x=>'   '+(/^([•])\s*/.test(x)?x:'• '+x)).join('\n') : '');
+  }).join('\n');
+}
+function parseCriteriaTextarea(value){
+  const out=[]; let current='';
+  String(value||'').split(/\r?\n/).forEach(raw=>{
+    const line=raw.trim(); if(!line) return;
+    const main=line.match(/^\d+[.)]\s*(.+)$/);
+    if(main){ if(current) out.push(current); current=main[1].trim(); return; }
+    if(/^([•])\s*/.test(line) && current){ current+='\u2028'+line; return; }
+    if(current){ out.push(current); }
+    current=line;
+  });
+  if(current) out.push(current);
+  return out;
+}
 function renderStudyCriteriaEditor(){ /* los campos de texto son la fuente editable */ }
 $('impIncl').addEventListener('input', renderImpCriteriaPreview);
 $('impExcl').addEventListener('input', renderImpCriteriaPreview);
@@ -5338,8 +5359,8 @@ $('btnApplyImport').addEventListener('click', ()=>{
   const mode = $('impMode').value;
   const incl = $('impIncl').value.split('\n').map(s=>s.trim()).filter(Boolean);
   const excl = $('impExcl').value.split('\n').map(s=>s.trim()).filter(Boolean);
-  if(incl.length) $('stIncl').value = (mode==='append' && $('stIncl').value.trim()) ? $('stIncl').value.trim()+'\n'+incl.join('\n') : incl.join('\n');
-  if(excl.length) $('stExcl').value = (mode==='append' && $('stExcl').value.trim()) ? $('stExcl').value.trim()+'\n'+excl.join('\n') : excl.join('\n');
+  if(incl.length){ const prev = mode==='append' ? parseCriteriaTextarea($('stIncl').value) : []; $('stIncl').value = criteriaTextarea(prev.concat(incl)); }
+  if(excl.length){ const prev = mode==='append' ? parseCriteriaTextarea($('stExcl').value) : []; $('stExcl').value = criteriaTextarea(prev.concat(excl)); }
   renderStudyCriteriaEditor();
   const vs = IMP_VISITS.filter(v=>!v._skip && !isNaN(v.dia))
     .map(v=>({ id:uid(), nombre:(v.nombre||('Día '+v.dia)).trim(), dia:v.dia, venAntes:v.venAntes||0, venDesp:v.venDesp||0, tareas:(v.tareas||[]).slice() }));
