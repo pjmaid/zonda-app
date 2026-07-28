@@ -4717,9 +4717,10 @@ async function aiCriteriosSeccion(texto, tipo, imagenes){
   const prompt =
     'Sos un asistente de un equipo de investigación clínica. Del siguiente fragmento de protocolo, extraé ÚNICAMENTE los criterios de '+cual+'.\n\n'+
     'FRAGMENTO:\n<<<\n'+doc+'\n>>>\n\n'+
-    'Respondé ÚNICAMENTE con este objeto JSON:\n{"criterios":["criterio 1","criterio 2"]}\n\n'+
+    'Respondé ÚNICAMENTE con este objeto JSON:\n{"criterios":[{"texto":"criterio principal","subitems":["condición interna"]}]}\n\n'+
     'Reglas:\n'+
     '- Transcribí cada criterio tal como figura, sin el número de ítem. Uno por elemento del array.\n'+
+    '- Si un criterio tiene viñetas, incisos o condiciones internas, dejá el enunciado principal en "texto" y cada condición en "subitems". No las conviertas en criterios independientes.\n'+
     '- Un criterio numerado que trae una «Nota:» aclaratoria va en UN SOLO elemento junto con su nota.\n'+
     '- Los subtítulos temáticos que agrupan criterios (por ejemplo «Afecciones médicas e infecciones», «Medicación previa o concomitante») NO son criterios: no los incluyas como elemento.\n'+
     '- No incluyas títulos de sección, entradas del índice, pies de página, texto narrativo del consentimiento ni actas de comité.\n'+
@@ -4735,7 +4736,13 @@ async function aiCriteriosSeccion(texto, tipo, imagenes){
   });
   const o = parseAiObjectLoose(res.text);
   const arr = o && Array.isArray(o.criterios) ? o.criterios : [];
-  return { criterios: arr, cortado: res.cut && !arr.length };
+  const criterios = arr.map(c=>{
+    if(typeof c === 'string') return c;
+    const texto = String((c&&c.texto)||'').trim();
+    const sub = Array.isArray(c&&c.subitems) ? c.subitems.map(x=>String(x||'').trim()).filter(Boolean) : [];
+    return texto + (sub.length ? '\u2028' + sub.map(x=>'• '+x).join('\u2028') : '');
+  }).filter(Boolean);
+  return { criterios, cortado: res.cut && !criterios.length };
 }
 
 /* Las visitas y el cronograma, en su propia consulta. */
@@ -4766,7 +4773,7 @@ async function aiVisitasProtocolo(texto, imagenes){
 }
 
 async function aiExtractProtocol(rawText, imagenes){
-  const clean = a => (Array.isArray(a)?a:[]).map(x=>String(x||'').replace(/\s+/g,' ').trim())
+  const clean = a => (Array.isArray(a)?a:[]).map(x=>String(x||'').replace(/\r?\n/g,'\u2028').replace(/[ \t]+/g,' ').trim())
     .filter(x=>x.length>=8).filter((x,i,arr)=>arr.indexOf(x)===i).slice(0,80);
   const cleanTasks = a => (Array.isArray(a)?a:[])
     .map(x=>String(x||'').replace(/\s+/g,' ').replace(/\s*\bX\b\s*/g,' ').trim().replace(/^[-•*\s]+/,''))
@@ -5264,7 +5271,7 @@ function renderImpCriteriaPreview(){
   const grupo = (titulo, valor) => {
     const items = String(valor||'').split('\n').map(x=>x.trim()).filter(Boolean);
     if(!items.length) return '';
-    const formato = x => esc(x).replace(/\s*([•])\s*/g, '<br><span style="padding-left:12px">$1 </span>');
+    const formato = x => esc(x).replace(/\u2028/g,'<br>').replace(/\s*([•])\s*/g, '<br><span style="padding-left:12px">$1 </span>');
     return '<h4 style="margin:8px 0 4px">'+titulo+'</h4><ol style="margin:0;padding-left:22px">'+
       items.map(x=>'<li style="white-space:pre-wrap;margin:4px 0">'+formato(x)+'</li>').join('')+'</ol>';
   };
