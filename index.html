@@ -255,7 +255,7 @@ details>summary{color:var(--acc-dark)}
       <div class="row">
         <div class="grow"><label>Patrocinador</label><input type="text" id="stPatro"></div>
         <div class="grow"><label>Indicación / Patología</label><input type="text" id="stIndic"></div>
-        <div style="flex:0 0 190px"><label>Día que corresponde a la fecha basal</label><input type="number" id="stDiaBase" value="1" title="Si la visita basal/randomización es 'Día 1' poné 1; si es 'Día 0' poné 0."></div>
+        <div style="flex:0 0 190px"><label>Número de sitio</label><input type="text" id="stNumeroSitio" inputmode="numeric" placeholder="Ej: 0123"></div>
       </div>
       <details style="margin-top:10px" id="ciTplDetails">
         <summary style="cursor:pointer;font-weight:600">🖊️ Plantilla del consentimiento de este protocolo</summary>
@@ -2668,7 +2668,7 @@ function openStudyEditor(id){
   $('stNombre').value = s ? s.nombre : '';
   $('stPatro').value = s ? (s.patrocinador||'') : '';
   $('stIndic').value = s ? (s.indicacion||'') : '';
-  $('stDiaBase').value = s ? (s.diaBase===undefined?1:s.diaBase) : 1;
+  $('stNumeroSitio').value = s ? (s.numeroSitio||'') : '';
   ['stTitulo:tituloCompleto','stTituloAbrev:tituloAbrev','stNroProt:nroProtocolo','stFase:fase',
    'stVersionProt:versionProtocolo','stEstadoProt:estadoProtocolo','stIdEstudio:idEstudio',
    'stInvestigador:investigador','stCiTpl:ciPlantilla','stCiTplRe:ciPlantillaRe']
@@ -2759,7 +2759,10 @@ $('btnSaveStudy').addEventListener('click', async ()=>{
     id, codigo, nombre,
     patrocinador: $('stPatro').value.trim(),
     indicacion: $('stIndic').value.trim(),
-    diaBase: parseInt($('stDiaBase').value,10)||0,
+    /* Se conserva el cálculo histórico de las visitas sin exponerlo como
+       campo del estudio. Los estudios nuevos usan Día 1 como fecha basal. */
+    diaBase: prev && prev.diaBase!==undefined ? prev.diaBase : 1,
+    numeroSitio: $('stNumeroSitio').value.trim(),
     tituloCompleto: $('stTitulo').value.trim(),
     tituloAbrev: $('stTituloAbrev').value.trim(),
     nroProtocolo: $('stNroProt').value.trim(),
