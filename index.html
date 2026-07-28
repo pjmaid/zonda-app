@@ -4663,6 +4663,18 @@ async function ragPreguntar(pregunta, filtros){
 }
 
 /* ---------- configuración ---------- */
+/* la preferencia se guarda al tildar: el botón Guardar vive en otra tarjeta y
+   dejarla sin persistir confundía */
+$('cfgRagOn').addEventListener('change', e=>{
+  CFG.ragOn = !!e.target.checked;
+  saveJSON(LS.CFG, CFG);
+  const m = $('ragMsg');
+  m.style.color = 'var(--ok)';
+  m.textContent = CFG.ragOn
+    ? '✔ '+T('Búsqueda documental activada. Ahora indexá los documentos de cada estudio.')
+    : T('Búsqueda documental desactivada. Las consultas vuelven al método anterior.');
+});
+
 $('btnRagTest').addEventListener('click', async ()=>{
   const m = $('ragMsg');
   m.style.color='var(--muted)'; m.textContent = T('Probando...');
@@ -4683,7 +4695,7 @@ $('btnRagIndexAll').addEventListener('click', async ()=>{
   const stId = $('stId') ? $('stId').value : '';
   const docs = stId ? docsOf(stId) : (DB.docs||[]).filter(d=>d.estudioId);
   if(!docs.length){ m.style.color='var(--warn)'; m.textContent = T('No hay documentos para indexar. Abrí un estudio con documentos adjuntos.'); return; }
-  if(!CFG.ragOn){ m.style.color='var(--warn)'; m.textContent = T('Activá primero la casilla de búsqueda documental y guardá la configuración.'); return; }
+  if(!CFG.ragOn){ m.style.color='var(--warn)'; m.textContent = T('Activá primero la casilla de búsqueda documental.'); return; }
   let ok=0, mal=0;
   for(let i=0;i<docs.length;i++){
     m.style.color='var(--muted)';
