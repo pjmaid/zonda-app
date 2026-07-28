@@ -305,7 +305,7 @@ details>summary{color:var(--acc-dark)}
     </div>
 
     <div class="card">
-      <div class="toolbar" style="margin-bottom:0"><h3 style="margin:0">Documentos del estudio</h3><span class="spacer"></span><button class="ghost" id="btnStudyAsk">🔎 Consultar los documentos</button></div>
+      <div class="toolbar" style="margin-bottom:0"><h3 style="margin:0">Documentos del estudio</h3><span class="spacer"></span><button class="ghost" id="btnStudyAsk">💬 Chat con documentos</button></div>
       <div class="muted small" style="margin-bottom:8px">Protocolo, consentimiento informado (CI), manual de procedimientos, enmiendas, etc. Quedan disponibles para ver o descargar cuando los necesites. En modo local se guardan en este navegador; en modo online, en la nube del equipo.</div>
       <div class="row">
         <div style="flex:0 0 220px"><label>Tipo de documento</label>
@@ -411,30 +411,13 @@ details>summary{color:var(--acc-dark)}
           </select>
         </div>
         <div style="flex:0 0 190px"><label>Fecha de nacimiento</label><input type="date" id="paFechaNac"></div>
-        <div class="grow" id="paAntiBox"><label>Método anticonceptivo</label>
-          <select id="paAnti">
-            <option value="">(sin registrar)</option>
-            <option>Anticonceptivo oral combinado</option>
-            <option>Anticonceptivo solo con progestágeno</option>
-            <option>DIU / SIU</option>
-            <option>Implante subdérmico</option>
-            <option>Inyectable</option>
-            <option>Preservativo (pareja)</option>
-            <option>Doble método de barrera</option>
-            <option>Ligadura tubaria / vasectomía de la pareja</option>
-            <option>Abstinencia sexual</option>
-            <option>Posmenopáusica</option>
-            <option>No aplica según el protocolo</option>
-          </select>
-        </div>
-        <div class="grow" id="paAntiDetBox"><label>Detalle / desde cuándo</label><input type="text" id="paAntiDet" placeholder="Ej: DIU de cobre colocado 03/2024"></div>
       </div>
       <label>Notas del paciente</label>
       <textarea id="paNotas" rows="3" placeholder="Comorbilidades relevantes, brazo asignado, observaciones..."></textarea>
     </div>
 
     <div class="card">
-      <h3>Documentos del paciente</h3>
+      <div class="toolbar" style="margin-bottom:0"><h3 style="margin:0">Documentos del paciente</h3><span class="spacer"></span><button class="ghost" id="btnPatientAsk">💬 Chat con historia clínica</button></div>
       <div class="muted small" style="margin-bottom:8px">Historia clínica, laboratorio, informes, etc. (PDF, Word o texto). Sirven de base para la evaluación automática de los criterios. Adjuntá documentos identificados solo por código/iniciales, sin nombre completo.</div>
       <div class="row">
         <div style="flex:0 0 200px"><label>Tipo</label>
@@ -2957,9 +2940,6 @@ function openPatientEditor(id){
   $('paNotas').value = p ? (p.notas||'') : '';
   $('paSexo').value = p ? (p.sexo||'') : '';
   $('paFechaNac').value = p ? (p.fechaNacimiento||'') : '';
-  $('paAnti').value = p ? (p.anticoncepcion||'') : '';
-  $('paAntiDet').value = p ? (p.anticoncepcionDet||'') : '';
-  togglePaSexo();
   /* si al guardar el paciente cambia el método, la próxima visita lo toma */
   PA_CRIT = p ? Object.assign({}, p.criterios||{}) : {};
   PA_JUST = {};
@@ -3071,8 +3051,6 @@ $('btnSavePatient').addEventListener('click', async ()=>{
     notas: $('paNotas').value.trim(),
     sexo: $('paSexo').value,
     fechaNacimiento: $('paFechaNac').value || '',
-    anticoncepcion: $('paAnti').value,
-    anticoncepcionDet: $('paAntiDet').value.trim(),
     criterios: Object.assign({}, PA_CRIT),
     critFirma: (getStudy($('paEstudio').value) ? critFirma(getStudy($('paEstudio').value)) : '')
   };
@@ -3596,7 +3574,7 @@ function exigeAnticon(st, p){
   return req === (p&&p.sexo);
 }
 /* la anticoncepción se muestra según el sexo cargado */
-function togglePaSexo(){
+function togglePaSexo(){ return;
   const sx = $('paSexo').value;
   const mostrar = sx==='f' || sx==='m';
   $('paAntiBox').classList.toggle('hidden', !mostrar);
@@ -5488,8 +5466,8 @@ function openCiModal(docId){
 
 /* consulta sobre el protocolo y demás documentos del estudio (sin el CI) */
 function openStudyAsk(stId){
-  const docs = docsOf(stId).filter(d=>d.tipo!=='ci');
-  if(!docs.length){ toast(T('Este estudio no tiene documentos adjuntos aparte del CI. Adjuntá el protocolo en «Documentos del estudio».')); return; }
+  const docs = docsOf(stId);
+  if(!docs.length){ toast(T('Este estudio no tiene documentos adjuntos. Adjuntá el protocolo o el consentimiento en «Documentos del estudio».')); return; }
   /* el protocolo primero: es la fuente principal */
   docs.sort((a,b)=> (a.tipo==='protocolo'?0:1) - (b.tipo==='protocolo'?0:1));
   CI_MODE = 'docs'; CI_DOCS = docs; CI_HIST = [];
@@ -5502,6 +5480,19 @@ function openStudyAsk(stId){
   renderCiFuentes([]);
   ciModalShow(DOCS_SUGERIDAS);
 }
+function openPatientAsk(patientId){
+  const p = getPatient(patientId);
+  const docs = docsOfPatient(patientId);
+  if(!docs.length){ toast('Este paciente no tiene historia clínica, laboratorios ni informes adjuntos.'); return; }
+  CI_MODE = 'patient'; CI_DOCS = docs; CI_HIST = [];
+  const st = getStudy(p && p.estudioId) || {};
+  $('ciModalTitle').textContent = '💬 Chat con historia clínica';
+  $('ciModalFoot').textContent = 'Las respuestas salen únicamente de los documentos clínicos de este paciente, con cita y documento de origen. Ante cualquier duda, consultá el original.';
+  $('ciModalMeta').innerHTML = '<b>'+esc((p&&p.codigo)||'Paciente')+'</b>'+(p&&p.iniciales?' ('+esc(p.iniciales)+')':'')+' — '+esc(st.codigo||'')+' · '+docs.length+' documentos';
+  CI_DOCS.forEach(d=>{ delete d._off; });
+  renderCiFuentes([]);
+  ciModalShow(['¿Cuál es el diagnóstico y desde cuándo consta?', '¿Qué medicación actual figura?', '¿Qué resultados de laboratorio relevantes constan?', '¿Hay antecedentes o contraindicaciones documentadas?']);
+}
 $('btnCloseCi').addEventListener('click', ()=>$('ciModal').classList.add('hidden'));
 $('btnCiAsk').addEventListener('click', ()=>askCi());
 $('ciQuestion').addEventListener('keydown', e=>{ if(e.key==='Enter') askCi(); });
@@ -5509,6 +5500,11 @@ $('btnStudyAsk').addEventListener('click', ()=>{
   const stId = $('stId').value;
   if(!stId){ toast(T('Guardá el estudio primero para poder adjuntar documentos.')); return; }
   openStudyAsk(stId);
+});
+$('btnPatientAsk').addEventListener('click', ()=>{
+  const pid = $('paId').value;
+  if(!pid){ toast('Guardá el paciente primero para consultar sus documentos.'); return; }
+  openPatientAsk(pid);
 });
 
 /* muestra qué documentos se están consultando y cuánto texto se leyó de cada
@@ -5565,6 +5561,7 @@ function ciSearch(texto, pregunta){
 /* pregunta sobre uno o varios documentos; cada respuesta con citas y su documento de origen */
 async function aiAskDocs(fuentes, pregunta){
   const esCi = (CI_MODE==='ci' && fuentes.length===1);
+  const esPaciente = CI_MODE==='patient';
   /* se manda el texto COMPLETO de cada documento mientras entre en la ventana
      del proveedor; solo si no entra se reparte y se avisa qué se recortó */
   const total = fuentes.reduce((a,f)=>a+f.texto.length, 0);
@@ -5581,7 +5578,7 @@ async function aiAskDocs(fuentes, pregunta){
   });
   const prompt =
     'Sos un asistente del equipo de investigación clínica. Respondé la pregunta usando ÚNICAMENTE el texto de '+
-    (esCi ? 'el consentimiento informado que se incluye abajo.' : 'los documentos del estudio que se incluyen abajo (el protocolo es la fuente principal).')+
+    (esCi ? 'el consentimiento informado que se incluye abajo.' : esPaciente ? 'la documentación clínica del paciente que se incluye abajo.' : 'los documentos del estudio que se incluyen abajo (el protocolo es la fuente principal).')+
     cuerpo+'\n\n'+
     'PREGUNTA: '+pregunta+'\n\n'+
     'Respondé ÚNICAMENTE con este objeto JSON:\n'+
@@ -6538,6 +6535,59 @@ async function aiEvalCriteria(st, text, imagenes){
   return res;
 }
 
+/* Evaluación por lotes con evidencia puntual: evita que un protocolo o una
+   historia clínica extensa diluya la respuesta de cada criterio. */
+function edadEnFecha(fechaNacimiento, fechaReferencia){
+  if(!fechaNacimiento) return '';
+  const n = new Date(fechaNacimiento+'T12:00:00');
+  const r = new Date((fechaReferencia||todayISO())+'T12:00:00');
+  if(isNaN(n) || isNaN(r)) return '';
+  let edad = r.getFullYear()-n.getFullYear();
+  if(r.getMonth()<n.getMonth() || (r.getMonth()===n.getMonth() && r.getDate()<n.getDate())) edad--;
+  return String(edad);
+}
+function evidenciaParaCriterio(texto, criterio){
+  const partes = String(texto||'').split(/\n\s*\n|(?<=[.;])\s+/).map(x=>x.replace(/\s+/g,' ').trim()).filter(x=>x.length>=20);
+  const claves = Array.from(new Set(stripAcc(criterio).split(/[^a-z0-9]+/).filter(x=>x.length>=4 && !EVID_STOP.has(x))));
+  if(!claves.length) return '';
+  return partes.map(p=>{
+    const q=stripAcc(p); let puntos=0;
+    claves.forEach(k=>{ if(q.includes(k)) puntos++; });
+    return {p,puntos};
+  }).filter(x=>x.puntos>0).sort((a,b)=>b.puntos-a.puntos).slice(0,5).map(x=>x.p.slice(0,520)).join('\n• ');
+}
+async function aiEvalCriteria(st, text, imagenes, paciente){
+  const items = (st.criteriosInclusion||[]).map((c,i)=>({clave:'i'+i,tipo:'inclusión',criterio:c}))
+    .concat((st.criteriosExclusion||[]).map((c,i)=>({clave:'e'+i,tipo:'exclusión',criterio:c})));
+  const referencia = (paciente&&paciente.fechaBasal)||todayISO();
+  const edad = paciente ? edadEnFecha(paciente.fechaNacimiento, referencia) : '';
+  const datos = paciente ? 'DATOS ESTRUCTURADOS DEL PACIENTE: sexo: '+(paciente.sexo||'no registrado')+
+    '; fecha de nacimiento: '+(paciente.fechaNacimiento||'no registrada')+
+    (edad ? '; edad al '+referencia+': '+edad+' años' : '')+
+    '; fecha basal: '+(paciente.fechaBasal||'no registrada')+'.' : '';
+  const salida=[];
+  for(let pos=0;pos<items.length;pos+=6){
+    const lote=items.slice(pos,pos+6);
+    const bloque=lote.map(x=>{
+      const ev=evidenciaParaCriterio(text,x.criterio);
+      return x.clave+' ('+x.tipo+'): '+x.criterio+'\nEVIDENCIA RELACIONADA: '+(ev ? '• '+ev : 'No se encontró evidencia textual relacionada.');
+    }).join('\n\n');
+    const prompt='Sos un asistente de investigación clínica. Evaluá cada criterio usando ÚNICAMENTE los datos estructurados y la evidencia textual incluida. No uses conocimiento externo ni supongas datos ausentes.\n\n'+
+      datos+'\n\n'+bloque+'\n\nRespondé ÚNICAMENTE con un array JSON, un objeto por criterio: '+
+      '[{"clave":"i0","respuesta":"si|no|pendiente","justificacion":"cita textual breve o dato estructurado","falta":"dato faltante, solo si pendiente"}].\n\n'+
+      'Reglas: para inclusión, “si” solo con evidencia explícita; para exclusión, “si” si la condición está presente y “no” si está explícitamente descartada. Si no hay prueba suficiente, respondé “pendiente”.';
+    const contenido = (imagenes&&imagenes.length&&pos===0)
+      ? [{t:'text',text:'Imágenes de documentos clínicos: usalas solo como evidencia adicional para este lote.'}].concat(imagenes.slice(0,8),[{t:'text',text:prompt}])
+      : prompt;
+    const r=await aiChat({system:'Respondés exclusivamente con un array JSON válido, sin texto extra.',content:contenido,maxTokens:Math.max(1200,lote.length*260)});
+    const parte=parseAiArray(String(r.text||'').replace(/```json|```/g,'').trim());
+    if(!parte.length) throw new Error('La IA no devolvió una evaluación interpretable para uno de los grupos de criterios.');
+    salida.push(...parte);
+  }
+  items.forEach(x=>{ if(!salida.some(r=>String(r.clave).toLowerCase()===x.clave)) salida.push({clave:x.clave,respuesta:'pendiente',justificacion:'sin dato en la documentación',falta:'evidencia clínica o de laboratorio'}); });
+  return salida;
+}
+
 /* parseo tolerante: array completo o, si vino cortado, objeto por objeto */
 function parseAiArray(txt){
   try{
@@ -6645,7 +6695,11 @@ $('btnRunEval').addEventListener('click', async ()=>{
         imgs = await docsImagenes(elegidos, 8);
       }
       stEl.textContent = T('Consultando a la IA (puede tardar unos segundos)...');
-      const res = await aiEvalCriteria(study, text, imgs);
+      const pacienteEval = Object.assign({}, getPatient($('paId').value)||{}, {
+        sexo: $('paSexo').value||'', fechaNacimiento: $('paFechaNac').value||'',
+        fechaBasal: $('paFechaBasal').value||''
+      });
+      const res = await aiEvalCriteria(study, text, imgs, pacienteEval);
       const n = applyEvalResults(res);
       renderPaCriterios();
       $('paAiNotice').innerHTML = '<div class="banner warn">🤖 Respuestas sugeridas por IA a partir de los documentos ('+n.resp+' respondidas, '+n.pend+' quedaron pendientes). Confirmá cada criterio antes de guardar: la decisión final es siempre del investigador.</div>';
