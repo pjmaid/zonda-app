@@ -465,6 +465,7 @@ details>summary{color:var(--acc-dark)}
         <h3 style="margin:0">Criterios de elegibilidad</h3>
         <span class="spacer"></span>
         <button id="btnMissingPdf">📄 Informe de datos faltantes</button>
+        <button id="btnElegPdf">✅ Informe de elegibilidad</button>
         <button id="btnCritNarr">📝 Fundamentación por criterio</button>
         <button id="btnEvalCrit">🤖 Evaluar automáticamente</button>
       </div>
@@ -4752,7 +4753,8 @@ async function aiVisitasProtocolo(texto, imagenes){
     'Reglas:\n'+
     '- Una entrada por visita programada. "dia" es el día del protocolo respecto de la basal (negativo para screening; si la visita se define por semanas, semana N = día N×7).\n'+
     '- Las ventanas van en días (0 si no se especifica).\n'+
-    '- "tareas": los procedimientos que corresponden a ESA visita según la tabla de procedimientos. En esa tabla las filas son procedimientos y las columnas visitas: incluí los que tengan la celda marcada para esa columna, con el nombre de la fila y sin las "X".\n'+
+    '- "tareas": los procedimientos que corresponden a ESA visita según la tabla de procedimientos. En esa tabla las filas son procedimientos y las columnas visitas: incluí TODOS los que tengan la celda marcada para esa columna, con el nombre completo de la fila y sin las "X".\n'+
+    '- La tabla de procedimientos es la fuente principal para "tareas": no resumas, no agrupes y no descartes procedimientos repetidos en distintas visitas. Cada visita debe conservar todas sus filas marcadas.\n'+
     '- Si no podés determinar con seguridad los procedimientos de una visita, devolvé "tareas" vacío para esa visita en lugar de adivinar.\n'+
     '- Si el protocolo no trae calendario de visitas, devolvé {"visitas":[]}. No inventes.';
   const contenido = (imagenes && imagenes.length)
@@ -4760,7 +4762,7 @@ async function aiVisitasProtocolo(texto, imagenes){
     : prompt;
   const res = await aiChat({
     system: 'Respondés exclusivamente con un objeto JSON válido, sin texto antes ni después y sin bloques de código.',
-    content: contenido, maxTokens: 14000
+    content: contenido, maxTokens: 30000
   });
   const o = parseAiObjectLoose(res.text);
   return (o && Array.isArray(o.visitas)) ? o.visitas : [];
@@ -4772,7 +4774,7 @@ async function aiExtractProtocol(rawText, imagenes){
   const cleanTasks = a => (Array.isArray(a)?a:[])
     .map(x=>String(x||'').replace(/\s+/g,' ').replace(/\s*\bX\b\s*/g,' ').trim().replace(/^[-•*\s]+/,''))
     .filter(x=>x.length>=3 && x.length<=160 && !/^X+$/i.test(x))
-    .filter((x,i,arr)=>arr.indexOf(x)===i).slice(0,40);
+    .filter((x,i,arr)=>arr.indexOf(x)===i).slice(0,250);
 
   /* tres consultas independientes: si una falla, las otras igual traen su parte */
   const errores = [];
@@ -5144,8 +5146,17 @@ $('btnAnalyze').addEventListener('click', async ()=>{
     }
     if((text||'').trim().length<50 && !($('impVisual').checked && IMP_BLOB))
       throw new Error('El documento no tiene texto legible (puede ser un PDF escaneado). Tildá «Leer las páginas como imagen» o pegá el texto.');
-    /* con búsqueda documental se le pregunta al índice, igual que a NotebookLM */
-    if(ragActivo() && src === 'doc'){
+    /* Para importar criterios, Gemini con la sección delimitada del protocolo es
+       más fiable que una respuesta libre del índice: evita mezclar 5.1 con 5.2
+       o tomar una coincidencia del índice/tabla de contenidos. El RAG sigue
+       siendo el respaldo cuando Gemini no está configurado. */
+    const extraerConGeminiPorSeccion = src === 'doc' && aiConfigured() && aiProvider() === 'gemini';
+    if(extraerConGeminiPorSeccion){
+      st.textContent = 'Verificando las secciones de inclusión y exclusión del protocolo con Gemini...';
+    }
+    /* con búsqueda documental se le pregunta al índice cuando no hay Gemini
+       configurado para analizar las secciones delimitadas */
+    if(ragActivo() && src === 'doc' && !extraerConGeminiPorSeccion){
       const stIdRag = $('stId').value;
       try{
         st.textContent = T('Consultando el índice de búsqueda documental...');
@@ -7054,11 +7065,27 @@ async function aiNarrarCriterios(st, texto, p, imagenes, st_el){
     const x = String(t||'').trim();
     return x.length>20 && !/[.!?»)]$/.test(x);
   };
+  /* La decisión es del investigador: si el criterio ya está respondido en la
+     ficha, ese es el estado. La IA solo aporta la redacción, nunca cambia el
+     veredicto. */
+  const estadoDe = it => {
+    const r = (p.criterios||{})[it.clave];
+    if(r === 'si')  return it.tipo==='inclusion' ? 'cumple' : 'no_cumple';
+    if(r === 'no')  return it.tipo==='inclusion' ? 'no_cumple' : 'cumple';
+    return null;
+  };
   const res = items.map(it=>{
     const o = porClave[it.clave] || {};
     let txt = String(o.texto||'').slice(0,1200).trim();
-    let est = ['cumple','no_cumple','pendiente'].includes(String(o.estado||'')) ? o.estado : 'pendiente';
-    if(!txt){ txt = T('Sin fundamentación: no se encontró información en la documentación cargada.'); est='pendiente'; }
+    let est = estadoDe(it) ||
+              (['cumple','no_cumple','pendiente'].includes(String(o.estado||'')) ? o.estado : 'pendiente');
+    if(!txt){
+      const marcado = estadoDe(it);
+      txt = marcado
+        ? T('Evaluado por el investigador a partir de la documentación fuente del participante.')
+        : T('Sin fundamentación: no se encontró información en la documentación cargada.');
+      if(!marcado) est = 'pendiente';
+    }
     else if(cortada(txt)){ txt = txt.replace(/[,;:\s]+\S*$/,'') + '. ' + T('(La redacción quedó incompleta: volvé a generarla o completala a mano.)'); }
     return Object.assign({}, it, { texto:txt, cita:String(o.cita||'').slice(0,300), estado:est,
                                    resp:(p.criterios||{})[it.clave] || 'pendiente' });
@@ -7178,6 +7205,121 @@ function narrTexto(p, st){
   }
   return L.join('\n');
 }
+
+/* ---------- informe final de elegibilidad ----------
+   Sale de las respuestas que registró el investigador en la ficha, no de la IA:
+   es el documento que declara, criterio por criterio, cómo quedó evaluado el
+   participante. Si además hay fundamentación redactada, la incorpora. */
+function elegItems(st, p){
+  const out = [];
+  const resp = p.criterios || {};
+  const narr = (p.critNarrativa && !p.critNarrativa.obsoleta) ? (p.critNarrativa.items||[]) : [];
+  const buscarNarr = clave => (narr.find(x=>x.clave===clave)||{}).texto || '';
+  (st.criteriosInclusion||[]).forEach((c,i)=>{
+    const k='i'+i, r=resp[k]||'pendiente';
+    out.push({ clave:k, tipo:'inclusion', n:i+1, criterio:c, resp:r,
+               cumple: r==='si' ? 'cumple' : (r==='no' ? 'no_cumple' : 'pendiente'),
+               fund: buscarNarr(k) });
+  });
+  (st.criteriosExclusion||[]).forEach((c,i)=>{
+    const k='e'+i, r=resp[k]||'pendiente';
+    out.push({ clave:k, tipo:'exclusion', n:i+1, criterio:c, resp:r,
+               cumple: r==='no' ? 'cumple' : (r==='si' ? 'no_cumple' : 'pendiente'),
+               fund: buscarNarr(k) });
+  });
+  return out;
+}
+
+function elegBody(p, st){
+  const its = elegItems(st, p);
+  const cum = its.filter(x=>x.cumple==='cumple').length;
+  const noc = its.filter(x=>x.cumple==='no_cumple');
+  const pen = its.filter(x=>x.cumple==='pendiente');
+  const veredicto = eligibility(p);
+
+  let h = '<h1>'+T('Evaluación de elegibilidad')+'</h1>'+
+    '<div class="meta"><b>'+T('Paciente')+':</b> '+esc(p.codigo||'')+(p.iniciales?' ('+esc(p.iniciales)+')':'')+
+    ' · <b>'+T('Protocolo')+':</b> '+esc(st.codigo||'')+(st.nombre?' — '+esc(st.nombre):'')+
+    (st.patrocinador?' · <b>'+T('Patrocinador')+':</b> '+esc(st.patrocinador):'')+
+    '<br><b>'+T('Fecha de la evaluación')+':</b> '+fmtDate(todayISO())+
+    (p.fechaBasal?' · <b>'+T('Fecha basal')+':</b> '+fmtDate(p.fechaBasal):'')+'</div>';
+
+  h += '<div class="box" style="font-size:14px"><b>'+T('Resultado')+': '+esc(veredicto)+'</b><br>'+
+       cum+' '+T('de')+' '+its.length+' '+T('criterios cumplidos')+
+       (noc.length ? ' · '+noc.length+' '+T('no cumplidos') : '')+
+       (pen.length ? ' · '+pen.length+' '+T('sin evaluar') : '')+'</div>';
+
+  if(noc.length){
+    h += '<h2>'+T('Criterios no cumplidos')+'</h2><ul>'+
+      noc.map(x=>'<li><b>'+(x.tipo==='inclusion'?'I':'E')+x.n+'.</b> '+esc(x.criterio)+'</li>').join('')+'</ul>';
+  }
+  if(pen.length){
+    h += '<h2>'+T('Criterios sin evaluar')+'</h2><ul>'+
+      pen.map(x=>'<li><b>'+(x.tipo==='inclusion'?'I':'E')+x.n+'.</b> '+esc(x.criterio)+'</li>').join('')+'</ul>';
+  }
+
+  let nro = 0;
+  for(const [tipo, titulo] of [['inclusion', T('Criterios de inclusión')], ['exclusion', T('Criterios de exclusión')]]){
+    const lista = its.filter(x=>x.tipo===tipo);
+    if(!lista.length) continue;
+    h += '<h2>'+titulo+'</h2>'+
+      '<table><thead><tr><th style="width:34px">#</th><th>'+T('Criterio')+'</th>'+
+      '<th style="width:88px">'+T('Respuesta')+'</th></tr></thead><tbody>';
+    for(const x of lista){
+      nro++;
+      const et = x.cumple==='cumple' ? T('Cumple') : (x.cumple==='no_cumple' ? T('No cumple') : T('Pendiente'));
+      h += '<tr><td>'+nro+'</td><td>'+esc(x.criterio)+
+        (x.fund ? '<div style="font-size:11.5px;color:#4d5c6b;margin-top:2px">'+esc(x.fund)+'</div>' : '')+
+        '</td><td><b>'+esc(et)+'</b></td></tr>';
+    }
+    h += '</tbody></table>';
+  }
+
+  h += '<div class="sig">'+T('Declaro que la evaluación de elegibilidad se realizó sobre la documentación fuente del participante.')+
+       '<br><br>______________________________<br>'+T('Firma y aclaración del investigador')+' · '+T('Fecha')+': ____/____/______</div>'+
+       '<div class="foot">'+T('Documento generado con Zonda a partir de las respuestas registradas por el investigador.')+'</div>';
+  return h;
+}
+
+function elegTexto(p, st){
+  const its = elegItems(st, p);
+  const L = [T('Evaluación de elegibilidad'), ''];
+  L.push(T('Paciente')+': '+(p.codigo||'')+(p.iniciales?' ('+p.iniciales+')':''));
+  L.push(T('Protocolo')+': '+(st.codigo||'')+(st.nombre?' — '+st.nombre:''));
+  L.push(T('Fecha')+': '+fmtDate(todayISO()));
+  L.push(T('Resultado')+': '+eligibility(p));
+  let k=0;
+  for(const [tipo, titulo] of [['inclusion', T('Criterios de inclusión')], ['exclusion', T('Criterios de exclusión')]]){
+    const lista = its.filter(x=>x.tipo===tipo);
+    if(!lista.length) continue;
+    L.push('', titulo.toUpperCase());
+    for(const x of lista){
+      k++;
+      const et = x.cumple==='cumple' ? T('Cumple') : (x.cumple==='no_cumple' ? T('No cumple') : T('Pendiente'));
+      L.push(k+'. ['+et+'] '+x.criterio);
+      if(x.fund) L.push('   '+x.fund);
+    }
+  }
+  return L.join('\n');
+}
+
+$('btnElegPdf').addEventListener('click', ()=>{
+  const pid = $('paId').value;
+  if(!pid || !getPatient(pid)){ toast(T('Guardá el paciente antes de generar el informe.')); return; }
+  const st = getStudy($('paEstudio').value);
+  if(!st){ toast(T('Elegí un estudio.')); return; }
+  const p = Object.assign({}, getPatient(pid), {
+    criterios: PA_CRIT, fechaBasal: $('paFechaBasal').value, estudioId: $('paEstudio').value });
+  const w = openReport(T('Elegibilidad – ')+(p.codigo||''), elegBody(p, st));
+  if(!w) return;
+  const txt = elegTexto(p, st);
+  const btn = w.document.createElement('button');
+  btn.textContent = T('✉ Enviar por email');
+  btn.onclick = ()=>{ w.location.href = 'mailto:?subject='+encodeURIComponent(T('Elegibilidad – paciente ')+(p.codigo||''))+
+                                        '&body='+encodeURIComponent(txt.slice(0,1800)); };
+  const bar = w.document.querySelector('.noprint');
+  if(bar) bar.insertBefore(btn, bar.children[1]);
+});
 
 $('btnCritNarr').addEventListener('click', openNarrModal);
 $('btnNarrClose').addEventListener('click', ()=>$('narrModal').classList.add('hidden'));
@@ -7944,6 +8086,7 @@ const FEAT_EXTRA = {
   'cal.firmas':{ g:'cal', n:'Firmas y registros faltantes' },
   'ia.evalCriterios':{ g:'ia', n:'Evaluación automática de criterios' },
   'ia.narrCriterios':{ g:'ia', n:'Fundamentación de criterios por paciente' },
+  'rep.elegibilidad':{ g:'rep', n:'Informe de elegibilidad' },
   'ia.importProt':{ g:'ia', n:'Importar criterios y visitas del protocolo' },
   'ia.flowchart':{ g:'ia', n:'Leer la tabla de procedimientos' },
   'ia.askCi':{ g:'ia', n:'Consultar el consentimiento informado' },
@@ -8017,6 +8160,7 @@ function applyFeatures(){
   featNode('btnStudyAsk','ia.askDocs');
   featNode('btnEvalCrit','ia.evalCriterios');
   featNode('btnCritNarr','ia.narrCriterios');
+  featNode('btnElegPdf','rep.elegibilidad');
   featNode('btnMissingPdf','rep.faltantes');
   featNode('btnAgIcs','ag.ics');
   featNode('btnAgPrint','ag.agendaPrint');
