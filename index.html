@@ -1125,8 +1125,8 @@ details>summary{color:var(--acc-dark)}
     <div id="evalModeInfo" class="banner gray"></div>
     <div id="evalDocsBox" style="margin-top:8px"></div>
     <label style="display:block;font-weight:400;color:var(--ink);margin:2px 0 8px">
-      <input type="checkbox" id="evalVisual" style="width:auto;margin-right:7px">
-      <b>Leer las páginas como imagen</b> — para laboratorios en tablas complejas o documentos escaneados. Más preciso con tablas, consume más créditos.
+      <input type="checkbox" id="evalVisual" checked style="width:auto;margin-right:7px">
+      <b>Leer también las páginas como imagen</b> — recomendado para historias clínicas, laboratorios en tablas o documentos escaneados. Más preciso, consume más créditos.
     </label>
     <div class="toolbar" id="evalRagBox" style="margin:4px 0 8px">
       <button id="btnEvalIndex">⬆ Indexar estos documentos</button>
@@ -6578,6 +6578,7 @@ async function aiEvalCriteria(st, text, imagenes, paciente){
     ? text.slice(0,Math.floor(limiteContexto*0.72))+'\n[... documentación intermedia omitida por longitud ...]\n'+text.slice(-Math.floor(limiteContexto*0.28))
     : text;
   const salida=[];
+  const fallos=[];
   for(let pos=0;pos<items.length;pos+=6){
     const lote=items.slice(pos,pos+6);
     const bloque=lote.map(x=>{
@@ -6600,12 +6601,15 @@ async function aiEvalCriteria(st, text, imagenes, paciente){
           system:'Respondés exclusivamente con un array JSON válido, sin texto extra. Empezá con [ y terminá con ].',
           content:contenido, maxTokens:Math.max(1200,lote.length*260), json:!reintento
         });
-        return parseAiArray(String(r.text||'').replace(/```json|```/g,'').trim());
-      }catch(e){ return []; }
+        const parte = parseAiArray(String(r.text||'').replace(/```json|```/g,'').trim());
+        return { parte, error:parte.length ? '' : 'La IA respondió sin una lista de criterios utilizable.' };
+      }catch(e){ return { parte:[], error:String((e&&e.message)||e||'Error al consultar la IA.') }; }
     };
-    let parte=await consultar(false);
-    if(!parte.length) parte=await consultar(true);
+    let intento=await consultar(false);
+    if(!intento.parte.length) intento=await consultar(true);
+    const parte=intento.parte;
     if(!parte.length){
+      fallos.push(intento.error);
       salida.push(...lote.map(x=>({
         clave:x.clave, respuesta:'pendiente',
         justificacion:'La IA no pudo interpretar este grupo de criterios en esta ejecución.',
@@ -6613,6 +6617,8 @@ async function aiEvalCriteria(st, text, imagenes, paciente){
       })));
     } else salida.push(...parte);
   }
+  if(fallos.length && fallos.length===Math.ceil(items.length/6))
+    throw new Error('La IA no pudo evaluar los documentos del paciente. '+fallos[0]);
   items.forEach(x=>{ if(!salida.some(r=>String(r.clave).toLowerCase()===x.clave)) salida.push({clave:x.clave,respuesta:'pendiente',justificacion:'sin dato en la documentación',falta:'evidencia clínica o de laboratorio'}); });
   return salida;
 }
