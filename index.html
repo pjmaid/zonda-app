@@ -26,13 +26,12 @@ a{color:var(--acc)}
 .muted{color:var(--muted);font-size:13px}
 .small{font-size:12.5px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-bottom:14px;box-shadow:var(--sombra)}
-.card>h3{padding-bottom:8px;border-bottom:1px solid #e8eef4;color:var(--acc-dark)}
 .row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end}
 .grow{flex:1 1 180px}
 label{display:block;font-size:12px;font-weight:600;color:var(--muted);margin:8px 0 4px;text-transform:uppercase;letter-spacing:.03em}
 input[type=text],input[type=password],input[type=date],input[type=time],input[type=number],input[type=email],select,textarea{
   width:100%;padding:8px 11px;border:1px solid var(--line);border-radius:8px;font:inherit;background:#fff;color:var(--ink);transition:border-color .12s, box-shadow .12s}
-textarea{resize:vertical;min-height:70px;line-height:1.45}
+textarea{resize:vertical;min-height:70px}
 input:focus,select:focus,textarea:focus{outline:none;border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-soft)}
 input[readonly],textarea[readonly]{background:#f7fafc}
 button{font:inherit;cursor:pointer;border-radius:8px;border:1px solid #cdd8e2;background:#fff;color:var(--ink);padding:8px 14px;transition:background .12s, box-shadow .12s, transform .05s}
@@ -88,13 +87,11 @@ main{max-width:1120px;margin:0 auto;padding:22px 20px}
 .stat.bad{border-left-color:var(--bad)} .stat.warn{border-left-color:var(--warn)} .stat.ok{border-left-color:var(--ok)} .stat.acc{border-left-color:var(--acc)}
 .stat.bad .num{color:var(--bad)} .stat.warn .num{color:var(--warn)} .stat.ok .num{color:var(--ok)} .stat.acc .num{color:var(--acc-dark)}
 /* tarjetas de estudio */
-.stcard{display:flex;gap:14px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:10px;box-shadow:var(--sombra);transition:box-shadow .12s,border-color .12s}
-.stcard:hover{box-shadow:0 3px 10px rgba(19,34,48,.10);border-color:#bcd4e2}
+.stcard{display:flex;gap:14px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:10px;box-shadow:var(--sombra);transition:box-shadow .12s}
+.stcard:hover{box-shadow:0 3px 10px rgba(19,34,48,.10)}
 .stcard .info{flex:1;min-width:0}
 .stcard .code{font-weight:700;color:var(--acc-dark)}
-.stcard .actions{display:flex;gap:4px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
-.stcard .actions [data-act=edit]{min-width:92px}
-.visitcard{border:1px solid var(--line);border-left:3px solid #bcdcf0;border-radius:10px;padding:12px;margin-bottom:10px;background:linear-gradient(110deg,#fbfcfe 0%,#f7fbfe 100%)}
+.visitcard{border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:10px;background:#fbfcfe}
 .visitcard .vhead{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
 .visitcard .vhead>div{flex:0 0 auto}
 .taskline{display:flex;gap:8px;align-items:flex-start;padding:6px 8px;border-bottom:1px dashed var(--line)}
@@ -102,9 +99,8 @@ main{max-width:1120px;margin:0 auto;padding:22px 20px}
 .taskline input[type=checkbox]{margin-top:4px;width:16px;height:16px;accent-color:var(--acc)}
 .taskline .tcom{flex:1}
 .taskline .tname{flex:1;padding-top:3px}
-.critline{display:flex;gap:10px;align-items:center;padding:8px 9px;border-bottom:1px dashed var(--line);flex-wrap:wrap;border-radius:6px}
+.critline{display:flex;gap:10px;align-items:center;padding:7px 8px;border-bottom:1px dashed var(--line);flex-wrap:wrap}
 .critline:last-child{border-bottom:none}
-.critline:hover{background:#f7fbfe}
 .critline .ctext{flex:1;min-width:220px}
 .critline label{display:inline;font-weight:500;color:var(--ink);margin:0;font-size:14px;text-transform:none;letter-spacing:0}
 .critline input[type=radio]{margin-right:3px;accent-color:var(--acc)}
@@ -256,10 +252,18 @@ details>summary{color:var(--acc-dark)}
         <div class="grow"><label>Patrocinador</label><input type="text" id="stPatro"></div>
         <div class="grow"><label>Indicación / Patología</label><input type="text" id="stIndic"></div>
         <div style="flex:0 0 210px"><label>Pacientes comprometidos</label><input type="number" id="stPacientesComprometidos" min="0" step="1" placeholder="Ej: 25" title="Cantidad de pacientes comprometidos para participar en este estudio."></div>
-        <div style="flex:0 0 190px"><label>Número de sitio</label><input type="text" id="stNumeroSitio" inputmode="numeric" placeholder="Ej: 0123"></div>
+        <div style="flex:0 0 190px"><label>Día que corresponde a la fecha basal</label><input type="number" id="stDiaBase" value="1" title="Si la visita basal/randomización es 'Día 1' poné 1; si es 'Día 0' poné 0."></div>
       </div>
       <div class="row">
-        <div class="grow"><label>Comité de ética interviniente</label><input type="text" id="stComiteEtica" placeholder="Ej: Comité de Ética en Investigación ..."></div>
+        <div style="flex:0 0 320px"><label>El protocolo exige método anticonceptivo a</label>
+          <select id="stAnticon">
+            <option value="">No lo exige / no aplica</option>
+            <option value="f">Participantes de sexo femenino</option>
+            <option value="m">Participantes de sexo masculino</option>
+            <option value="ambos">Ambos sexos</option>
+          </select>
+        </div>
+        <div class="grow"><label>Detalle del requisito (opcional)</label><input type="text" id="stAnticonDet" placeholder="Ej: doble método desde el screening hasta 90 días después de la última dosis"></div>
       </div>
       <details style="margin-top:10px" id="ciTplDetails">
         <summary style="cursor:pointer;font-weight:600">🖊️ Plantilla del consentimiento de este protocolo</summary>
@@ -300,6 +304,8 @@ details>summary{color:var(--acc-dark)}
           </details>
         </div>
       </details>
+      <label>Notas del protocolo</label>
+      <textarea id="stNotas" placeholder="Dosis, brazos, contactos del monitor, teléfonos, etc."></textarea>
     </div>
 
     <div class="card">
@@ -309,7 +315,7 @@ details>summary{color:var(--acc-dark)}
     </div>
 
     <div class="card">
-      <div class="toolbar" style="margin-bottom:0"><h3 style="margin:0">Documentos del estudio</h3><span class="spacer"></span><button class="primary" id="btnStudyAsk">💬 Preguntar a los documentos</button></div>
+      <div class="toolbar" style="margin-bottom:0"><h3 style="margin:0">Documentos del estudio</h3><span class="spacer"></span><button class="ghost" id="btnStudyAsk">🔎 Consultar los documentos</button></div>
       <div class="muted small" style="margin-bottom:8px">Protocolo, consentimiento informado (CI), manual de procedimientos, enmiendas, etc. Quedan disponibles para ver o descargar cuando los necesites. En modo local se guardan en este navegador; en modo online, en la nube del equipo.</div>
       <div class="row">
         <div style="flex:0 0 220px"><label>Tipo de documento</label>
@@ -337,12 +343,11 @@ details>summary{color:var(--acc-dark)}
         <button id="btnClearCrit">🧹 Vaciar criterios</button>
         <button id="btnImportCrit">⚡ Importar desde documento</button>
       </div>
-      <div class="muted small">Un criterio numerado por bloque. Las condiciones internas quedan debajo con viñetas. Esta lista es la que se usa después para evaluar a los pacientes.</div>
-      <textarea id="stIncl" rows="8" placeholder="Edad ≥ 18 años&#10;Diagnóstico confirmado de...&#10;Consentimiento informado firmado"></textarea>
+      <div class="muted small">Uno por línea. Después se evalúan Sí/No en cada paciente.</div>
+      <textarea id="stIncl" rows="6" placeholder="Edad ≥ 18 años&#10;Diagnóstico confirmado de...&#10;Consentimiento informado firmado"></textarea>
       <h3 style="margin-top:16px">Criterios de exclusión</h3>
-      <div class="muted small">Un criterio numerado por bloque. Las condiciones internas quedan debajo con viñetas.</div>
-      <textarea id="stExcl" rows="8" placeholder="Embarazo o lactancia&#10;Insuficiencia renal severa..."></textarea>
-      <div class="toolbar" style="margin-top:8px"><button type="button" id="btnPrintCriteria">🖨 Imprimir criterios / PDF</button></div>
+      <div class="muted small">Uno por línea.</div>
+      <textarea id="stExcl" rows="6" placeholder="Embarazo o lactancia&#10;Insuficiencia renal severa..."></textarea>
     </div>
 
     <div class="card">
@@ -359,7 +364,7 @@ details>summary{color:var(--acc-dark)}
 
     <div class="toolbar">
       <button class="primary" id="btnSaveStudy">Guardar estudio</button>
-      <button id="btnCancelStudy">Cerrar</button>
+      <button id="btnCancelStudy">Cancelar</button>
     </div>
   </section>
 
@@ -414,14 +419,30 @@ details>summary{color:var(--acc-dark)}
             <option value="x">Otro / no informa</option>
           </select>
         </div>
-        <div style="flex:0 0 190px"><label>Fecha de nacimiento</label><input type="date" id="paFechaNac"></div>
+        <div class="grow" id="paAntiBox"><label>Método anticonceptivo</label>
+          <select id="paAnti">
+            <option value="">(sin registrar)</option>
+            <option>Anticonceptivo oral combinado</option>
+            <option>Anticonceptivo solo con progestágeno</option>
+            <option>DIU / SIU</option>
+            <option>Implante subdérmico</option>
+            <option>Inyectable</option>
+            <option>Preservativo (pareja)</option>
+            <option>Doble método de barrera</option>
+            <option>Ligadura tubaria / vasectomía de la pareja</option>
+            <option>Abstinencia sexual</option>
+            <option>Posmenopáusica</option>
+            <option>No aplica según el protocolo</option>
+          </select>
+        </div>
+        <div class="grow" id="paAntiDetBox"><label>Detalle / desde cuándo</label><input type="text" id="paAntiDet" placeholder="Ej: DIU de cobre colocado 03/2024"></div>
       </div>
       <label>Notas del paciente</label>
       <textarea id="paNotas" rows="3" placeholder="Comorbilidades relevantes, brazo asignado, observaciones..."></textarea>
     </div>
 
     <div class="card">
-      <div class="toolbar" style="margin-bottom:0"><h3 style="margin:0">Documentos del paciente</h3><span class="spacer"></span><button class="primary" id="btnPatientAsk">💬 Preguntar a la historia clínica</button></div>
+      <h3>Documentos del paciente</h3>
       <div class="muted small" style="margin-bottom:8px">Historia clínica, laboratorio, informes, etc. (PDF, Word o texto). Sirven de base para la evaluación automática de los criterios. Adjuntá documentos identificados solo por código/iniciales, sin nombre completo.</div>
       <div class="row">
         <div style="flex:0 0 200px"><label>Tipo</label>
@@ -458,7 +479,7 @@ details>summary{color:var(--acc-dark)}
 
     <div class="toolbar">
       <button class="primary" id="btnSavePatient">Guardar paciente</button>
-      <button id="btnCancelPatient">Cerrar</button>
+      <button id="btnCancelPatient">Cancelar</button>
     </div>
   </section>
 
@@ -538,7 +559,6 @@ details>summary{color:var(--acc-dark)}
       <button id="btnAgPrint">🖨 Imprimir / PDF</button>
     </div>
     <div id="agToday"></div>
-    <div id="agReports"></div>
     <div id="agWeek"></div>
     <div class="card" id="agCalCard">
       <div class="toolbar" style="margin-bottom:6px">
@@ -874,10 +894,29 @@ details>summary{color:var(--acc-dark)}
       </div>
     </div>
 
-    <div class="card">
-      <h3>Depuración de registros anulados</h3>
-      <div class="muted small" style="margin-bottom:10px">Elimina definitivamente los estudios y pacientes que ya fueron anulados, junto con sus visitas y documentos asociados. Los registros activos no se modifican. Esta acción no se puede deshacer.</div>
-      <button id="btnPurgeDeleted" style="color:var(--bad)">Eliminar definitivamente registros anulados</button>
+    <div class="card" id="ragCard">
+      <h3>🔎 Búsqueda documental (RAG con Vertex AI Search)</h3>
+      <div class="muted small" style="margin-bottom:8px">
+        Es el mismo motor que usa NotebookLM por debajo. En vez de mandarle a la IA el texto completo de cada documento,
+        Google los indexa una vez y en cada consulta recupera solo los fragmentos que importan, con su cita.
+        Funciona mejor con protocolos largos y sale más barato por consulta.
+        Requiere un proyecto de Google Cloud y la función <b>rag</b> desplegada en Supabase (ver la guía).
+      </div>
+      <label style="display:block;font-weight:400;color:var(--ink);margin:6px 0">
+        <input type="checkbox" id="cfgRagOn" style="width:auto;margin-right:7px">
+        <b>Usar búsqueda documental cuando esté disponible</b> — para consultar documentos y extraer criterios.
+      </label>
+      <label style="display:block;font-weight:400;color:var(--ink);margin:2px 0 6px">
+        <input type="checkbox" id="cfgRagSolo" style="width:auto;margin-right:7px">
+        <b>Modo estricto: solo búsqueda documental</b> — no se consulta ningún otro motor de IA.
+        Si el índice falla, la operación falla con un aviso en vez de resolverse por otra vía.
+      </label>
+      <div class="toolbar" style="margin-top:8px;margin-bottom:0">
+        <button id="btnRagTest">Probar conexión</button>
+        <button id="btnRagIndexAll">⬆ Indexar los documentos de este estudio</button>
+        <button id="btnRagList">📋 Ver qué hay indexado</button>
+      </div>
+      <div id="ragMsg" class="small" style="margin-top:6px"></div>
     </div>
 
     <div class="card">
@@ -1137,7 +1176,7 @@ details>summary{color:var(--acc-dark)}
     <div id="evalDocsBox" style="margin-top:8px"></div>
     <label style="display:block;font-weight:400;color:var(--ink);margin:2px 0 8px">
       <input type="checkbox" id="evalVisual" style="width:auto;margin-right:7px">
-      <b>Leer también las páginas como imagen</b> — recomendado para historias clínicas, laboratorios en tablas o documentos escaneados. Más preciso, consume más créditos.
+      <b>Leer las páginas como imagen</b> — para laboratorios en tablas complejas o documentos escaneados. Más preciso con tablas, consume más créditos.
     </label>
     <div class="toolbar" id="evalRagBox" style="margin:4px 0 8px">
       <button id="btnEvalIndex">⬆ Indexar estos documentos</button>
@@ -2199,39 +2238,6 @@ async function anularRegistro(kind, id, detalle){
   await persist(kind, nuevo, T('Registro anulado.'), motivo.trim());
   return true;
 }
-
-/* Purga administrativa: solo toma registros que YA estaban anulados. Se
-   eliminan también las visitas y documentos que quedarían sin paciente o
-   estudio. La auditoría permanece como constancia de la purga. */
-async function purgarRegistrosAnulados(){
-  const pacientes = (DB.patients||[]).filter(p=>p.anulado);
-  const estudios = (DB.studies||[]).filter(s=>s.anulado);
-  if(!pacientes.length && !estudios.length){ toast('No hay estudios ni pacientes anulados para eliminar definitivamente.'); return; }
-  const pids = new Set(pacientes.map(p=>p.id)), sids = new Set(estudios.map(s=>s.id));
-  const visitas = (DB.visits||[]).filter(v=>pids.has(v.pacienteId)||sids.has(v.estudioId));
-  const docs = (DB.docs||[]).filter(d=>pids.has(d.pacienteId)||sids.has(d.estudioId));
-  const detalle = pacientes.length+' paciente(s), '+estudios.length+' estudio(s), '+visitas.length+' visita(s) y '+docs.length+' documento(s) asociado(s).';
-  if(!confirm('Se eliminarán definitivamente '+detalle+'\n\nLos registros activos no se modificarán. Esta acción no se puede deshacer.\n\n¿Continuar?')) return;
-  if(prompt('Para confirmar, escribí ELIMINAR DEFINITIVAMENTE:','')!=='ELIMINAR DEFINITIVAMENTE'){
-    toast('No se eliminó ningún registro.'); return;
-  }
-  if(!await verificarClave()){ alert('Clave incorrecta. No se eliminó nada.'); return; }
-  try{
-    for(const d of docs){
-      try{ if(d.storage==='supabase') await storageDel(d.path); else await idbDel(d.id); }catch(e){}
-      await Store.remove('docs',d.id);
-    }
-    for(const v of visitas) await Store.remove('visits',v.id);
-    for(const p of pacientes) await Store.remove('patients',p.id);
-    for(const s of estudios) await Store.remove('studies',s.id);
-    auditar('sistema','purga_definitiva','', 'Eliminación definitiva de '+detalle);
-    renderAll();
-    toast('Registros anulados eliminados definitivamente.');
-  }catch(e){
-    toast('⚠ La purga no se completó: '+e.message);
-    renderAll();
-  }
-}
 function visitasDe(pacienteId){ return DB.visits.filter(v=>v.pacienteId===pacienteId && !v.anulado); }
 function noAnulado(x){ return !x.anulado; }
 function getStudy(id){ return DB.studies.find(s=>s.id===id); }
@@ -2683,12 +2689,13 @@ function renderStudies(){
         '</div>'+
       '</div>'+
       '<div class="actions">'+
-        '<button class="primary" data-act="edit" style="font-size:15px;padding:9px 16px">'+T('Editar')+'</button>'+
         (ci?'<button class="ghost" data-act="ci" title="'+T('Ver la última versión del consentimiento informado')+'">📄 '+T('CI vigente')+'</button>'+
             (featOn('ia.askCi')?'<button class="ghost" data-act="ciask" title="'+T('Consultar el consentimiento informado')+'">❓</button>':'')+
             '<button class="ghost" data-act="ciprint" title="'+T('Imprimir')+'">🖨</button>':'')+
         (featOn('ia.askDocs') && docsOf(s.id).some(d=>d.tipo!=='ci')
           ?'<button class="ghost" data-act="docsask" title="'+T('Consultar los documentos del estudio')+'">🔎 '+T('Protocolo')+'</button>':'')+
+        '<button class="ghost" data-act="edit">'+T('Editar')+'</button>'+
+        '<button class="ghost" data-act="dup">'+T('Duplicar')+'</button>'+
         '<button class="ghost" data-act="del" style="color:var(--bad)">'+T('Eliminar')+'</button>'+
       '</div>';
     if(ci){
@@ -2700,6 +2707,7 @@ function renderStudies(){
     const bDocs = div.querySelector('[data-act=docsask]');
     if(bDocs) bDocs.addEventListener('click', ()=>openStudyAsk(s.id));
     div.querySelector('[data-act=edit]').addEventListener('click', ()=>openStudyEditor(s.id));
+    div.querySelector('[data-act=dup]').addEventListener('click', ()=>duplicateStudy(s.id));
     div.querySelector('[data-act=del]').addEventListener('click', ()=>deleteStudy(s.id));
     box.appendChild(div);
   }
@@ -2714,8 +2722,8 @@ function openStudyEditor(id){
   $('stPatro').value = s ? (s.patrocinador||'') : '';
   $('stIndic').value = s ? (s.indicacion||'') : '';
   $('stPacientesComprometidos').value = s && s.pacientesComprometidos !== undefined ? s.pacientesComprometidos : '';
-  $('stNumeroSitio').value = s ? (s.numeroSitio||'') : '';
-  $('stComiteEtica').value = s ? (s.comiteEtica||'') : '';
+  $('stDiaBase').value = s ? (s.diaBase===undefined?1:s.diaBase) : 1;
+  $('stAnticon').value = s ? (s.anticonReq||'') : '';
   ['stTitulo:tituloCompleto','stTituloAbrev:tituloAbrev','stNroProt:nroProtocolo','stFase:fase',
    'stVersionProt:versionProtocolo','stEstadoProt:estadoProtocolo','stIdEstudio:idEstudio',
    'stInvestigador:investigador','stCiTpl:ciPlantilla','stCiTplRe:ciPlantillaRe']
@@ -2723,9 +2731,10 @@ function openStudyEditor(id){
   renderCiChips();
   $('ciPreviewBox').classList.add('hidden');
   $('ciTplDetails').open = !!(s && ((s.ciPlantilla||'').trim() || (s.ciPlantillaRe||'').trim()));
-  $('stIncl').value = s ? criteriaTextarea((s.criteriosInclusion||[])) : '';
-  $('stExcl').value = s ? criteriaTextarea((s.criteriosExclusion||[])) : '';
-  renderStudyCriteriaEditor();
+  $('stAnticonDet').value = s ? (s.anticonReqDet||'') : '';
+  $('stNotas').value = s ? (s.notas||'') : '';
+  $('stIncl').value = s ? (s.criteriosInclusion||[]).join('\n') : '';
+  $('stExcl').value = s ? (s.criteriosExclusion||[]).join('\n') : '';
   EDIT_VISITAS = s ? JSON.parse(JSON.stringify(s.visitas||[])) : [];
   if(!EDIT_VISITAS.length && !s){
     EDIT_VISITAS = [{ id:uid(), nombre:'Screening', dia:-14, venAntes:14, venDesp:0, tareas:[] },
@@ -2774,12 +2783,10 @@ function renderStVisitas(){
         '</div>'+
       '</div>'+
       '<label>Tareas / procedimientos (uno por línea)</label>'+
-      '<textarea class="v-tareas" rows="4" placeholder="Signos vitales&#10;Laboratorio&#10;Registro de EAs y medicación concomitante">'+esc((v.tareas||[]).join('\n'))+'</textarea>'+
-      '<div class="small muted v-proc-count" style="margin-top:4px"><b>'+(v.tareas||[]).filter(Boolean).length+'</b> procedimiento(s) cargado(s) en esta visita.</div>';
+      '<textarea class="v-tareas" rows="4" placeholder="Signos vitales&#10;Laboratorio&#10;Registro de EAs y medicación concomitante">'+esc((v.tareas||[]).join('\n'))+'</textarea>';
     d.querySelector('.v-del').addEventListener('click', ()=>{ EDIT_VISITAS = collectStVisitas(); EDIT_VISITAS.splice(idx,1); renderStVisitas(); });
     d.querySelector('.v-up').addEventListener('click', ()=>{ if(idx===0) return; EDIT_VISITAS = collectStVisitas(); const t=EDIT_VISITAS[idx-1]; EDIT_VISITAS[idx-1]=EDIT_VISITAS[idx]; EDIT_VISITAS[idx]=t; renderStVisitas(); });
     d.querySelector('.v-down').addEventListener('click', ()=>{ EDIT_VISITAS = collectStVisitas(); if(idx>=EDIT_VISITAS.length-1) return; const t=EDIT_VISITAS[idx+1]; EDIT_VISITAS[idx+1]=EDIT_VISITAS[idx]; EDIT_VISITAS[idx]=t; renderStVisitas(); });
-    d.querySelector('.v-tareas').addEventListener('input', e=>{ const n=e.target.value.split('\n').map(x=>x.trim()).filter(Boolean).length; d.querySelector('.v-proc-count').innerHTML='<b>'+n+'</b> procedimiento(s) cargado(s) en esta visita.'; });
     box.appendChild(d);
   });
 }
@@ -2806,12 +2813,9 @@ $('btnSaveStudy').addEventListener('click', async ()=>{
     id, codigo, nombre,
     patrocinador: $('stPatro').value.trim(),
     indicacion: $('stIndic').value.trim(),
-    /* Se conserva el cálculo histórico de las visitas sin exponerlo como
-       campo del estudio. Los estudios nuevos usan Día 1 como fecha basal. */
-    diaBase: prev && prev.diaBase!==undefined ? prev.diaBase : 1,
     pacientesComprometidos: $('stPacientesComprometidos').value === '' ? null : Math.max(0, parseInt($('stPacientesComprometidos').value,10) || 0),
-    numeroSitio: $('stNumeroSitio').value.trim(),
-    comiteEtica: $('stComiteEtica').value.trim(),
+    diaBase: parseInt($('stDiaBase').value,10)||0,
+    anticonReq: $('stAnticon').value,
     tituloCompleto: $('stTitulo').value.trim(),
     tituloAbrev: $('stTituloAbrev').value.trim(),
     nroProtocolo: $('stNroProt').value.trim(),
@@ -2822,8 +2826,10 @@ $('btnSaveStudy').addEventListener('click', async ()=>{
     investigador: $('stInvestigador').value.trim(),
     ciPlantilla: $('stCiTpl').value.trim(),
     ciPlantillaRe: $('stCiTplRe').value.trim(),
-    criteriosInclusion: parseCriteriaTextarea($('stIncl').value),
-    criteriosExclusion: parseCriteriaTextarea($('stExcl').value),
+    anticonReqDet: $('stAnticonDet').value.trim(),
+    notas: $('stNotas').value.trim(),
+    criteriosInclusion: $('stIncl').value.split('\n').map(t=>t.trim()).filter(Boolean),
+    criteriosExclusion: $('stExcl').value.split('\n').map(t=>t.trim()).filter(Boolean),
     visitas
   };
   const hadPatients = DB.patients.some(p=>p.estudioId===id && !p.anulado);
@@ -2846,13 +2852,7 @@ $('btnSaveStudy').addEventListener('click', async ()=>{
   } else if(prev && hadPatients){
     toast('Estudio guardado. Si cambiaste las visitas, revisá los pacientes ya cargados.');
   }
-  /* Guardar no cierra el formulario: permite seguir revisando, adjuntando
-     documentos o corrigiendo datos. Al crear uno nuevo se fija su id para
-     que una segunda guarda actualice el mismo estudio. */
-  $('stId').value = id;
-  $('studyEditTitle').textContent = 'Editar estudio: '+s.codigo;
-  renderDocsList();
-  renderCiPanel();
+  showView('view-studies');
 });
 $('btnCancelStudy').addEventListener('click', ()=>showView('view-studies'));
 $('btnNewStudy').addEventListener('click', ()=>openStudyEditor(null));
@@ -2971,9 +2971,9 @@ function renderPatients(){
       '<td>'+fmtDate(p.fechaBasal)+'</td>'+
       '<td>'+nvTxt+'</td>'+
       '<td class="actions">'+
-        '<button class="primary" data-act="edit" style="font-size:14px;padding:7px 13px">'+T('Editar')+'</button>'+
         '<button class="ghost" data-act="visit" title="'+T('Registrar visita')+'">'+T('+ Visita')+'</button>'+
-        '<button class="ghost" data-act="del" style="color:var(--bad);margin-left:8px" title="Eliminar paciente">✕</button>'+
+        '<button class="ghost" data-act="edit">'+T('Editar')+'</button>'+
+        '<button class="ghost" data-act="del" style="color:var(--bad)">✕</button>'+
       '</td>';
     tr.querySelector('[data-act=edit]').addEventListener('click', ()=>openPatientEditor(p.id));
     tr.querySelector('[data-act=visit]').addEventListener('click', ()=>openVisitForm(null, p.id));
@@ -2997,7 +2997,9 @@ function openPatientEditor(id){
   $('paEstado').value = p ? (p.estado||'screening') : 'screening';
   $('paNotas').value = p ? (p.notas||'') : '';
   $('paSexo').value = p ? (p.sexo||'') : '';
-  $('paFechaNac').value = p ? (p.fechaNacimiento||'') : '';
+  $('paAnti').value = p ? (p.anticoncepcion||'') : '';
+  $('paAntiDet').value = p ? (p.anticoncepcionDet||'') : '';
+  togglePaSexo();
   /* si al guardar el paciente cambia el método, la próxima visita lo toma */
   PA_CRIT = p ? Object.assign({}, p.criterios||{}) : {};
   PA_JUST = {};
@@ -3049,7 +3051,7 @@ function renderPaCriterios(){
       const key = pref+i;
       const val = PA_CRIT[key]||'pendiente';
       const d = document.createElement('div'); d.className='critline';
-      d.innerHTML = '<div class="ctext">'+esc(c).replace(/\u2028/g,'<br>')+'</div>'+
+      d.innerHTML = '<div class="ctext">'+esc(c)+'</div>'+
         ['si','no','pendiente'].map(v=>
           '<label><input type="radio" name="crit_'+key+'" value="'+v+'"'+(val===v?' checked':'')+'> '+(v==='si'?T('Sí'):v==='no'?T('No'):T('Pend.'))+'</label>'
         ).join(' ');
@@ -3108,18 +3110,15 @@ $('btnSavePatient').addEventListener('click', async ()=>{
     estado: $('paEstado').value,
     notas: $('paNotas').value.trim(),
     sexo: $('paSexo').value,
-    fechaNacimiento: $('paFechaNac').value || '',
+    anticoncepcion: $('paAnti').value,
+    anticoncepcionDet: $('paAntiDet').value.trim(),
     criterios: Object.assign({}, PA_CRIT),
     critFirma: (getStudy($('paEstudio').value) ? critFirma(getStudy($('paEstudio').value)) : '')
   };
   await persist('patients', p, 'Paciente guardado.');
   if(!p.fechaBasal && (p.estado==='activo'||p.estado==='screening'))
     toast('Paciente guardado. Cargá la fecha basal para calcular las próximas visitas.');
-  /* Mantener el formulario abierto evita perder el contexto y habilita los
-     documentos del paciente recién creado para continuar trabajando. */
-  $('paId').value = p.id;
-  $('patientEditTitle').textContent = 'Editar paciente: '+p.codigo;
-  renderPaDocs();
+  showView('view-patients');
 });
 $('btnCancelPatient').addEventListener('click', ()=>showView('view-patients'));
 
@@ -3636,7 +3635,7 @@ function exigeAnticon(st, p){
   return req === (p&&p.sexo);
 }
 /* la anticoncepción se muestra según el sexo cargado */
-function togglePaSexo(){ return;
+function togglePaSexo(){
   const sx = $('paSexo').value;
   const mostrar = sx==='f' || sx==='m';
   $('paAntiBox').classList.toggle('hidden', !mostrar);
@@ -4430,8 +4429,7 @@ async function aiChat(opt){
       systemInstruction:{ parts:[{ text:opt.system||'' }] },
       contents:[{ role:'user',
         parts: blocks.map(b => b.t==='img' ? { inlineData:{ mimeType:b.mime, data:b.data } } : { text:b.text }) }],
-      generationConfig:Object.assign({ maxOutputTokens: opt.maxTokens||8000 },
-        opt.json ? { responseMimeType:'application/json' } : {})
+      generationConfig:{ maxOutputTokens: opt.maxTokens||8000 }
     };
   } else if(prov==='openai'){
     url = 'https://api.openai.com/v1/chat/completions';
@@ -4484,7 +4482,7 @@ async function aiChat(opt){
    no hay alternativa: si el índice falla, la operación falla con un mensaje
    claro en vez de resolverse por otra vía sin avisar. */
 
-function ragEstricto(){ return false; }
+function ragEstricto(){ return CFG.ragSolo === true; }
 
 /* Pregunta al índice esperando JSON. answerQuery genera la respuesta con
    Gemini sobre los fragmentos recuperados, así que se le puede pedir una
@@ -4845,21 +4843,9 @@ $('btnClearCrit').addEventListener('click', ()=>{
   if(!$('stIncl').value.trim() && !$('stExcl').value.trim()){ toast('Los criterios ya están vacíos.'); return; }
   if(!confirm('¿Vaciar los criterios de inclusión y exclusión de este estudio? (Se aplica al guardar el estudio.)')) return;
   $('stIncl').value=''; $('stExcl').value='';
-  renderStudyCriteriaEditor();
   toast('Criterios vaciados. Importalos de nuevo o cargalos a mano, y guardá el estudio.');
 });
 $('btnImportCrit').addEventListener('click', openImportModal);
-$('btnPrintCriteria').addEventListener('click', ()=>{
-  const incl = parseCriteriaTextarea($('stIncl').value);
-  const excl = parseCriteriaTextarea($('stExcl').value);
-  if(!incl.length && !excl.length){ toast('Primero cargá al menos un criterio.'); return; }
-  const fmt = x => esc(x).replace(/\u2028/g,'<br>');
-  const lista = (titulo, items) => items.length
-    ? '<h2>'+titulo+'</h2><ol>'+items.map(x=>'<li>'+fmt(x)+'</li>').join('')+'</ol>'
-    : '<h2>'+titulo+'</h2><p>Sin criterios cargados.</p>';
-  const nombre = $('stCodigo').value.trim() || 'Estudio';
-  openReport('Criterios del estudio', '<h1>Criterios del estudio</h1><div class="meta"><b>'+esc(nombre)+'</b></div>'+lista('Criterios de inclusión',incl)+lista('Criterios de exclusión',excl));
-});
 $('btnImportVis').addEventListener('click', openImportModal);
 /* ================= BÚSQUEDA DOCUMENTAL (RAG con Vertex AI Search) =================
    Es el motor que usa NotebookLM por debajo. La diferencia con mandarle a la IA
@@ -4869,7 +4855,7 @@ $('btnImportVis').addEventListener('click', openImportModal);
    Todo pasa por la Edge Function «rag»: la credencial de Google Cloud vive
    en el servidor y nunca llega al navegador. */
 
-function ragActivo(){ return false; }
+function ragActivo(){ return Store.online() && CFG.ragOn === true; }
 
 async function ragLlamar(payload){
   if(!Store.online()) throw new Error(T('La búsqueda documental necesita el modo online.'));
@@ -4940,11 +4926,20 @@ function pintarAvisoIA(){
     av.id = 'aiEstadoUso'; av.className = 'banner';
     cont.insertBefore(av, cont.children[1] || null);
   }
-  av.className = 'banner gray';
-  av.innerHTML = T('Este motor responde las consultas sobre documentos y la evaluación asistida de criterios.');
+  if(CFG.ragSolo){
+    av.className = 'banner gray';
+    av.innerHTML = '🔎 <b>'+T('Modo estricto activo')+'</b> — '+
+      T('este motor no se usa: todo se responde con búsqueda documental. La clave queda guardada por si desactivás el modo estricto.');
+  } else if(CFG.ragOn){
+    av.className = 'banner acc';
+    av.innerHTML = '🔎 '+T('La búsqueda documental responde primero. Este motor queda como respaldo si el índice falla.');
+  } else {
+    av.className = 'banner gray';
+    av.innerHTML = T('Este motor responde todas las consultas sobre documentos. Para usar búsqueda documental, activala más abajo.');
+  }
 }
 
-$('cfgRagSolo')?.addEventListener('change', e=>{
+$('cfgRagSolo').addEventListener('change', e=>{
   CFG.ragSolo = !!e.target.checked;
   saveJSON(LS.CFG, CFG);
   pintarAvisoIA();
@@ -4954,7 +4949,7 @@ $('cfgRagSolo')?.addEventListener('change', e=>{
     : T('Modo estricto desactivado: si el índice falla, se usa el motor de IA configurado.');
 });
 
-$('cfgRagOn')?.addEventListener('change', e=>{
+$('cfgRagOn').addEventListener('change', e=>{
   CFG.ragOn = !!e.target.checked;
   saveJSON(LS.CFG, CFG);
   pintarAvisoIA();
@@ -4965,7 +4960,7 @@ $('cfgRagOn')?.addEventListener('change', e=>{
     : T('Búsqueda documental desactivada. Las consultas vuelven al método anterior.');
 });
 
-$('btnRagTest')?.addEventListener('click', async ()=>{
+$('btnRagTest').addEventListener('click', async ()=>{
   const m = $('ragMsg');
   m.style.color='var(--muted)'; m.textContent = T('Probando...');
   try{
@@ -5013,7 +5008,7 @@ $('btnNarrIndex').addEventListener('click', async ()=>{
     T('Google tarda unos minutos en procesarlos: esperá y volvé a redactar.');
 });
 
-$('btnRagList')?.addEventListener('click', async ()=>{
+$('btnRagList').addEventListener('click', async ()=>{
   const m = $('ragMsg');
   m.style.color='var(--muted)'; m.textContent = T('Consultando el índice...');
   try{
@@ -5030,7 +5025,7 @@ $('btnRagList')?.addEventListener('click', async ()=>{
   }catch(e){ m.style.color='var(--bad)'; m.textContent = '⚠ '+e.message; }
 });
 
-$('btnRagIndexAll')?.addEventListener('click', async ()=>{
+$('btnRagIndexAll').addEventListener('click', async ()=>{
   const m = $('ragMsg');
   const stId = $('stId') ? $('stId').value : '';
   const docs = stId ? docsOf(stId) : (DB.docs||[]).filter(d=>d.estudioId);
@@ -5281,32 +5276,12 @@ function renderImpCriteriaPreview(){
     const items = String(valor||'').split('\n').map(x=>x.trim()).filter(Boolean);
     if(!items.length) return '';
     const formato = x => esc(x).replace(/\u2028/g,'<br>').replace(/\s*([•])\s*/g, '<br><span style="padding-left:12px">$1 </span>');
-    return '<h4 style="margin:8px 0 4px">'+titulo+'</h4><ol style="margin:0;padding-left:22px">'+items.map(x=>'<li style="white-space:pre-wrap;margin:4px 0">'+formato(x)+'</li>').join('')+'</ol>';
+    return '<h4 style="margin:8px 0 4px">'+titulo+'</h4><ol style="margin:0;padding-left:22px">'+
+      items.map(x=>'<li style="white-space:pre-wrap;margin:4px 0">'+formato(x)+'</li>').join('')+'</ol>';
   };
-  box.innerHTML = grupo('Inclusión', $('impIncl').value) + grupo('Exclusión', $('impExcl').value) || '<span class="muted">Todavía no hay criterios para mostrar.</span>';
+  box.innerHTML = grupo('Inclusión', $('impIncl').value) + grupo('Exclusión', $('impExcl').value) ||
+    '<span class="muted">Todavía no hay criterios para mostrar.</span>';
 }
-/* El cuadro visible muestra un criterio numerado por bloque. Al guardar se
-   conserva cada criterio limpio, con sus subítems internos, para evaluarlo en pacientes. */
-function criteriaTextarea(items){
-  return (items||[]).map((item,i)=>{
-    const lines = String(item||'').replace(/\u2028/g,'\n').split('\n').map(x=>x.trim()).filter(Boolean);
-    return (i+1)+'. '+(lines.shift()||'')+(lines.length ? '\n'+lines.map(x=>'   '+(/^([•])\s*/.test(x)?x:'• '+x)).join('\n') : '');
-  }).join('\n');
-}
-function parseCriteriaTextarea(value){
-  const out=[]; let current='';
-  String(value||'').split(/\r?\n/).forEach(raw=>{
-    const line=raw.trim(); if(!line) return;
-    const main=line.match(/^\d+[.)]\s*(.+)$/);
-    if(main){ if(current) out.push(current); current=main[1].trim(); return; }
-    if(/^([•])\s*/.test(line) && current){ current+='\u2028'+line; return; }
-    if(current){ out.push(current); }
-    current=line;
-  });
-  if(current) out.push(current);
-  return out;
-}
-function renderStudyCriteriaEditor(){ /* los campos de texto son la fuente editable */ }
 $('impIncl').addEventListener('input', renderImpCriteriaPreview);
 $('impExcl').addEventListener('input', renderImpCriteriaPreview);
 
@@ -5352,9 +5327,8 @@ $('btnApplyImport').addEventListener('click', ()=>{
   const mode = $('impMode').value;
   const incl = $('impIncl').value.split('\n').map(s=>s.trim()).filter(Boolean);
   const excl = $('impExcl').value.split('\n').map(s=>s.trim()).filter(Boolean);
-  if(incl.length){ const prev = mode==='append' ? parseCriteriaTextarea($('stIncl').value) : []; $('stIncl').value = criteriaTextarea(prev.concat(incl)); }
-  if(excl.length){ const prev = mode==='append' ? parseCriteriaTextarea($('stExcl').value) : []; $('stExcl').value = criteriaTextarea(prev.concat(excl)); }
-  renderStudyCriteriaEditor();
+  if(incl.length) $('stIncl').value = (mode==='append' && $('stIncl').value.trim()) ? $('stIncl').value.trim()+'\n'+incl.join('\n') : incl.join('\n');
+  if(excl.length) $('stExcl').value = (mode==='append' && $('stExcl').value.trim()) ? $('stExcl').value.trim()+'\n'+excl.join('\n') : excl.join('\n');
   const vs = IMP_VISITS.filter(v=>!v._skip && !isNaN(v.dia))
     .map(v=>({ id:uid(), nombre:(v.nombre||('Día '+v.dia)).trim(), dia:v.dia, venAntes:v.venAntes||0, venDesp:v.venDesp||0, tareas:(v.tareas||[]).slice() }));
   let msg = T('Datos aplicados al formulario. Revisá contra el protocolo y guardá el estudio.');
@@ -5529,8 +5503,8 @@ function openCiModal(docId){
 
 /* consulta sobre el protocolo y demás documentos del estudio (sin el CI) */
 function openStudyAsk(stId){
-  const docs = docsOf(stId);
-  if(!docs.length){ toast(T('Este estudio no tiene documentos adjuntos. Adjuntá el protocolo o el consentimiento en «Documentos del estudio».')); return; }
+  const docs = docsOf(stId).filter(d=>d.tipo!=='ci');
+  if(!docs.length){ toast(T('Este estudio no tiene documentos adjuntos aparte del CI. Adjuntá el protocolo en «Documentos del estudio».')); return; }
   /* el protocolo primero: es la fuente principal */
   docs.sort((a,b)=> (a.tipo==='protocolo'?0:1) - (b.tipo==='protocolo'?0:1));
   CI_MODE = 'docs'; CI_DOCS = docs; CI_HIST = [];
@@ -5543,19 +5517,6 @@ function openStudyAsk(stId){
   renderCiFuentes([]);
   ciModalShow(DOCS_SUGERIDAS);
 }
-function openPatientAsk(patientId){
-  const p = getPatient(patientId);
-  const docs = docsOfPatient(patientId);
-  if(!docs.length){ toast('Este paciente no tiene historia clínica, laboratorios ni informes adjuntos.'); return; }
-  CI_MODE = 'patient'; CI_DOCS = docs; CI_HIST = [];
-  const st = getStudy(p && p.estudioId) || {};
-  $('ciModalTitle').textContent = '💬 Chat con historia clínica';
-  $('ciModalFoot').textContent = 'Las respuestas salen únicamente de los documentos clínicos de este paciente, con cita y documento de origen. Ante cualquier duda, consultá el original.';
-  $('ciModalMeta').innerHTML = '<b>'+esc((p&&p.codigo)||'Paciente')+'</b>'+(p&&p.iniciales?' ('+esc(p.iniciales)+')':'')+' — '+esc(st.codigo||'')+' · '+docs.length+' documentos';
-  CI_DOCS.forEach(d=>{ delete d._off; });
-  renderCiFuentes([]);
-  ciModalShow(['¿Cuál es el diagnóstico y desde cuándo consta?', '¿Qué medicación actual figura?', '¿Qué resultados de laboratorio relevantes constan?', '¿Hay antecedentes o contraindicaciones documentadas?']);
-}
 $('btnCloseCi').addEventListener('click', ()=>$('ciModal').classList.add('hidden'));
 $('btnCiAsk').addEventListener('click', ()=>askCi());
 $('ciQuestion').addEventListener('keydown', e=>{ if(e.key==='Enter') askCi(); });
@@ -5563,11 +5524,6 @@ $('btnStudyAsk').addEventListener('click', ()=>{
   const stId = $('stId').value;
   if(!stId){ toast(T('Guardá el estudio primero para poder adjuntar documentos.')); return; }
   openStudyAsk(stId);
-});
-$('btnPatientAsk').addEventListener('click', ()=>{
-  const pid = $('paId').value;
-  if(!pid){ toast('Guardá el paciente primero para consultar sus documentos.'); return; }
-  openPatientAsk(pid);
 });
 
 /* muestra qué documentos se están consultando y cuánto texto se leyó de cada
@@ -5624,7 +5580,6 @@ function ciSearch(texto, pregunta){
 /* pregunta sobre uno o varios documentos; cada respuesta con citas y su documento de origen */
 async function aiAskDocs(fuentes, pregunta){
   const esCi = (CI_MODE==='ci' && fuentes.length===1);
-  const esPaciente = CI_MODE==='patient';
   /* se manda el texto COMPLETO de cada documento mientras entre en la ventana
      del proveedor; solo si no entra se reparte y se avisa qué se recortó */
   const total = fuentes.reduce((a,f)=>a+f.texto.length, 0);
@@ -5641,7 +5596,7 @@ async function aiAskDocs(fuentes, pregunta){
   });
   const prompt =
     'Sos un asistente del equipo de investigación clínica. Respondé la pregunta usando ÚNICAMENTE el texto de '+
-    (esCi ? 'el consentimiento informado que se incluye abajo.' : esPaciente ? 'la documentación clínica del paciente que se incluye abajo.' : 'los documentos del estudio que se incluyen abajo (el protocolo es la fuente principal).')+
+    (esCi ? 'el consentimiento informado que se incluye abajo.' : 'los documentos del estudio que se incluyen abajo (el protocolo es la fuente principal).')+
     cuerpo+'\n\n'+
     'PREGUNTA: '+pregunta+'\n\n'+
     'Respondé ÚNICAMENTE con este objeto JSON:\n'+
@@ -6598,90 +6553,6 @@ async function aiEvalCriteria(st, text, imagenes){
   return res;
 }
 
-/* Evaluación por lotes con evidencia puntual: evita que un protocolo o una
-   historia clínica extensa diluya la respuesta de cada criterio. */
-function edadEnFecha(fechaNacimiento, fechaReferencia){
-  if(!fechaNacimiento) return '';
-  const n = new Date(fechaNacimiento+'T12:00:00');
-  const r = new Date((fechaReferencia||todayISO())+'T12:00:00');
-  if(isNaN(n) || isNaN(r)) return '';
-  let edad = r.getFullYear()-n.getFullYear();
-  if(r.getMonth()<n.getMonth() || (r.getMonth()===n.getMonth() && r.getDate()<n.getDate())) edad--;
-  return String(edad);
-}
-function evidenciaParaCriterio(texto, criterio){
-  const partes = String(texto||'').split(/\n\s*\n|(?<=[.;])\s+/).map(x=>x.replace(/\s+/g,' ').trim()).filter(x=>x.length>=20);
-  const claves = Array.from(new Set(stripAcc(criterio).split(/[^a-z0-9]+/).filter(x=>x.length>=4 && !EVID_STOP.has(x))));
-  if(!claves.length) return '';
-  return partes.map(p=>{
-    const q=stripAcc(p); let puntos=0;
-    claves.forEach(k=>{ if(q.includes(k)) puntos++; });
-    return {p,puntos};
-  }).filter(x=>x.puntos>0).sort((a,b)=>b.puntos-a.puntos).slice(0,5).map(x=>x.p.slice(0,520)).join('\n• ');
-}
-async function aiEvalCriteria(st, text, imagenes, paciente){
-  const items = (st.criteriosInclusion||[]).map((c,i)=>({clave:'i'+i,tipo:'inclusión',criterio:c}))
-    .concat((st.criteriosExclusion||[]).map((c,i)=>({clave:'e'+i,tipo:'exclusión',criterio:c})));
-  const referencia = (paciente&&paciente.fechaBasal)||todayISO();
-  const edad = paciente ? edadEnFecha(paciente.fechaNacimiento, referencia) : '';
-  const datos = paciente ? 'DATOS ESTRUCTURADOS DEL PACIENTE: sexo: '+(paciente.sexo||'no registrado')+
-    '; fecha de nacimiento: '+(paciente.fechaNacimiento||'no registrada')+
-    (edad ? '; edad al '+referencia+': '+edad+' años' : '')+
-    '; fecha basal: '+(paciente.fechaBasal||'no registrada')+'.' : '';
-  /* Además de los fragmentos más relacionados, cada grupo recibe contexto
-     clínico real. Antes se enviaban solo coincidencias literales entre el
-     criterio y el PDF; por ejemplo, «LES» podía no relacionarse con «lupus»
-     y la IA no llegaba a ver ningún dato concreto del paciente. */
-  const limiteContexto = Math.min(36000, Math.max(12000, aiCtxMax()-14000));
-  const textoPaciente = text.length>limiteContexto
-    ? text.slice(0,Math.floor(limiteContexto*0.72))+'\n[... documentación intermedia omitida por longitud ...]\n'+text.slice(-Math.floor(limiteContexto*0.28))
-    : text;
-  const salida=[];
-  const fallos=[];
-  for(let pos=0;pos<items.length;pos+=6){
-    const lote=items.slice(pos,pos+6);
-    const bloque=lote.map(x=>{
-      const ev=evidenciaParaCriterio(text,x.criterio);
-      return x.clave+' ('+x.tipo+'): '+x.criterio+'\nEVIDENCIA RELACIONADA: '+(ev ? '• '+ev : 'No se encontró evidencia textual relacionada.');
-    }).join('\n\n');
-    const prompt='Sos un asistente de investigación clínica. Evaluá cada criterio usando ÚNICAMENTE los datos estructurados y la evidencia textual incluida. No uses conocimiento externo ni supongas datos ausentes.\n\n'+
-      datos+'\n\n'+bloque+'\n\nCONTEXTO DOCUMENTAL COMPLETO DEL PACIENTE:\n<<<\n'+textoPaciente+'\n>>>\n\n'+
-      'Respondé SOLO con una línea por criterio, sin introducción ni viñetas. Formato exacto: clave | si, no o pendiente | justificación breve. Ejemplo: i0 | si | Tiene 36 años, según fecha de nacimiento 06/06/1990.\n\n'+
-      'Reglas: para inclusión, “si” solo con evidencia explícita; para exclusión, “si” si la condición está presente y “no” si está explícitamente descartada. Si no hay prueba suficiente, respondé “pendiente”.';
-    /* Una respuesta ocasionalmente puede venir vacía o con texto extra. Se
-       reintenta sin imágenes (que suelen ser lo más pesado) y, si Gemini no
-       responde de todos modos, se conserva el resto de la evaluación. */
-    const consultar = async reintento => {
-      const contenido = (!reintento && imagenes&&imagenes.length&&pos===0)
-        ? [{t:'text',text:'Imágenes de documentos clínicos: usalas solo como evidencia adicional para este lote.'}].concat(imagenes.slice(0,8),[{t:'text',text:prompt}])
-        : prompt;
-      try{
-        const r=await aiChat({
-          system:'Respondés solamente con las líneas solicitadas, sin encabezados, viñetas ni explicaciones adicionales.',
-          content:contenido, maxTokens:Math.max(1200,lote.length*260)
-        });
-        const parte = parseEvalLineas(String(r.text||'').replace(/```json|```/g,'').trim(), lote);
-        return { parte, error:parte.length ? '' : 'La IA respondió sin una lista de criterios utilizable.' };
-      }catch(e){ return { parte:[], error:String((e&&e.message)||e||'Error al consultar la IA.') }; }
-    };
-    let intento=await consultar(false);
-    if(!intento.parte.length) intento=await consultar(true);
-    const parte=intento.parte;
-    if(!parte.length){
-      fallos.push(intento.error);
-      salida.push(...lote.map(x=>({
-        clave:x.clave, respuesta:'pendiente',
-        justificacion:'La IA no pudo interpretar este grupo de criterios en esta ejecución.',
-        falta:'Revisar manualmente la documentación del paciente'
-      })));
-    } else salida.push(...parte);
-  }
-  if(fallos.length && fallos.length===Math.ceil(items.length/6))
-    throw new Error('La IA no pudo evaluar los documentos del paciente. '+fallos[0]);
-  items.forEach(x=>{ if(!salida.some(r=>String(r.clave).toLowerCase()===x.clave)) salida.push({clave:x.clave,respuesta:'pendiente',justificacion:'sin dato en la documentación',falta:'evidencia clínica o de laboratorio'}); });
-  return salida;
-}
-
 /* parseo tolerante: array completo o, si vino cortado, objeto por objeto */
 function parseAiArray(txt){
   try{
@@ -6697,39 +6568,16 @@ function parseAiArray(txt){
   return out;
 }
 
-/* La evaluación acepta también líneas simples, porque algunos modelos de
-   Gemini respetan el contenido clínico pero agregan texto alrededor del JSON.
-   El formato de una línea es deliberadamente muy fácil de producir y leer. */
-function parseEvalLineas(txt, lote){
-  const json = parseAiArray(txt);
-  if(json.length) return json;
-  const out=[];
-  for(const linea of String(txt||'').split(/\r?\n/)){
-    const m=linea.match(/\b([ie]\d{1,2})\b\s*(?:\||;|:|—|-)\s*(?:(?:respuesta|estado)\s*[:=-]\s*)?(pendiente|descartado|no\s+cumple|cumple|sí|si|no)(?=\s*(?:\||;|:|—|-|$))\s*(?:\||;|:|—|-)?\s*(.*)/i);
-    if(!m) continue;
-    out.push({clave:m[1].toLowerCase(),respuesta:m[2],justificacion:m[3]||''});
-  }
-  return out;
-}
-
 function applyEvalResults(res){
   if(!Array.isArray(res)) throw new Error('Respuesta de IA inválida.');
   let resp=0, pend=0;
   for(const r of res){
-    const k = String(r.clave||r.id||r.criterioId||'').trim().toLowerCase();
+    const k = String(r.clave||'').trim().toLowerCase();
     if(!/^[ie]\d{1,2}$/.test(k)) continue;
-    const bruto = stripAcc(r.respuesta||r.estado||r.resultado||'').trim();
-    /* Gemini a veces expresa el dictamen clínico («cumple», «descartado»)
-       aunque se le pida Sí/No. Se traduce a los radios de esta pantalla sin
-       perder la lógica: inclusión cumple = Sí; exclusión descartada = No. */
-    let v = bruto;
-    if(['cumple','elegible','apto','apta'].includes(bruto)) v = k[0]==='i' ? 'si' : 'no';
-    else if(['descartado','descartada'].includes(bruto)) v = k[0]==='e' ? 'no' : 'si';
-    else if(['no cumple','nocumple','no elegible','noelegible','excluido','excluida'].includes(bruto)) v = k[0]==='i' ? 'no' : 'si';
-    else if(['pendiente','indeterminado','indeterminada','no evaluable'].includes(bruto)) v = 'pendiente';
+    const v = String(r.respuesta||'').toLowerCase().replace('í','i');
     if(v!=='si' && v!=='no' && v!=='pendiente') continue;
     PA_CRIT[k] = v;
-    PA_JUST[k] = { ai:true, just:String(r.justificacion||r.fundamentacion||r.explicacion||'').slice(0,300), falta:String(r.falta||r.pendientePor||'').slice(0,300) };
+    PA_JUST[k] = { ai:true, just:String(r.justificacion||'').slice(0,300), falta:String(r.falta||'').slice(0,300) };
     if(v==='pendiente') pend++; else resp++;
   }
   return { resp, pend };
@@ -6812,11 +6660,7 @@ $('btnRunEval').addEventListener('click', async ()=>{
         imgs = await docsImagenes(elegidos, 8);
       }
       stEl.textContent = T('Consultando a la IA (puede tardar unos segundos)...');
-      const pacienteEval = Object.assign({}, getPatient($('paId').value)||{}, {
-        sexo: $('paSexo').value||'', fechaNacimiento: $('paFechaNac').value||'',
-        fechaBasal: $('paFechaBasal').value||''
-      });
-      const res = await aiEvalCriteria(study, text, imgs, pacienteEval);
+      const res = await aiEvalCriteria(study, text, imgs);
       const n = applyEvalResults(res);
       renderPaCriterios();
       $('paAiNotice').innerHTML = '<div class="banner warn">🤖 Respuestas sugeridas por IA a partir de los documentos ('+n.resp+' respondidas, '+n.pend+' quedaron pendientes). Confirmá cada criterio antes de guardar: la decisión final es siempre del investigador.</div>';
@@ -7171,25 +7015,22 @@ async function aiNarrarLote(items, st, texto, p, imagenes){
   const resp = p.criterios || {};
   const yaResp = items.map(it=>it.clave+'='+(resp[it.clave]||'pendiente')).join(', ');
   const sexo = p.sexo==='F' ? 'femenino' : (p.sexo==='M' ? 'masculino' : 'no consignado');
-  const edad = p.fechaNacimiento ? edadEnFecha(p.fechaNacimiento, p.fechaBasal || todayISO()) : null;
   const MAXC = aiCtxMax() - 8000;
   let doc = texto;
   if(doc.length > MAXC) doc = doc.slice(0, MAXC) + '\n[TEXTO TRUNCADO POR LONGITUD]';
 
   const prompt =
     'Sos un asistente de un equipo de investigación clínica. Para CADA criterio de elegibilidad listado, redactá una fundamentación breve referida a ESTE paciente, usando ÚNICAMENTE la documentación que se incluye más abajo.\n\n'+
-    'PACIENTE: código '+(p.codigo||'')+', sexo '+sexo+
-      (p.fechaNacimiento ? ', fecha de nacimiento '+fmtDate(p.fechaNacimiento) : '')+
-      (edad!==null ? ', edad '+edad+' años' : '')+'.\n'+
+    'PACIENTE: código '+(p.codigo||'')+', sexo '+sexo+'.\n'+
     'RESPUESTAS YA REGISTRADAS POR EL INVESTIGADOR (respetalas): '+(yaResp||'ninguna')+'\n\n'+
     'CRITERIOS:\n'+items.map(it=>it.clave+'. ['+(it.tipo==='inclusion'?'INCLUSIÓN':'EXCLUSIÓN')+' '+it.n+'] '+it.criterio).join('\n')+'\n\n'+
     'DOCUMENTACIÓN DEL PACIENTE:\n<<<\n'+doc+'\n>>>\n\n'+
     'Respondé ÚNICAMENTE con un array JSON válido, un objeto por criterio:\n'+
-    '[{"clave":"i0","texto":"fundamentación de 1 a 3 oraciones referida a este paciente","estado":"cumple|no_cumple|pendiente","cita":"documento y fecha o sección, si constan"}]\n\n'+
+    '[{"clave":"i0","texto":"fundamentación de 1 a 3 oraciones referida a este paciente","estado":"cumple|no_cumple|pendiente"}]\n\n'+
     'REGLAS — usá exclusivamente la DOCUMENTACIÓN incluida arriba:\n'+
     '- Escribí en tercera persona, en prosa clínica sobria, sin adjetivos valorativos y sin repetir el enunciado del criterio palabra por palabra: explicá el dato del paciente que lo satisface o lo contradice.\n'+
-    '- La respuesta del investigador define el veredicto y no puede ser contradicha. Si es inclusión y figura "si", empezá exactamente con "Cumple:". Si es exclusión y figura "no", empezá exactamente con "Descartado:". Si es pendiente, empezá con "Pendiente:" y precisá qué dato falta.\n'+
-    '- Si no hay una respuesta del investigador, decidí solo con evidencia documental: para inclusión usá "Cumple:" cuando está demostrada; para exclusión usá "Descartado:" cuando la condición está descartada en los documentos. En caso contrario, usá "Pendiente:".\n'+
+    '- La conclusión tiene que quedar escrita DENTRO de la misma oración, no como etiqueta aparte. Cerrá con «…, por lo que cumple con el criterio» o «…, por lo que no cumple con el criterio», tanto en inclusión como en exclusión.\n'+
+    '- Si el dato no figura, cerrá con «…, por lo que el criterio queda pendiente de documentación» e indicá con precisión qué estudio o dato hay que obtener.\n'+
     '- Escribí cada oración COMPLETA: nunca la dejes cortada a mitad de frase. Máximo 45 palabras por fundamentación.\n'+
     '- Mencioná el dato concreto (valor, fecha, diagnóstico, fármaco) tal como figura en la documentación.\n'+
     '- No uses conocimiento médico general ni valores de referencia externos. No infieras ni completes lo que no esté escrito.\n'+
@@ -7284,26 +7125,21 @@ async function aiNarrarCriterios(st, texto, p, imagenes, st_el){
 /* Devuelve la fundamentación con la conclusión dentro de la misma oración.
    Si el texto redactado ya la declara, se usa tal cual; si no (por ejemplo en
    fundamentaciones hechas con la versión anterior), se le agrega el cierre. */
-function narrEtiqueta(it){
-  if(it.estado==='pendiente') return T('Pendiente');
-  if(it.tipo==='exclusion' && it.estado==='cumple') return T('Descartado');
-  if(it.estado==='cumple') return T('Cumple');
-  return T('No cumple');
-}
-
 function narrOracion(it){
   let t = String(it.texto||'').trim();
-  if(!t) t = T('Sin fundamentación disponible.');
-  /* La salida nueva ya llega con Cumple:, Descartado: o Pendiente:. Al abrir
-     una fundamentación antigua se le incorpora el mismo encabezado para que
-     el informe mantenga una lectura uniforme. */
-  if(!/^(cumple|descartado|no cumple|pendiente)\s*:/i.test(t)) t = narrEtiqueta(it)+': '+t;
-  return t;
+  const yaLoDice = /(por lo que|de modo que|motivo por el cual|en consecuencia)[^.]*\b(cumple|no cumple|queda pendiente|pendiente)\b/i.test(t)
+                 || /\b(cumple|no cumple)\s+(con\s+)?(el|este)\s+criterio\b/i.test(t);
+  if(yaLoDice) return t;
+  const cierre = it.estado==='cumple' ? T('por lo que cumple con el criterio')
+               : it.estado==='no_cumple' ? T('por lo que no cumple con el criterio')
+               : T('por lo que el criterio queda pendiente de documentación');
+  t = t.replace(/\s*[.;]\s*$/,'');
+  return t + ', ' + cierre + '.';
 }
 
-function narrChip(it){
-  if(it.estado==='cumple')    return '<span class="chip ok">'+esc(narrEtiqueta(it))+'</span>';
-  if(it.estado==='no_cumple') return '<span class="chip bad">'+esc(narrEtiqueta(it))+'</span>';
+function narrChip(e){
+  if(e==='cumple')    return '<span class="chip ok">'+T('cumple')+'</span>';
+  if(e==='no_cumple') return '<span class="chip bad">'+T('no cumple')+'</span>';
   return '<span class="chip warn">'+T('pendiente')+'</span>';
 }
 
@@ -7323,7 +7159,7 @@ function renderNarr(){
       const ref = (tipo==='inclusion'?'I':'E')+it.n;
       return '<div style="border:1px solid var(--line);border-radius:9px;padding:10px 12px;margin-bottom:8px;background:#fbfcfe">'+
         '<div class="small" style="color:var(--muted);margin-bottom:3px">'+
-          '<b>'+NARR_NRO+'.</b> <span class="chip gray">'+ref+'</span> '+esc(it.criterio)+' '+narrChip(it)+
+          '<b>'+NARR_NRO+'.</b> <span class="chip gray">'+ref+'</span> '+esc(it.criterio)+' '+narrChip(it.estado)+
         '</div>'+
         '<textarea data-narr="'+idx+'" rows="3">'+esc(narrOracion(it))+'</textarea>'+
       '</div>';
@@ -7378,6 +7214,7 @@ function narrBody(p, st){
        'Las fundamentaciones son un borrador asistido: la evaluación de elegibilidad es responsabilidad del investigador.')+'</div>';
   return h;
 }
+
 function narrTexto(p, st){
   const L = [T('Fundamentación de criterios de elegibilidad'), ''];
   L.push(T('Paciente')+': '+(p.codigo||'')+(p.iniciales?' ('+p.iniciales+')':''));
@@ -9012,65 +8849,6 @@ function agendaRows(){
 }
 function agChipCls(key){ return key==='vencida'?'bad':(key==='proxima'?'gray':'ok'); }
 
-function addMonthsISO(iso, meses){
-  const [yy,mm,dd] = String(iso||'').split('-').map(Number);
-  if(!yy || !mm || !dd) return '';
-  const base = new Date(yy, mm-1+meses, 1);
-  const ultimo = new Date(base.getFullYear(), base.getMonth()+1, 0).getDate();
-  return isoOf(new Date(base.getFullYear(), base.getMonth(), Math.min(dd,ultimo)));
-}
-function proximoInformeAvance(st, hoy){
-  const cada = +st.informeAvanceCadaMeses;
-  let fecha = st.informeAvanceDesde || '';
-  if(!fecha || (cada!==3 && cada!==6)) return '';
-  /* La fecha inicial queda como ancla del ciclo; la agenda avanza sola al
-     próximo envío una vez que pasa la fecha anterior. */
-  while(fecha < hoy) fecha = addMonthsISO(fecha, cada);
-  return fecha;
-}
-function informesAvanceAgenda(){
-  const sid = ($('agStudy')||{}).value || 'all', hoy=todayISO();
-  return visibleStudies().filter(st=>sid==='all'||st.id===sid).map(st=>({
-    st, fecha:proximoInformeAvance(st,hoy)
-  })).filter(x=>x.fecha).sort((a,b)=>a.fecha.localeCompare(b.fecha));
-}
-function renderAgInformes(){
-  const box = $('agReports'); if(!box) return;
-  const sid = $('agStudy').value || 'all';
-  const st = sid==='all' ? null : getStudy(sid);
-  const items = informesAvanceAgenda(), hoy=todayISO();
-  let h = '<div class="card"><div class="toolbar" style="margin-bottom:6px"><h3 style="margin:0">📄 Informes de avance al comité de ética</h3></div>';
-  if(st){
-    const cada = +st.informeAvanceCadaMeses || 6;
-    h += '<div class="row" style="align-items:end">'+
-      '<div style="flex:0 0 180px"><label>Próximo envío</label><input type="date" id="agInformeFecha" value="'+esc(st.informeAvanceDesde||'')+'"></div>'+
-      '<div style="flex:0 0 190px"><label>Periodicidad</label><select id="agInformeCada">'+
-        '<option value="3"'+(cada===3?' selected':'')+'>Cada 3 meses</option>'+
-        '<option value="6"'+(cada===6?' selected':'')+'>Cada 6 meses</option>'+
-      '</select></div><div><button class="primary" id="btnAgInformeSave">Guardar recordatorio</button></div></div>'+
-      '<div class="small muted">'+(st.comiteEtica ? 'Comité: '+esc(st.comiteEtica)+'. ' : '')+
-      'La agenda calcula el próximo vencimiento automáticamente y la exportación de calendario lo incluye como evento recurrente.</div>';
-  } else h += '<div class="small muted">Elegí un estudio arriba para configurar el primer envío y la periodicidad de 3 o 6 meses.</div>';
-  if(items.length){
-    h += '<div style="margin-top:9px">'+items.map(x=>{
-      const d=diffDays(hoy,x.fecha), chip=d===0?'ok':(d<=14?'warn':'gray');
-      return '<div class="small" style="display:flex;gap:8px;align-items:center;margin:4px 0">'+
-        '<span class="chip '+chip+'">'+(d===0?'hoy':d>0?'en '+d+' d':Math.abs(d)+' d atrás')+'</span>'+
-        '<b>'+esc(x.st.codigo||x.st.nombre||'Estudio')+'</b><span>Informe de avance al comité</span><span class="muted">'+fmtDate(x.fecha)+' · cada '+x.st.informeAvanceCadaMeses+' meses</span></div>';
-    }).join('')+'</div>';
-  } else if(st && !st.informeAvanceDesde) h += '<div class="small muted" style="margin-top:8px">Todavía no hay un recordatorio configurado para este estudio.</div>';
-  h += '</div>';
-  box.innerHTML=h;
-  const save=$('btnAgInformeSave');
-  if(save) save.addEventListener('click', async ()=>{
-    const fecha=$('agInformeFecha').value;
-    if(!fecha){ toast('Elegí la fecha del próximo envío.'); return; }
-    const actualizado=Object.assign({}, st,{ informeAvanceDesde:fecha, informeAvanceCadaMeses:+$('agInformeCada').value });
-    await persist('studies', actualizado, 'Recordatorio de informe de avance guardado.');
-    renderAgenda();
-  });
-}
-
 function renderAgenda(){
   const sel = $('agStudy'); const prev = sel.value;
   sel.innerHTML = '<option value="all">'+T('Todos los estudios')+'</option>'+
@@ -9081,7 +8859,6 @@ function renderAgenda(){
   featNode('agPaciente','ag.calPaciente');
 
   const rows = agendaRows(), hoy = todayISO();
-  renderAgInformes();
 
   /* --- Hoy --- */
   if(featOn('ag.hoy')){
@@ -9233,8 +9010,7 @@ $('agNext').addEventListener('click', ()=>{ AG_MES = new Date(AG_MES.getFullYear
 /* --- exportar a calendario (.ics) --- */
 $('btnAgIcs').addEventListener('click', ()=>{
   const rows = agendaRows();
-  const informes = informesAvanceAgenda();
-  if(!rows.length && !informes.length){ toast(T('No hay visitas ni recordatorios para exportar.')); return; }
+  if(!rows.length){ toast(T('No hay visitas pendientes para exportar.')); return; }
   const pad = s => String(s).padStart(2,'0');
   const stamp = new Date().toISOString().replace(/[-:]/g,'').split('.')[0]+'Z';
   const L = ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Zonda//ES','CALSCALE:GREGORIAN'];
@@ -9248,20 +9024,11 @@ $('btnAgIcs').addEventListener('click', ()=>{
         ((r.nv.visit.tareas||[]).length?'\\n'+T('Tareas')+': '+(r.nv.visit.tareas||[]).join(', '):'')),
       'END:VEVENT');
   }
-  for(const it of informes){
-    const d=it.fecha.replace(/-/g,''), fin=isoOf(addDays(parseISO(it.fecha),1)).replace(/-/g,'');
-    L.push('BEGIN:VEVENT','UID:informe-'+it.st.id+'@zonda', 'DTSTAMP:'+stamp,
-      'DTSTART;VALUE=DATE:'+d, 'DTEND;VALUE=DATE:'+fin,
-      'RRULE:FREQ=MONTHLY;INTERVAL:'+it.st.informeAvanceCadaMeses,
-      'SUMMARY:'+icsEsc('Informe de avance al comité · '+(it.st.codigo||it.st.nombre||'')),
-      'DESCRIPTION:'+icsEsc((it.st.comiteEtica?'Comité de ética: '+it.st.comiteEtica+'\\n':'')+'Recordatorio periódico generado por Zonda.'),
-      'END:VEVENT');
-  }
   L.push('END:VCALENDAR');
   const blob = new Blob([L.join('\r\n')], { type:'text/calendar;charset=utf-8' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = 'agenda_'+todayISO()+'.ics';
+  a.download = 'visitas_'+todayISO()+'.ics';
   a.click(); URL.revokeObjectURL(a.href);
   toast(T('Archivo .ics descargado: importalo en Google Calendar u Outlook.'));
 });
@@ -10695,8 +10462,6 @@ async function renderSitios(){
         '<div class="muted small">'+esc(s.contacto||'—')+' · '+T('desde')+' '+fmtDate(String(s.creado_en||'').slice(0,10))+'</div>'+
       '</div>'+
       '<button class="ghost" data-stog="'+s.id+'">'+(s.activo===false?T('Activar'):T('Desactivar'))+'</button>'+
-      (s.activo===false && s.id!==(MEMBRESIA&&MEMBRESIA.org_id)
-        ? '<button class="danger" data-sdel="'+s.id+'">Eliminar definitivamente</button>' : '')+
     '</div>').join('') : '<div class="muted small">'+T('Todavía no hay otros sitios.')+'</div>';
   $('sitiosList').querySelectorAll('[data-stog]').forEach(b=>b.addEventListener('click', async ()=>{
     const s = SITIOS.find(x=>x.id===b.dataset.stog); if(!s) return;
@@ -10707,17 +10472,6 @@ async function renderSitios(){
       });
       if(!r.ok) throw new Error(T('No se pudo actualizar el sitio.'));
       toast(T('Sitio actualizado.')); renderSitios();
-    }catch(e){ toast('⚠ '+e.message); }
-  }));
-  $('sitiosList').querySelectorAll('[data-sdel]').forEach(b=>b.addEventListener('click', async ()=>{
-    const s = SITIOS.find(x=>x.id===b.dataset.sdel); if(!s) return;
-    if(s.id===(MEMBRESIA&&MEMBRESIA.org_id)){ toast('No podés eliminar tu propio sitio.'); return; }
-    if(s.activo!==false){ toast('Primero desactivá el sitio.'); return; }
-    if(!confirm('¿Eliminar definitivamente el sitio “'+s.nombre+'”? Se eliminarán los datos asociados a ese sitio y no se podrá deshacer.')) return;
-    try{
-      const r = await supaFetch('/rest/v1/ec_orgs?id=eq.'+encodeURIComponent(s.id), { method:'DELETE', headers:{ 'Prefer':'return=minimal' } });
-      if(!r.ok) throw new Error('No se pudo eliminar el sitio.');
-      toast('Sitio eliminado.'); renderSitios();
     }catch(e){ toast('⚠ '+e.message); }
   }));
 }
@@ -10802,11 +10556,11 @@ function userForm(id){
       '<b>💵 '+T('Acceso al módulo de facturación')+'</b> — '+
       T('ve el contrato, el tarifario y arma la factura del período. Los administradores lo tienen siempre.')+'</label>'+
     '<div id="uf_estBox"><label>'+T('Protocolos en los que participa')+'</label>'+
-      (DB.studies.filter(noAnulado).length ? '<div style="max-height:160px;overflow:auto;border:1px solid var(--line);border-radius:6px;padding:8px">'+
-        DB.studies.filter(noAnulado).map(s=>'<label style="display:block;font-weight:400;color:var(--ink);margin:2px 0">'+
+      (DB.studies.length ? '<div style="max-height:160px;overflow:auto;border:1px solid var(--line);border-radius:6px;padding:8px">'+
+        DB.studies.map(s=>'<label style="display:block;font-weight:400;color:var(--ink);margin:2px 0">'+
           '<input type="checkbox" class="uf_est" value="'+s.id+'"'+((u.estudios||[]).includes(s.id)?' checked':'')+' style="width:auto;margin-right:7px">'+
           esc(s.codigo)+(s.nombre?' — '+esc(s.nombre):'')+'</label>').join('')+'</div>'
-        : '<div class="muted small">'+T('Todavía no hay estudios activos cargados.')+'</div>')+
+        : '<div class="muted small">'+T('Todavía no hay estudios cargados.')+'</div>')+
     '</div>'+
     '<div class="toolbar" style="margin-top:10px;margin-bottom:0">'+
       '<button class="primary" id="uf_save">'+T('Guardar')+'</button>'+
@@ -11346,7 +11100,7 @@ $('btnSaveAi').addEventListener('click', ()=>{
   CFG.aiProvider = $('cfgAiProvider').value;
   CFG.aiKey = $('cfgAiKey').value.trim();
   CFG.aiModel = $('cfgAiModel').value.trim() || AI_PROVIDERS[aiProvider()].modelo;
-  CFG.ragOn = false; CFG.ragSolo = false;
+  CFG.ragOn = !!($('cfgRagOn') && $('cfgRagOn').checked);
   saveJSON(LS.CFG, CFG);
   const m = $('aiMsg');
   if(CFG.aiKey){ m.textContent='✔ '+T('Clave guardada en este navegador. Las funciones de IA usarán')+' '+AI_PROVIDERS[aiProvider()].nombre+' ('+aiModelName()+').'; m.style.color='var(--ok)'; }
@@ -11395,7 +11149,6 @@ $('btnCopySql').addEventListener('click', async ()=>{
 });
 
 /* ---- respaldo ---- */
-$('btnPurgeDeleted').addEventListener('click', purgarRegistrosAnulados);
 $('btnExport').addEventListener('click', ()=>{
   const data = { app:'evoluciones-ec', version:4, exportado:new Date().toISOString(),
                  studies:DB.studies, patients:DB.patients, visits:DB.visits, docs:DB.docs||[],
