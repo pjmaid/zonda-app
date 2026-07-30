@@ -2748,7 +2748,7 @@ function collectStVisitas(){
       venAntes: Math.abs(parseInt(c.querySelector('.v-antes').value,10)||0),
       venDesp: Math.abs(parseInt(c.querySelector('.v-desp').value,10)||0),
       tareas: c.querySelector('.v-tareas').value.split('\n').map(t=>t.trim()).filter(Boolean),
-      tablet: c.querySelector('.v-tablet').value.split('\n').map(t=>t.trim()).filter(Boolean)
+      tablet: (v.tablet||[]).filter(t=>c.querySelector('.v-tareas').value.split('\n').map(x=>x.trim()).includes(t))
     });
   }
   return out;
@@ -2772,11 +2772,9 @@ function renderStVisitas(){
           '<button class="ghost v-del" style="color:var(--bad)" title="Quitar visita">✕</button>'+
         '</div>'+
       '</div>'+
-      '<label>Procedimientos fuera de tablet (uno por línea)</label>'+
+      '<label>Procedimientos (uno por línea)</label>'+
       '<textarea class="v-tareas" rows="4" placeholder="Signos vitales&#10;Laboratorio&#10;Registro de EAs y medicación concomitante">'+esc((v.tareas||[]).join('\n'))+'</textarea>'+
-      '<label>Cuestionarios en tablet (uno por línea)</label>'+
-      '<div class="muted small">Cargá aquí los cuestionarios que completa el paciente en tablet. Se mostrarán reunidos bajo el título “Tablet” en la evolución.</div>'+
-      '<textarea class="v-tablet" rows="3" placeholder="FACIT-F&#10;PESQ&#10;Otro cuestionario">'+esc((v.tablet||[]).join('\n'))+'</textarea>';
+      '<div class="muted small">Al registrar la visita, marcá con la casilla “Tablet” los procedimientos que el paciente completa allí.</div>';
     d.querySelector('.v-del').addEventListener('click', ()=>{ EDIT_VISITAS = collectStVisitas(); EDIT_VISITAS.splice(idx,1); renderStVisitas(); });
     d.querySelector('.v-up').addEventListener('click', ()=>{ if(idx===0) return; EDIT_VISITAS = collectStVisitas(); const t=EDIT_VISITAS[idx-1]; EDIT_VISITAS[idx-1]=EDIT_VISITAS[idx]; EDIT_VISITAS[idx]=t; renderStVisitas(); });
     d.querySelector('.v-down').addEventListener('click', ()=>{ EDIT_VISITAS = collectStVisitas(); if(idx>=EDIT_VISITAS.length-1) return; const t=EDIT_VISITAS[idx+1]; EDIT_VISITAS[idx+1]=EDIT_VISITAS[idx]; EDIT_VISITAS[idx]=t; renderStVisitas(); });
@@ -3398,9 +3396,11 @@ function renderViTareas(){
     const d = document.createElement('div'); d.className='taskline';
     d.innerHTML =
       '<input type="checkbox" '+(t.hecha?'checked':'')+'>'+
-      '<div class="tname">'+esc(t.nombre)+(t.tablet?' <span class="chip acc">Tablet</span>':'')+'</div>'+
+      '<div class="tname">'+esc(t.nombre)+'</div>'+
+      '<label class="small" style="margin:2px 0 0;text-transform:none;letter-spacing:0;white-space:nowrap"><input type="checkbox" class="ttablet" '+(t.tablet?'checked':'')+'> Tablet</label>'+
       '<input type="text" class="tcom" placeholder="Comentario / motivo si no se realizó" value="'+esc(t.comentario||'')+'">';
     d.querySelector('input[type=checkbox]').addEventListener('change', e=>{ VI_TASKS[idx].hecha = e.target.checked; });
+    d.querySelector('.ttablet').addEventListener('change', e=>{ VI_TASKS[idx].tablet = e.target.checked; });
     d.querySelector('.tcom').addEventListener('input', e=>{ VI_TASKS[idx].comentario = e.target.value; });
     box.appendChild(d);
   });
@@ -3771,18 +3771,17 @@ function buildEvolution(log){
     for(const t of otrasHechas){
       const nombre = String(t.nombre||T('Procedimiento')).trim();
       const detalle = String(t.comentario||'').trim();
-      L.push(nombre+':');
-      L.push(detalle || (T('Se realizó el procedimiento programado')+': '+nombre+'.'));
+      L.push(detalle ? nombre+': '+detalle : nombre+'.');
     }
   }
   if(tabletHechas.length){
-    const cuestionarios = tabletHechas.map(t=>{
-      const nombre = String(t.nombre||T('Cuestionario')).trim();
-      const detalle = String(t.comentario||'').trim();
-      return detalle ? nombre+' ('+detalle+')' : nombre;
-    }).join(', ');
     L.push(T('TABLET:'));
-    L.push(T('El paciente completa en tablet los siguientes cuestionarios')+': '+cuestionarios+'.');
+    L.push(T('El paciente completó los siguientes procedimientos en la tablet')+':');
+    tabletHechas.forEach(t=>{
+      const nombre = String(t.nombre||T('Procedimiento')).trim();
+      const detalle = String(t.comentario||'').trim();
+      L.push('• '+nombre+(detalle?' ('+detalle+')':'')+'.');
+    });
   }
   if(labHechas.length){
     const determinaciones = labHechas.map(t=>{
