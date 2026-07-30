@@ -3758,22 +3758,33 @@ function buildEvolution(log){
   L.push(sep);
   const hechas = (log.tareas||[]).filter(t=>t.hecha);
   const noHechas = (log.tareas||[]).filter(t=>!t.hecha);
-  L.push(T('PROCEDIMIENTOS REALIZADOS:'));
-  /* el proceso de consentimiento va siempre primero */
+  L.push(T('PROCEDIMIENTOS REALIZADOS EN LA VISITA:'));
+  let nroProc = 0;
+  /* El consentimiento se documenta primero, como procedimiento independiente. */
   const cons = ciDeVisita(log);
   for(const r of cons){
-    L.push('  [X] '+(esReconsent(r) ? T('Proceso de re-consentimiento informado') : T('Proceso de consentimiento informado'))+
-      ' — '+T('versión')+' '+(r.version||T('no registrada'))+
-      (r.hora||r.horaFin ? ' ('+T('de')+' '+(r.hora||'—')+' '+T('a')+' '+(r.horaFin||'—')+')' : '')+
-      (r.quien ? ' — '+T('tomado por')+' '+r.quien : ''));
-    L.push('      '+ciTexto(r));
-    if((r.obs||'').trim()) L.push('      '+r.obs.trim());
+    nroProc++;
+    L.push(nroProc+'. '+(esReconsent(r) ? T('Proceso de re-consentimiento informado') : T('Proceso de consentimiento informado'))+':');
+    L.push(ciTexto(r));
+    if(r.version) L.push(T('Versión del consentimiento')+': '+r.version+'.');
+    if(r.hora||r.horaFin) L.push(T('Horario del procedimiento')+': '+(r.hora||'—')+' '+T('a')+' '+(r.horaFin||'—')+'.');
+    if(r.quien) L.push(T('Profesional que lo realizó')+': '+r.quien+'.');
+    if((r.obs||'').trim()) L.push(r.obs.trim());
   }
-  if(hechas.length) hechas.forEach(t=>L.push('  [X] '+t.nombre+((t.comentario||'').trim()?' — '+t.comentario.trim():'')));
-  else if(!cons.length) L.push(T('  (ninguno registrado)'));
+  if(hechas.length){
+    for(const t of hechas){
+      nroProc++;
+      const nombre = String(t.nombre||T('Procedimiento')).trim();
+      const detalle = String(t.comentario||'').trim();
+      L.push(nroProc+'. '+nombre+':');
+      L.push(detalle || (T('Se realizó el procedimiento programado')+': '+nombre+'.'));
+    }
+  } else if(!cons.length) {
+    L.push(T('No se registraron procedimientos realizados en esta visita.'));
+  }
   if(noHechas.length){
     L.push(T('PROCEDIMIENTOS NO REALIZADOS:'));
-    noHechas.forEach(t=>L.push('  [ ] '+t.nombre+T(' — Motivo: ')+((t.comentario||'').trim()||T('(no registrado)'))));
+    noHechas.forEach(t=>L.push('• '+t.nombre+T(' — Motivo: ')+((t.comentario||'').trim()||T('(no registrado)'))));
   }
   const sv = log.sv||{};
   const svParts = [];
