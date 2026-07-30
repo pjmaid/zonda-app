@@ -762,9 +762,8 @@ details>summary{color:var(--acc-dark)}
       <textarea id="viObs" rows="4" placeholder="Paciente asintomático, buena tolerancia a la medicación del estudio..."></textarea>
       <label>Traslado al finalizar la visita</label>
       <select id="viTraslado">
-        <option value="">Seleccionar</option>
-        <option value="remis">Remis a cargo del centro</option>
-        <option value="propios">Se retira por sus propios medios</option>
+        <option value="remis" selected>El paciente concurre y se retira en remis a cargo del centro</option>
+        <option value="propios">El paciente concurre y se retira por sus propios medios</option>
       </select>
       <label>Próxima visita (se sugiere automáticamente, editable)</label>
       <input type="text" id="viProxima">
@@ -3257,7 +3256,7 @@ function openVisitForm(logId, presetPatientId, presetVisitId){
   $('viFum').value = g.fum || '';
   $('viEmb').value = g.embarazo || '';
   $('viAntiComo').value = g.como || '';
-  $('viTraslado').value = (log && log.logistica && log.logistica.traslado) || '';
+  $('viTraslado').value = (log && log.logistica && log.logistica.traslado) || 'remis';
   if(log){
     VI_TASKS = JSON.parse(JSON.stringify(log.tareas||[]));
     renderViTareas();
@@ -3873,10 +3872,9 @@ function buildEvolution(log){
   L.push(T('EVOLUCIÓN CLÍNICA: ')+((log.obs||'').trim()||T('(completar)')));
   L.push(T('LOGÍSTICA Y REINTEGROS:'));
   L.push(T('Al finalizar la visita, se invita al paciente a desayunar y se le reintegran los gastos correspondientes.'));
-  const traslado = (log.logistica&&log.logistica.traslado)||'';
+  const traslado = (log.logistica&&log.logistica.traslado)||'remis';
   if(traslado==='remis') L.push(T('El paciente concurre y se retira en remis a cargo del centro.'));
-  else if(traslado==='propios') L.push(T('El paciente concurre y se retira por sus propios medios.'));
-  else L.push(T('Traslado al finalizar la visita: no registrado.'));
+  else L.push(T('El paciente concurre y se retira por sus propios medios.'));
   if((log.proxima||'').trim()) L.push(T('PRÓXIMA VISITA: ')+log.proxima.trim());
   return L.join('\n');
 }
