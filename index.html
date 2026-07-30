@@ -3759,12 +3759,10 @@ function buildEvolution(log){
   const hechas = (log.tareas||[]).filter(t=>t.hecha);
   const noHechas = (log.tareas||[]).filter(t=>!t.hecha);
   L.push(T('PROCEDIMIENTOS REALIZADOS EN LA VISITA:'));
-  let nroProc = 0;
   /* El consentimiento se documenta primero, como procedimiento independiente. */
   const cons = ciDeVisita(log);
   for(const r of cons){
-    nroProc++;
-    L.push(nroProc+'. '+(esReconsent(r) ? T('Proceso de re-consentimiento informado') : T('Proceso de consentimiento informado'))+':');
+    L.push((esReconsent(r) ? T('Proceso de re-consentimiento informado') : T('Proceso de consentimiento informado'))+':');
     L.push(ciTexto(r));
     if(r.version) L.push(T('Versión del consentimiento')+': '+r.version+'.');
     if(r.hora||r.horaFin) L.push(T('Horario del procedimiento')+': '+(r.hora||'—')+' '+T('a')+' '+(r.horaFin||'—')+'.');
@@ -3773,10 +3771,9 @@ function buildEvolution(log){
   }
   if(hechas.length){
     for(const t of hechas){
-      nroProc++;
       const nombre = String(t.nombre||T('Procedimiento')).trim();
       const detalle = String(t.comentario||'').trim();
-      L.push(nroProc+'. '+nombre+':');
+      L.push(nombre+':');
       L.push(detalle || (T('Se realizó el procedimiento programado')+': '+nombre+'.'));
     }
   } else if(!cons.length) {
