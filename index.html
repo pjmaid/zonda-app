@@ -442,6 +442,16 @@ details>summary{color:var(--acc-dark)}
     </div>
 
     <div class="card">
+      <div class="toolbar" style="margin-bottom:6px">
+        <h3 style="margin:0">Medicación concomitante actual</h3>
+        <span class="spacer"></span>
+        <button id="btnPaMedAdd">+ Agregar medicamento</button>
+      </div>
+      <div class="muted small" style="margin-bottom:8px">Cargá cada medicamento por separado. Los que estén vigentes se incluirán automáticamente en las evoluciones.</div>
+      <div id="paMedRows"></div>
+    </div>
+
+    <div class="card">
       <h3>Documentos del paciente</h3>
       <div class="muted small" style="margin-bottom:8px">Historia clínica, laboratorio, informes, etc. (PDF, Word o texto). Sirven de base para la evaluación automática de los criterios. Adjuntá documentos identificados solo por código/iniciales, sin nombre completo.</div>
       <div class="row">
@@ -2939,6 +2949,26 @@ $('btnDemoStudy').addEventListener('click', ()=>{
 
 /* ================= PACIENTES ================= */
 let PA_CRIT = {};
+let PA_CONMED = [];
+let PA_CONMED_BAJAS = [];
+
+function renderPaConmed(){
+  const box = $('paMedRows'); box.innerHTML='';
+  if(!PA_CONMED.length) box.innerHTML='<div class="muted small">Sin medicación concomitante actual cargada.</div>';
+  PA_CONMED.forEach((m,idx)=>{
+    const d=document.createElement('div'); d.className='row'; d.style.cssText='padding:8px 0;border-bottom:1px dashed var(--line);align-items:flex-end';
+    d.innerHTML='<div class="grow"><label>Medicamento</label><input type="text" class="pm-farmaco" value="'+esc(m.farmaco||'')+'" placeholder="Ej: enalapril"></div>'+
+      '<div style="flex:0 0 130px"><label>Dosis</label><input type="text" class="pm-dosis" value="'+esc(m.dosis||'')+'" placeholder="Ej: 10 mg/día"></div>'+
+      '<div style="flex:0 0 130px"><label>Vía</label><select class="pm-via"><option value="">—</option>'+['Oral','IV','IM','SC','Tópica','Inhalatoria','Otra'].map(x=>'<option'+(m.via===x?' selected':'')+'>'+x+'</option>').join('')+'</select></div>'+
+      '<div class="grow"><label>Indicación</label><input type="text" class="pm-indicacion" value="'+esc(m.indicacion||'')+'"></div>'+
+      '<div style="flex:0 0 150px"><label>Desde (opcional)</label><input type="date" class="pm-inicio" value="'+esc(m.inicio||'')+'"></div>'+
+      '<div><button class="ghost pm-del" title="Quitar medicación actual" style="color:var(--bad)">✕</button></div>';
+    ['farmaco','dosis','via','indicacion','inicio'].forEach(k=>d.querySelector('.pm-'+k).addEventListener('input',e=>{PA_CONMED[idx][k]=e.target.value;}));
+    d.querySelector('.pm-del').addEventListener('click',()=>{ if(PA_CONMED[idx].id) PA_CONMED_BAJAS.push(PA_CONMED[idx].id); PA_CONMED.splice(idx,1); renderPaConmed(); });
+    box.appendChild(d);
+  });
+  $('btnPaMedAdd').onclick=()=>{ PA_CONMED.push({id:uid(),farmaco:'',dosis:'',via:'',indicacion:'',inicio:'',fin:''}); renderPaConmed(); };
+}
 
 function renderPatients(){
   const tb = $('patientsList'); tb.innerHTML='';
@@ -2995,6 +3025,9 @@ function openPatientEditor(id){
   $('paSexo').value = p ? (p.sexo||'') : '';
   $('paAnti').value = p ? (p.anticoncepcion||'') : '';
   $('paAntiDet').value = p ? (p.anticoncepcionDet||'') : '';
+  PA_CONMED = p ? logRows('conmed').filter(r=>r.pacienteId===p.id && !r.fin).map(r=>Object.assign({},r)) : [];
+  PA_CONMED_BAJAS = [];
+  renderPaConmed();
   togglePaSexo();
   /* si al guardar el paciente cambia el método, la próxima visita lo toma */
   PA_CRIT = p ? Object.assign({}, p.criterios||{}) : {};
@@ -3112,6 +3145,17 @@ $('btnSavePatient').addEventListener('click', async ()=>{
     critFirma: (getStudy($('paEstudio').value) ? critFirma(getStudy($('paEstudio').value)) : '')
   };
   await persist('patients', p, 'Paciente guardado.');
+  /* Una sola fuente de verdad: la ficha del paciente y Herramientas → Medicación concomitante usan estos mismos registros. */
+  const bajas=new Set(PA_CONMED_BAJAS);
+  if(bajas.size){
+    for(const r of (LOGS.conmed||[])) if(bajas.has(r.id) && !r.fin) r.fin=todayISO();
+  }
+  const medsValidos=PA_CONMED.filter(m=>String(m.farmaco||'').trim());
+  for(const m of medsValidos){
+    const registro=Object.assign({},m,{id:m.id||uid(),pacienteId:p.id,estudioId:p.estudioId,farmaco:String(m.farmaco).trim(),dosis:String(m.dosis||'').trim(),via:String(m.via||'').trim(),indicacion:String(m.indicacion||'').trim(),inicio:m.inicio||'',fin:'',creado:m.creado||new Date().toISOString()});
+    LOGS.conmed=(LOGS.conmed||[]).filter(x=>x.id!==registro.id).concat([registro]);
+  }
+  if(bajas.size||medsValidos.length){ logsSave(); auditar('log:conmed','actualización desde ficha del paciente',p.id,p.codigo); }
   if(!p.fechaBasal && (p.estado==='activo'||p.estado==='screening'))
     toast('Paciente guardado. Cargá la fecha basal para calcular las próximas visitas.');
   showView('view-patients');
