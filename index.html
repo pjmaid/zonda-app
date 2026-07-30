@@ -3225,6 +3225,15 @@ $('btnNewVisit').addEventListener('click', ()=>openVisitForm(null));
 
 /* ================= FORMULARIO DE VISITA ================= */
 let VI_TASKS = [];
+/* Clasificación por estudio: al marcar una tarea como tablet, se propone igual en las próximas visitas. */
+let TABLET_CLASIF = loadJSON('ecx_tabletclasif') || {};
+function tabletKey(studyId, nombre){ return String(studyId||'')+'|'+normKey(nombre); }
+function tabletTipoDe(studyId, nombre){ return TABLET_CLASIF[tabletKey(studyId,nombre)] || ''; }
+function tabletTipoFijar(studyId, nombre, tipo){
+  const k = tabletKey(studyId,nombre); if(!k || !normKey(nombre)) return;
+  if(tipo==='paciente' || tipo==='medico') TABLET_CLASIF[k]=tipo; else delete TABLET_CLASIF[k];
+  saveJSON('ecx_tabletclasif', TABLET_CLASIF);
+}
 
 function openVisitForm(logId, presetPatientId, presetVisitId){
   if(!DB.patients.length){ toast('Primero cargá al menos un paciente.'); showView('view-patients'); return; }
@@ -3358,10 +3367,11 @@ function onViVisitaChange(keepTasks){
     const p = getPatient($('viPaciente').value);
     const st = p ? getStudy(p.estudioId) : null;
     const v = st ? (st.visitas||[]).find(x=>x.id===vid) : null;
+    const tipoDe = n => tabletTipoDe(st&&st.id, n) || ((v&&((v.tablet||[]).includes(n))) ? 'paciente' : '');
     VI_TASKS = v ? [
-      ...(v.tareas||[]).map(t=>({ nombre:t, hecha:true, comentario:'', tablet:false })),
-      ...(v.tablet||[]).map(t=>({ nombre:t, hecha:true, comentario:'', tablet:true }))
-    ] : [{ nombre:'Evaluación clínica', hecha:true, comentario:'', tablet:false }];
+      ...(v.tareas||[]).map(t=>{ const tabletTipo=tipoDe(t); return { nombre:t, hecha:true, comentario:'', tablet:!!tabletTipo, tabletTipo }; }),
+      ...(v.tablet||[]).filter(t=>!(v.tareas||[]).includes(t)).map(t=>{ const tabletTipo=tipoDe(t)||'paciente'; return { nombre:t, hecha:true, comentario:'', tablet:true, tabletTipo }; })
+    ] : [{ nombre:'Evaluación clínica', hecha:true, comentario:'', tablet:false, tabletTipo:'' }];
     renderViTareas();
     suggestProxima();
   }
@@ -3404,9 +3414,23 @@ function renderViTareas(){
       '<input type="checkbox" '+(t.hecha?'checked':'')+'>'+
       '<div class="tname">'+esc(t.nombre)+'</div>'+
       '<label class="small" style="margin:2px 0 0;text-transform:none;letter-spacing:0;white-space:nowrap"><input type="checkbox" class="ttablet" '+(t.tablet?'checked':'')+'> Tablet</label>'+
+      '<select class="ttabletTipo" '+(t.tablet?'':'disabled')+' style="width:auto;padding:4px 7px;font-size:12px"><option value="paciente" '+((t.tabletTipo||'paciente')==='paciente'?'selected':'')+'>Paciente</option><option value="medico" '+(t.tabletTipo==='medico'?'selected':'')+'>Médico</option></select>'+
       '<input type="text" class="tcom" placeholder="Comentario / motivo si no se realizó" value="'+esc(t.comentario||'')+'">';
     d.querySelector('input[type=checkbox]').addEventListener('change', e=>{ VI_TASKS[idx].hecha = e.target.checked; });
-    d.querySelector('.ttablet').addEventListener('change', e=>{ VI_TASKS[idx].tablet = e.target.checked; });
+    const tabCheck = d.querySelector('.ttablet'), tabTipo = d.querySelector('.ttabletTipo');
+    tabCheck.addEventListener('change', e=>{
+      const p = getPatient($('viPaciente').value);
+      VI_TASKS[idx].tablet = e.target.checked;
+      VI_TASKS[idx].tabletTipo = e.target.checked ? (tabTipo.value||'paciente') : '';
+      tabTipo.disabled = !e.target.checked;
+      if(p) tabletTipoFijar(p.estudioId, VI_TASKS[idx].nombre, VI_TASKS[idx].tabletTipo);
+    });
+    tabTipo.addEventListener('change', e=>{
+      const p = getPatient($('viPaciente').value);
+      VI_TASKS[idx].tablet = true; VI_TASKS[idx].tabletTipo = e.target.value;
+      tabCheck.checked = true;
+      if(p) tabletTipoFijar(p.estudioId, VI_TASKS[idx].nombre, e.target.value);
+    });
     d.querySelector('.tcom').addEventListener('input', e=>{ VI_TASKS[idx].comentario = e.target.value; });
     box.appendChild(d);
   });
@@ -3760,7 +3784,8 @@ function buildEvolution(log){
   L.push(sep);
   const hechas = (log.tareas||[]).filter(t=>t.hecha);
   const noHechas = (log.tareas||[]).filter(t=>!t.hecha);
-  const tabletHechas = hechas.filter(t=>t.tablet);
+  const tabletPacienteHechas = hechas.filter(t=>t.tablet && (t.tabletTipo||'paciente')!=='medico');
+  const tabletMedicoHechas = hechas.filter(t=>t.tablet && t.tabletTipo==='medico');
   const labHechas = hechas.filter(t=>!t.tablet && clasifDe(String(t.nombre||''))==='lab');
   const otrasHechas = hechas.filter(t=>!t.tablet && clasifDe(String(t.nombre||''))!=='lab');
   L.push(T('PROCEDIMIENTOS REALIZADOS EN LA VISITA:'));
@@ -3781,14 +3806,24 @@ function buildEvolution(log){
       L.push(detalle ? nombre+': '+detalle : nombre+'.');
     }
   }
-  if(tabletHechas.length){
+  if(tabletPacienteHechas.length || tabletMedicoHechas.length){
     L.push(T('TABLET:'));
-    L.push(T('El paciente completó los siguientes procedimientos en la tablet')+':');
-    tabletHechas.forEach(t=>{
-      const nombre = String(t.nombre||T('Procedimiento')).trim();
-      const detalle = String(t.comentario||'').trim();
-      L.push('• '+nombre+(detalle?' ('+detalle+')':'')+'.');
-    });
+    if(tabletPacienteHechas.length){
+      L.push(T('El paciente completó los siguientes cuestionarios en la tablet')+':');
+      tabletPacienteHechas.forEach(t=>{
+        const nombre = String(t.nombre||T('Cuestionario')).trim();
+        const detalle = String(t.comentario||'').trim();
+        L.push('• '+nombre+(detalle?' ('+detalle+')':'')+'.');
+      });
+    }
+    if(tabletMedicoHechas.length){
+      L.push(T('El médico completó los siguientes cuestionarios en la tablet')+':');
+      tabletMedicoHechas.forEach(t=>{
+        const nombre = String(t.nombre||T('Cuestionario')).trim();
+        const detalle = String(t.comentario||'').trim();
+        L.push('• '+nombre+(detalle?' ('+detalle+')':'')+'.');
+      });
+    }
   }
   if(labHechas.length){
     const determinaciones = labHechas.map(t=>{
