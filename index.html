@@ -3659,6 +3659,7 @@ function eaCerradosAntes(pacienteId, fecha, visitId){
 /* Transcripción completa del evento adverso para la evolución: siempre con los
    mismos campos, y «no registrado» cuando falta el dato, para que se vea qué
    hay que completar en vez de quedar omitido. */
+function eaHoraTexto(r,k){const s={inicio:'Inicio',fin:'Fin'}[k],h=r['hora'+s];return r['hora'+s+'NoDisponible']?' · hora no disponible':(h?' · '+h:'');}
 function eaLinea(r, fecha){
   const abierto = !r.fin || r.fin>fecha;
   const nd = T('no registrado');
@@ -3666,8 +3667,8 @@ function eaLinea(r, fecha){
   if(r.accionIP) acciones.push(T('con el producto de investigación')+': '+r.accionIP);
   if((r.accionOtras||'').trim()) acciones.push(r.accionOtras.trim());
   const campos = [
-    [T('Inicio'), r.inicio ? fmtDate(r.inicio) : nd],
-    [T('Fin'), r.fin ? fmtDate(r.fin) : T('en curso')],
+    [T('Inicio'), r.inicio ? fmtDate(r.inicio)+eaHoraTexto(r,'inicio') : nd],
+    [T('Fin'), r.fin ? fmtDate(r.fin)+eaHoraTexto(r,'fin') : T('en curso')],
     [T('Grado'), r.grado || nd],
     [T('Serio'), r.serio ? (r.serio==='Sí' ? T('Sí (EAS)') : T('No')) : nd],
     [T('Relación con el producto de investigación'), r.causalidad || nd],
@@ -8866,6 +8867,10 @@ function prepararCtcaeFormulario(estudioId, actual){
     finally{aiBtn.disabled=false;}
   });
 }
+function eaCampoFechaHora(k, etiqueta, r, requerido){
+  const suf={inicio:'Inicio',fin:'Fin',conocido:'Conocido',reportado:'Reportado'}[k], hora='hora'+suf, nd=hora+'NoDisponible';
+  return '<div class="grow"><label>'+esc(etiqueta)+(requerido?' *':'')+'</label><input type="text" inputmode="numeric" id="lf_'+k+'" value="'+esc(r[k]?fmtDate(r[k]):'')+'" placeholder="dd/mm/aaaa"><div class="row" style="margin-top:5px;gap:7px"><div style="flex:1"><label style="margin:0 0 3px">Hora</label><input type="time" id="lf_'+hora+'" value="'+esc(r[hora]||'')+'"></div><label style="margin:20px 0 0;text-transform:none;letter-spacing:0"><input type="checkbox" id="lf_'+nd+'"'+(r[nd]?' checked':'')+'> Hora no disponible</label></div></div>';
+}
 function logForm(id){
   const def = LOG_DEFS[LOG_TIPO];
   LOG_EDIT = id || null;
@@ -8884,6 +8889,7 @@ function logForm(id){
   for(const c of def.campos){
     if(c.t==='calc' || (LOG_TIPO==='ea' && (c.k==='reportado' || c.k==='conocido'))) continue;
     const v = r[c.k]===undefined?'':(c.t==='date'?fechaISO(r[c.k]):r[c.k]);
+    if(LOG_TIPO==='ea' && c.t==='date' && (c.k==='inicio'||c.k==='fin')){ h += eaCampoFechaHora(c.k,c.n,r,c.req); continue; }
     const ancho = (c.t==='area') ? 'style="flex:1 1 100%"' : 'class="grow"';
     h += '<div '+ancho+'><label>'+esc(T(c.n))+(c.req?' *':'')+'</label>';
     if(c.t==='area') h += '<textarea id="lf_'+c.k+'" rows="2">'+esc(v)+'</textarea>';
@@ -8907,10 +8913,12 @@ function logForm(id){
         T('El texto se toma de la plantilla del protocolo con los datos de este registro; podés editarlo para este paciente. Lo que quede escrito es lo que va a la evolución.')+'</div>'
       : '');
   const box = $('logForm');
-  if(LOG_TIPO==='ea') h += '<div style="flex:1 1 100%;margin-top:6px"><input type="hidden" id="lf_ctcaeCode"><div id="lf_reportadoWrap" class="hidden"><label>Fecha de conocimiento por el sitio</label><input type="date" id="lf_conocido" value="'+esc(r.conocido||'')+'"><label>Fecha de reporte al patrocinador</label><input type="date" id="lf_reportado" value="'+esc(r.reportado||'')+'"></div><div class="toolbar" style="margin:7px 0 0"><button type="button" id="btnCtcaeAI">✨ Sugerir término CTCAE con IA</button><span id="ctcaeAiMsg" class="muted small"></span></div><div id="ctcaeVersionInfo" class="muted small"></div><div id="ctcaeInfo" class="muted small" style="margin-top:4px"></div></div>';
+  if(LOG_TIPO==='ea') h += '<div style="flex:1 1 100%;margin-top:6px"><input type="hidden" id="lf_ctcaeCode"><div id="lf_reportadoWrap" class="hidden"><div class="row">'+eaCampoFechaHora('conocido','Fecha de conocimiento por el sitio',r,false)+eaCampoFechaHora('reportado','Fecha de reporte al patrocinador',r,false)+'</div></div><div class="toolbar" style="margin:7px 0 0"><button type="button" id="btnCtcaeAI">✨ Sugerir término CTCAE con IA</button><span id="ctcaeAiMsg" class="muted small"></span></div><div id="ctcaeVersionInfo" class="muted small"></div><div id="ctcaeInfo" class="muted small" style="margin-top:4px"></div></div>';
   box.innerHTML = h; box.classList.remove('hidden');
   prepararCtcaeFormulario(($('lf_estudio')||{}).value||sid,r);
-  const actualizarSAE=()=>{ const esSAE=($('lf_serio')||{}).value==='Sí'; $('lf_reportadoWrap').classList.toggle('hidden',!esSAE); if(!esSAE) $('lf_reportado').value=''; };
+  const configurarHora=s=>{const h=$('lf_hora'+s),n=$('lf_hora'+s+'NoDisponible');if(!h||!n)return;const f=()=>{h.disabled=n.checked;if(n.checked)h.value='';};n.addEventListener('change',f);f();};
+  ['Inicio','Fin','Conocido','Reportado'].forEach(configurarHora);
+  const actualizarSAE=()=>{ const esSAE=($('lf_serio')||{}).value==='Sí'; $('lf_reportadoWrap').classList.toggle('hidden',!esSAE); if(!esSAE){['conocido','reportado'].forEach(k=>{$('lf_'+k).value='';});['Conocido','Reportado'].forEach(s=>{$('lf_hora'+s).value='';$('lf_hora'+s+'NoDisponible').checked=false;});} };
   if($('lf_serio')) $('lf_serio').addEventListener('change',actualizarSAE); actualizarSAE();
   $('lf_cancel').addEventListener('click', ()=>{ box.classList.add('hidden'); LOG_EDIT=null; });
   /* consentimiento: traer la plantilla del protocolo con los datos ya cargados */
@@ -8937,7 +8945,7 @@ function logForm(id){
       const el = $('lf_'+c.k);
       obj[c.k] = el ? (c.t==='date' ? fechaISO(el.value) : el.value.trim()) : '';
     }
-    if(LOG_TIPO==='ea'){ obj.ctcaeVersion=(r&&r.ctcaeVersion)||ctcaeVersionDe(obj.estudioId); obj.ctcaeCode=(($('lf_ctcaeCode')||{}).value||'').trim(); const hit=ctcaeCoincidencia(obj.ctcaeVersion,obj.ctcaeCode); if(hit){obj.ctcaeCode=hit[0];obj.ctcaeSoc=hit[1];obj.ctcaeTerm=ctcaeNombreES(hit,obj.evento);obj.ctcaeTermOficial=hit[2];} }
+    if(LOG_TIPO==='ea'){ ['Inicio','Fin','Conocido','Reportado'].forEach(s=>{const h=$('lf_hora'+s),n=$('lf_hora'+s+'NoDisponible');obj['hora'+s]=h?h.value.trim():'';obj['hora'+s+'NoDisponible']=!!(n&&n.checked);}); obj.ctcaeVersion=(r&&r.ctcaeVersion)||ctcaeVersionDe(obj.estudioId); obj.ctcaeCode=(($('lf_ctcaeCode')||{}).value||'').trim(); const hit=ctcaeCoincidencia(obj.ctcaeVersion,obj.ctcaeCode); if(hit){obj.ctcaeCode=hit[0];obj.ctcaeSoc=hit[1];obj.ctcaeTerm=ctcaeNombreES(hit,obj.evento);obj.ctcaeTermOficial=hit[2];} }
     const falta = def.campos.filter(c=>c.req && !obj[c.k]);
     if(falta.length){ toast(T('Completá')+': '+falta.map(c=>T(c.n)).join(', ')); return; }
     if(LOG_TIPO==='ea'){ const sae=obj.serio==='Sí'; obj.conocido=(sae && $('lf_conocido')) ? $('lf_conocido').value.trim() : ''; obj.reportado=(sae && $('lf_reportado')) ? $('lf_reportado').value.trim() : ''; }
