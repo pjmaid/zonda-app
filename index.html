@@ -5332,8 +5332,8 @@ function renderImpVisits(){
 
 $('btnApplyImport').addEventListener('click', ()=>{
   const mode = $('impMode').value;
-  const incl = impCriteriaLines($('impIncl').value);
-  const excl = impCriteriaLines($('impExcl').value);
+  const incl = $('impIncl').value.split('\n').map(s=>s.trim()).filter(Boolean);
+  const excl = $('impExcl').value.split('\n').map(s=>s.trim()).filter(Boolean);
   if(incl.length) $('stIncl').value = (mode==='append' && $('stIncl').value.trim()) ? $('stIncl').value.trim()+'\n'+incl.join('\n') : incl.join('\n');
   if(excl.length) $('stExcl').value = (mode==='append' && $('stExcl').value.trim()) ? $('stExcl').value.trim()+'\n'+excl.join('\n') : excl.join('\n');
   const vs = IMP_VISITS.filter(v=>!v._skip && !isNaN(v.dia))
