@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="es-AR">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -1830,8 +1830,18 @@ function toast(msg){ const t=$('toast'); t.textContent=msg; t.classList.add('sho
 /* ---- fechas (siempre en horario local) ---- */
 function todayISO(){ const d=new Date(); return isoOf(d); }
 function isoOf(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
-function parseISO(s){ if(!s) return null; const p=s.split('-'); return new Date(+p[0], +p[1]-1, +p[2]); }
-function fmtDate(iso){ if(!iso) return '—'; const p=iso.split('-'); return p[2]+'/'+p[1]+'/'+p[0]; }
+/* Fechas clínicas: se guardan internamente como AAAA-MM-DD, pero toda entrada
+   ambigua se interpreta como DD/MM/AAAA, según el uso argentino. */
+function fechaISO(v){
+  const s=String(v==null?'':v).trim(); if(!s) return '';
+  let m=s.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
+  if(m) return m[1]+'-'+m[2].padStart(2,'0')+'-'+m[3].padStart(2,'0');
+  m=s.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4})$/);
+  if(m) return m[3]+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0');
+  return s;
+}
+function parseISO(s){ const iso=fechaISO(s); if(!iso) return null; const p=iso.split('-'); return new Date(+p[0], +p[1]-1, +p[2]); }
+function fmtDate(valor){ const iso=fechaISO(valor); if(!iso) return '—'; const p=iso.split('-'); return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:String(valor); }
 function addDaysISO(iso, n){ const d=parseISO(iso); d.setDate(d.getDate()+n); return isoOf(d); }
 function diffDays(fromISO, toISO){ return Math.round((parseISO(toISO) - parseISO(fromISO)) / 86400000); }
 
@@ -3598,16 +3608,17 @@ function evoChecks(log){
    cargada, se usa la de conocimiento por el sitio y, como último recurso, la
    fecha en que se cargó el registro. */
 function eaRefFecha(r){
-  return r.inicio || r.conocido || (r.creado ? String(r.creado).slice(0,10) : '') || '';
+  return fechaISO(r.inicio) || fechaISO(r.conocido) || (r.creado ? fechaISO(String(r.creado).slice(0,10)) : '') || '';
 }
 /* fechas de las demás visitas del paciente, para saber si esta es la primera
    que puede documentar el evento o su cierre */
 function fechasVisitas(pacienteId, excluirId){
   return visitasDe(pacienteId).filter(v=>v.fecha && v.id!==excluirId)
-    .map(v=>v.fecha).sort();
+    .map(v=>fechaISO(v.fecha)).filter(Boolean).sort();
 }
 /* devuelve null si el EA no corresponde a esta visita */
 function eaEstadoEnVisita(r, fecha, otras){
+  fecha=fechaISO(fecha); otras=(otras||[]).map(fechaISO).filter(Boolean);
   const ref = eaRefFecha(r);
   if(ref && fecha < ref) return null;                       /* la visita es previa a la carga */
   const primera = !otras.some(f=>f>=ref && f<fecha);        /* ¿es la primera visita que lo documenta? */
@@ -3632,12 +3643,13 @@ function eaDeVisita(pacienteId, fecha, visitId){
 }
 /* EA del paciente que todavía no corresponden a esta visita (se cargaron después) */
 function eaPosteriores(pacienteId, fecha){
+  fecha=fechaISO(fecha);
   return logRows('ea').filter(r=>r.pacienteId===pacienteId && eaRefFecha(r) > fecha);
 }
 /* EA ya cerrados y documentados en una visita anterior */
 function eaCerradosAntes(pacienteId, fecha, visitId){
-  const otras = fechasVisitas(pacienteId, visitId);
-  return logRows('ea').filter(r=>r.pacienteId===pacienteId && r.fin && r.fin<=fecha)
+  fecha=fechaISO(fecha); const otras = fechasVisitas(pacienteId, visitId);
+  return logRows('ea').filter(r=>r.pacienteId===pacienteId && fechaISO(r.fin) && fechaISO(r.fin)<=fecha)
     .filter(r=>eaEstadoEnVisita(r, fecha, otras)===null && eaRefFecha(r)<=fecha);
 }
 /* Transcripción completa del evento adverso para la evolución: siempre con los
@@ -3662,8 +3674,9 @@ function eaLinea(r, fecha){
   return (r.evento||'—')+'. '+campos.map(([k,v])=>k+': '+v).join('. ')+'.';
 }
 function conmedVigentes(pacienteId, fecha){
+  fecha=fechaISO(fecha);
   return logRows('conmed').filter(r=>r.pacienteId===pacienteId)
-    .filter(r=>(!r.inicio || r.inicio<=fecha) && (!r.fin || r.fin>=fecha))
+    .filter(r=>{ const inicio=fechaISO(r.inicio), fin=fechaISO(r.fin); return (!inicio || inicio<=fecha) && (!fin || fin>=fecha); })
     .sort((a,b)=>String(a.farmaco||'').localeCompare(String(b.farmaco||'')));
 }
 function conmedLinea(r){
@@ -3678,18 +3691,20 @@ function conmedLinea(r){
 }
 /* cambios desde la visita anterior: lo que empezó o terminó en el intervalo */
 function conmedCambios(pacienteId, fecha, desde){
-  const out = [];
+  fecha=fechaISO(fecha); desde=fechaISO(desde); const out = [];
   for(const r of logRows('conmed').filter(x=>x.pacienteId===pacienteId)){
-    if(r.inicio && r.inicio<=fecha && (!desde || r.inicio>desde)) out.push(T('inicia')+' '+conmedLinea(r));
-    if(r.fin && r.fin<=fecha && (!desde || r.fin>desde)) out.push(T('suspende')+' '+(r.farmaco||'—')+' ('+fmtDate(r.fin)+')');
+    const inicio=fechaISO(r.inicio), fin=fechaISO(r.fin);
+    if(inicio && inicio<=fecha && (!desde || inicio>desde)) out.push(T('inicia')+' '+conmedLinea(r));
+    if(fin && fin<=fecha && (!desde || fin>desde)) out.push(T('suspende')+' '+(r.farmaco||'—')+' ('+fmtDate(r.fin)+')');
   }
   return out;
 }
 /* fecha de la visita anterior registrada, para acotar «lo nuevo» */
 function visitaAnterior(pacienteId, fecha, idActual){
-  const prev = visitasDe(pacienteId).filter(v=>v.fecha && v.fecha<fecha && v.id!==idActual)
-    .sort((a,b)=>String(b.fecha).localeCompare(String(a.fecha)))[0];
-  return prev ? prev.fecha : '';
+  fecha=fechaISO(fecha);
+  const prev = visitasDe(pacienteId).filter(v=>fechaISO(v.fecha) && fechaISO(v.fecha)<fecha && v.id!==idActual)
+    .sort((a,b)=>fechaISO(b.fecha).localeCompare(fechaISO(a.fecha)))[0];
+  return prev ? fechaISO(prev.fecha) : '';
 }
 function esFemenino(p){ return (p&&p.sexo)==='f'; }
 function esMasculino(p){ return (p&&p.sexo)==='m'; }
@@ -8791,7 +8806,7 @@ function logForm(id){
   h += '</div><div class="row">';
   for(const c of def.campos){
     if(c.t==='calc') continue;
-    const v = r[c.k]===undefined?'':r[c.k];
+    const v = r[c.k]===undefined?'':(c.t==='date'?fechaISO(r[c.k]):r[c.k]);
     const ancho = (c.t==='area') ? 'style="flex:1 1 100%"' : 'class="grow"';
     h += '<div '+ancho+'><label>'+esc(T(c.n))+(c.req?' *':'')+'</label>';
     if(c.t==='area') h += '<textarea id="lf_'+c.k+'" rows="2">'+esc(v)+'</textarea>';
@@ -8837,7 +8852,7 @@ function logForm(id){
     for(const c of def.campos){
       if(c.t==='calc') continue;
       const el = $('lf_'+c.k);
-      obj[c.k] = el ? el.value.trim() : '';
+      obj[c.k] = el ? (c.t==='date' ? fechaISO(el.value) : el.value.trim()) : '';
     }
     const falta = def.campos.filter(c=>c.req && !obj[c.k]);
     if(falta.length){ toast(T('Completá')+': '+falta.map(c=>T(c.n)).join(', ')); return; }
