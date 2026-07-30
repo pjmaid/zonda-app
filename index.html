@@ -3958,6 +3958,30 @@ function buildEvolution(log){
   return L.join('\n');
 }
 
+/* En evoluciones editadas se conservan los textos manuales, pero los eventos adversos
+   y la medicación vigente se refrescan siempre desde sus registros clínicos. */
+function refrescarSeccionesClinicas(texto, log){
+  const generado=buildEvolution(log);
+  const extraer=(inicio, fin)=>{
+    const a=generado.indexOf(inicio); if(a<0) return '';
+    const b=generado.indexOf(fin,a); return generado.slice(a,b<0?generado.length:b);
+  };
+  const reemplazar=(base, inicio, fin, nueva)=>{
+    if(!nueva) return base;
+    const a=base.indexOf(inicio);
+    if(a>=0){
+      const b=base.indexOf(fin,a);
+      return base.slice(0,a)+nueva+(b>=0?base.slice(b):'');
+    }
+    const ancla=base.indexOf('EVOLUCIÓN CLÍNICA:');
+    return ancla>=0 ? base.slice(0,ancla)+nueva+base.slice(ancla) : base+'\n'+nueva;
+  };
+  let out=texto||generado;
+  out=reemplazar(out,'EVENTOS ADVERSOS:','MEDICACIÓN CONCOMITANTE:',extraer('EVENTOS ADVERSOS:','MEDICACIÓN CONCOMITANTE:'));
+  out=reemplazar(out,'MEDICACIÓN CONCOMITANTE:','EVOLUCIÓN CLÍNICA:',extraer('MEDICACIÓN CONCOMITANTE:','EVOLUCIÓN CLÍNICA:'));
+  return out;
+}
+
 function openEvolution(logId){
   const log = getVisitLog(logId); if(!log) return;
   const p = getPatient(log.pacienteId), st = getStudy(log.estudioId);
@@ -3971,9 +3995,11 @@ function openEvolution(logId){
      eventos adversos y la medicación concomitante cargados después de guardar
      la visita, sin tener que apretar «Regenerar». */
   if(log.editadoManual){
-    $('evoText').value = log.evolucionTexto || buildEvolution(log);
+    const actualizado=refrescarSeccionesClinicas(log.evolucionTexto||'',log);
+    if(actualizado!==log.evolucionTexto){ log.evolucionTexto=actualizado; persist('visits',log); }
+    $('evoText').value = actualizado;
     $('evoStale').innerHTML = '<div class="banner gray">'+
-      T('Estás viendo el texto que editaste a mano. Si cargaste eventos adversos o medicación después, usá «Regenerar desde los datos».')+'</div>';
+      T('Se actualizaron automáticamente los eventos adversos y la medicación concomitante. El resto del texto editado se conserva.')+'</div>';
   } else {
     const nuevo = buildEvolution(log);
     if(nuevo !== log.evolucionTexto){
