@@ -6649,11 +6649,11 @@ $('btnRunEval').addEventListener('click', async ()=>{
           toast(T('Criterios evaluados con búsqueda documental.'));
           return;
         }
-        if(ragEstricto()) throw new Error(T('El índice no devolvió respuestas en el formato esperado.')+
+        if(ragEstricto() && !aiConfigured()) throw new Error(T('El índice no devolvió respuestas en el formato esperado.')+
           (rEv.crudo ? ' '+T('Respondió')+': «'+rEv.crudo.slice(0,220)+'…»' : ' '+T('No devolvió nada: puede que los documentos sigan procesándose.')));
-        stEl.textContent = T('El índice no devolvió respuestas; se intenta con el texto...');
+        stEl.textContent = T('El índice todavía no devolvió respuestas; se analiza el texto de los documentos...');
       }catch(eR){
-        if(ragEstricto() || !aiConfigured()) throw eR;
+        if(ragEstricto() && !aiConfigured()) throw eR;
         stEl.textContent = T('Búsqueda documental no disponible')+' ('+eR.message+'). '+T('Se lee el texto...');
       }
     } else if(ragEstricto()){
