@@ -8810,6 +8810,11 @@ function ctcaeNombreES(hit, texto){
 }
 const CTCAE_GRADOS_GUIA={es:['Grado 1: leve; observación o intervención no indicada.','Grado 2: moderado; puede limitar actividades instrumentales.','Grado 3: severo o médicamente significativo; puede requerir internación o limitar el autocuidado.','Grado 4: riesgo vital; requiere intervención urgente.','Grado 5: muerte relacionada con el evento.'],en:['Grade 1: mild.','Grade 2: moderate.','Grade 3: severe or medically significant.','Grade 4: life-threatening; urgent intervention.','Grade 5: death related to the event.']};
 function ctcaeAyudaGrado(grados){ const a=CTCAE_GRADOS_GUIA[(CFG&&CFG.lang)||'es']||CTCAE_GRADOS_GUIA.es; return grados.map((g,i)=>g&&g!=='-'?a[i]:'').filter(Boolean); }
+const CTCAE_GUIA_ES={
+ Diarrhea:['Grado 1: cambio en la consistencia o frecuencia de las deposiciones.','Grado 2: aumento de 4 a 6 deposiciones por día sobre el basal, o limitación de actividades instrumentales.','Grado 3: aumento de 7 o más deposiciones por día, internación, necesidad de hidratación intravenosa o limitación del autocuidado.','Grado 4: compromiso vital; intervención urgente.','Grado 5: muerte relacionada con el evento.'],
+ Headache:['Grado 1: dolor leve.','Grado 2: dolor moderado que limita actividades instrumentales.','Grado 3: dolor severo que limita el autocuidado.']
+};
+function ctcaeGuiaVisible(hit){ return (CFG&&CFG.lang)==='es' && CTCAE_GUIA_ES[hit[2]] ? CTCAE_GUIA_ES[hit[2]] : ctcaeAyudaGrado(hit[3]); }
 function prepararCtcaeFormulario(estudioId, actual){
   if(LOG_TIPO!=='ea') return;
   const version=(actual&&actual.ctcaeVersion)||ctcaeVersionDe(estudioId), lista=ctcaeLista(version);
@@ -8831,9 +8836,10 @@ function prepararCtcaeFormulario(estudioId, actual){
   const actualizar=()=>{
     const hit=ctcaeCoincidencia(version,term&&term.value); if(code)code.value=hit?hit[0]:'';
     if(!info||!hit)return;
-    const ayuda=ctcaeAyudaGrado(hit[3]);
-    info.innerHTML='<b>Término seleccionado:</b> '+esc(ctcaeNombreES(hit,event&&event.value))+' · '+esc(hit[1])+' · Código '+esc(hit[0])+
-      '<div style="margin-top:5px"><b>Ayuda para elegir el grado:</b><br>'+ayuda.map(esc).join('<br>')+'</div>';
+    const ayuda=ctcaeGuiaVisible(hit), gradeHelp=$('ctcaeGradeHelp');
+    const detalle='<b>Ayuda para elegir el grado:</b><br>'+ayuda.map(esc).join('<br>');
+    info.innerHTML='<b>Término seleccionado:</b> '+esc(ctcaeNombreES(hit,event&&event.value))+' · '+esc(hit[1])+' · Código '+esc(hit[0])+'<div style="margin-top:5px">'+detalle+'</div>';
+    if(gradeHelp) gradeHelp.innerHTML=detalle;
   };
   if(event)event.addEventListener('input',mostrar);if(term)term.addEventListener('change',actualizar);
   mostrar(); if(actual&&actual.ctcaeCode&&term){term.value=actual.ctcaeCode;actualizar();}
@@ -8865,6 +8871,7 @@ function logForm(id){
     else h += '<input type="'+(c.t==='date'?'date':c.t==='time'?'time':c.t==='num'?'number':'text')+
       '" id="lf_'+c.k+'" value="'+esc(v)+'"'+(c.t==='num'?' step="any"':'')+'>';
     h += '</div>';
+    if(LOG_TIPO==='ea' && c.k==='grado') h += '<div id="ctcaeGradeHelp" class="banner acc small" style="flex:1 1 100%;margin:4px 0 0">Seleccioná primero un término CTCAE para ver la ayuda de grado.</div>';
   }
   h += '</div><div class="toolbar" style="margin-top:10px;margin-bottom:0">'+
     '<button class="primary" id="lf_save">'+T('Guardar')+'</button>'+
