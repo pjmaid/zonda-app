@@ -800,6 +800,7 @@ details>summary{color:var(--acc-dark)}
       <div class="toolbar" style="margin-top:10px;margin-bottom:0">
         <button class="primary" id="btnCopyEvo">📋 Copiar al portapapeles</button>
         <button id="btnRegenEvo">↻ Regenerar desde los datos</button>
+        <button id="btnCancelEvo" style="color:var(--bad)">Cancelar visita</button>
         <button id="btnSaveEvo">Guardar texto editado</button>
       </div>
       <input type="hidden" id="evoVisitId">
@@ -3982,6 +3983,17 @@ function refrescarSeccionesClinicas(texto, log){
   return out;
 }
 
+async function sincronizarEvolucionesClinicas(pacienteId){
+  if(!pacienteId) return;
+  for(const log of visitasDe(pacienteId)){
+    const texto=log.editadoManual ? refrescarSeccionesClinicas(log.evolucionTexto||'',log) : buildEvolution(log);
+    if(texto!==log.evolucionTexto){
+      log.evolucionTexto=texto;
+      try{ await Store.upsert('visits',log); }catch(e){}
+    }
+  }
+}
+
 function openEvolution(logId){
   const log = getVisitLog(logId); if(!log) return;
   const p = getPatient(log.pacienteId), st = getStudy(log.estudioId);
@@ -4023,6 +4035,12 @@ $('btnRegenEvo').addEventListener('click', ()=>{
   log.editadoManual = false;
   $('evoText').value = log.evolucionTexto;
   persist('visits', log, 'Evolución regenerada.');
+});
+$('btnCancelEvo').addEventListener('click', async ()=>{
+  const log = getVisitLog($('evoVisitId').value); if(!log) return;
+  const ok = await anularRegistro('visits', log.id,
+    T('Vas a cancelar la visita')+' «'+(log.nombreVisita||'')+'» '+T('del')+' '+fmtDate(log.fecha)+' '+T('y su evolución.'));
+  if(ok) showView('view-visits');
 });
 $('btnSaveEvo').addEventListener('click', ()=>{
   const log = getVisitLog($('evoVisitId').value); if(!log) return;
@@ -8723,7 +8741,7 @@ function renderLog(){
       (def.paciente?'<td style="padding:5px 8px;border-bottom:1px solid var(--line)">'+esc(p?p.codigo:'—')+'</td>':'')+
       cols.map(c=>'<td style="padding:5px 8px;border-bottom:1px solid var(--line)">'+esc(logCellValue(def,c,r))+'</td>').join('')+
       '<td style="padding:5px 8px;border-bottom:1px solid var(--line);white-space:nowrap">'+
-        '<button class="ghost" data-ed="'+r.id+'" style="padding:2px 7px">'+T('Editar')+'</button> '+
+        '<button class="'+(LOG_TIPO==='ea'?'primary':'ghost')+'" data-ed="'+r.id+'" style="padding:'+(LOG_TIPO==='ea'?'5px 10px':'2px 7px')+'">'+T(LOG_TIPO==='ea'?'Editar evento':'Editar')+'</button> '+
         '<button class="ghost" data-del="'+r.id+'" style="padding:2px 7px;color:var(--bad)">✕</button></td></tr>';
     const areas = def.campos.filter(c=>c.t==='area' && (r[c.k]||'').trim());
     if(areas.length)
@@ -8744,6 +8762,7 @@ function renderLog(){
       r.anuladoPor = (ME&&(ME.email||ME.nombre))||CURRENT_USER||'';
       r.anuladoEn = new Date().toISOString();
       logsSave();
+      if((LOG_TIPO==='ea' || LOG_TIPO==='conmed') && r.pacienteId) await sincronizarEvolucionesClinicas(r.pacienteId);
       auditar('log:'+LOG_TIPO, 'anulación', r.id, logRowTitle(LOG_TIPO, r), motivo.trim());
       renderLog(); renderTools(); toast(T('Registro anulado.'));
       return;
@@ -8811,7 +8830,7 @@ function logForm(id){
     toast(T('Plantilla cargada. Editá lo que necesites para este paciente.'));
   });
   if(LOG_TIPO==='ciproceso'){ const ta = $('lf_texto'); if(ta) ta.rows = 8; }
-  $('lf_save').addEventListener('click', ()=>{
+  $('lf_save').addEventListener('click', async ()=>{
     const obj = { id: LOG_EDIT || uid(), creado: (r.creado || new Date().toISOString()),
                   estudioId: ($('lf_estudio')||{}).value || '',
                   pacienteId: def.paciente ? (($('lf_paciente')||{}).value || '') : '' };
@@ -8829,6 +8848,7 @@ function logForm(id){
     }
     LOGS[LOG_TIPO] = logRowsTodos(LOG_TIPO).filter(x=>x.id!==obj.id).concat([obj]);
     logsSave();
+    if((LOG_TIPO==='ea' || LOG_TIPO==='conmed') && obj.pacienteId) await sincronizarEvolucionesClinicas(obj.pacienteId);
     auditar('log:'+LOG_TIPO, LOG_EDIT?'modificación':'alta', obj.id, logRowTitle(LOG_TIPO, obj), motivoCambio.trim());
     box.classList.add('hidden'); LOG_EDIT=null;
     renderLog(); renderTools();
