@@ -8798,22 +8798,45 @@ function renderLog(){
 function ctcaeVersionDe(estudioId){ const st=getStudy(estudioId); return (st&&st.ctcaeVersion)||'6.0'; }
 function ctcaeLista(version){ return (window.CTCAE_DATA&&window.CTCAE_DATA[version])||[]; }
 function ctcaeCoincidencia(version, termino){ const q=String(termino||'').trim().toLocaleLowerCase(); return ctcaeLista(version).find(x=>String(x[2]||'').toLocaleLowerCase()===q || String(x[0])===q) || null; }
-const CTCAE_ALIAS_ES={cefalea:'Headache','dolor de cabeza':'Headache',náusea:'Nausea',nausea:'Nausea',náuseas:'Nausea',nauseas:'Nausea',vómito:'Vomiting',vomito:'Vomiting',vómitos:'Vomiting',vomitos:'Vomiting',diarrea:'Diarrhoea',fatiga:'Fatigue',fiebre:'Fever',prurito:'Pruritus',insomnio:'Insomnia',mareo:'Dizziness',tos:'Cough',disnea:'Dyspnoea',anemia:'Anemia',neutropenia:'Neutrophil count decreased',leucopenia:'White blood cell decreased',trombocitopenia:'Platelet count decreased'};
+const CTCAE_ALIAS_ES={cefalea:'Headache','dolor de cabeza':'Headache',náusea:'Nausea',nausea:'Nausea',náuseas:'Nausea',nauseas:'Nausea',vómito:'Vomiting',vomito:'Vomiting',vómitos:'Vomiting',vomitos:'Vomiting',diarrea:'Diarrhea',fatiga:'Fatigue',fiebre:'Fever',prurito:'Pruritus',insomnio:'Insomnia',mareo:'Dizziness',tos:'Cough',disnea:'Dyspnoea',anemia:'Anemia',neutropenia:'Neutrophil count decreased',leucopenia:'White blood cell decreased',trombocitopenia:'Platelet count decreased'};
 function ctcaeSugerir(version, evento){
   const q=String(evento||'').trim().toLocaleLowerCase(); if(!q)return null;
   const termino=CTCAE_ALIAS_ES[q]||String(evento).trim();
   return ctcaeCoincidencia(version,termino)||ctcaeLista(version).find(x=>String(x[2]||'').toLocaleLowerCase().includes(q))||null;
 }
+function ctcaeNombreES(hit, texto){
+  const nombres={Headache:'Cefalea',Diarrhea:'Diarrea',Nausea:'Náuseas',Vomiting:'Vómitos',Fatigue:'Fatiga',Fever:'Fiebre',Pruritus:'Prurito',Insomnia:'Insomnio',Dizziness:'Mareo',Cough:'Tos',Dyspnoea:'Disnea',Anemia:'Anemia'};
+  return nombres[hit[2]]||String(texto||hit[2]||'').trim();
+}
+const CTCAE_GRADOS_GUIA={es:['Grado 1: leve; observación o intervención no indicada.','Grado 2: moderado; puede limitar actividades instrumentales.','Grado 3: severo o médicamente significativo; puede requerir internación o limitar el autocuidado.','Grado 4: riesgo vital; requiere intervención urgente.','Grado 5: muerte relacionada con el evento.'],en:['Grade 1: mild.','Grade 2: moderate.','Grade 3: severe or medically significant.','Grade 4: life-threatening; urgent intervention.','Grade 5: death related to the event.']};
+function ctcaeAyudaGrado(grados){ const a=CTCAE_GRADOS_GUIA[(CFG&&CFG.lang)||'es']||CTCAE_GRADOS_GUIA.es; return grados.map((g,i)=>g&&g!=='-'?a[i]:'').filter(Boolean); }
 function prepararCtcaeFormulario(estudioId, actual){
-  if(LOG_TIPO!=='ea') return; const version=(actual&&actual.ctcaeVersion)||ctcaeVersionDe(estudioId), lista=ctcaeLista(version);
-  const dl=$('ctcaeTerms'); if(dl) dl.innerHTML=lista.map(x=>'<option value="'+esc(x[2])+'" label="'+esc(x[0]+' · '+x[1])+'"></option>').join('');
+  if(LOG_TIPO!=='ea') return;
+  const version=(actual&&actual.ctcaeVersion)||ctcaeVersionDe(estudioId), lista=ctcaeLista(version);
   const term=$('lf_ctcaeTerm'), event=$('lf_evento'), code=$('lf_ctcaeCode'), info=$('ctcaeInfo'), ver=$('ctcaeVersionInfo');
-  if(ver) ver.textContent='CTCAE v'+version+' · '+lista.length+' términos oficiales. Al escribir el evento se propone un término; confirmalo siempre.';
-  const actualizar=()=>{ const hit=ctcaeCoincidencia(version,term&&term.value); if(code) code.value=hit?hit[0]:''; if(!info)return;
-    if(!hit){info.textContent=(term&&term.value)?'Elegí un término de la guía para asociarlo al evento.':'Escribí el evento y se sugerirá un término CTCAE.';return;}
-    const grados=hit[3].map((g,i)=>g&&g!=='-'?('Grado '+(i+1)+': '+g):'').filter(Boolean); info.textContent='Sugerencia CTCAE: '+hit[2]+' · Código '+hit[0]+' · '+hit[1]+'. '+grados.join(' | '); };
-  const sugerir=()=>{ if(!term||term.value.trim())return; const hit=ctcaeSugerir(version,event&&event.value); if(hit){term.value=hit[2];actualizar();} };
-  if(term) term.addEventListener('input',actualizar); if(event) event.addEventListener('input',sugerir); actualizar();
+  if(ver) ver.textContent='CTCAE v'+version+'. Escribí el evento y seleccioná la opción sugerida.';
+  const candidatos=()=>{
+    const texto=(event&&event.value||'').trim(), q=texto.toLocaleLowerCase(), exact=ctcaeSugerir(version,texto);
+    const out=[]; if(exact) out.push(exact);
+    for(const x of lista){ if(out.includes(x))continue; if(q&&String(x[2]).toLocaleLowerCase().includes(q))out.push(x); if(out.length>=8)break; }
+    return out;
+  };
+  const mostrar=()=>{
+    if(!term)return; const cs=candidatos(), anterior=term.value;
+    term.innerHTML='<option value="">Seleccioná el término CTCAE</option>'+cs.map(x=>'<option value="'+esc(x[0])+'">'+esc(ctcaeNombreES(x,event&&event.value))+'</option>').join('');
+    if(anterior&&cs.some(x=>x[0]===anterior))term.value=anterior;
+    if(code)code.value=term.value||'';
+    if(info) info.textContent=cs.length?'Seleccioná el término CTCAE que corresponde al evento.':'No hay sugerencia automática: registrá el evento y revisá el término CTCAE.';
+  };
+  const actualizar=()=>{
+    const hit=ctcaeCoincidencia(version,term&&term.value); if(code)code.value=hit?hit[0]:'';
+    if(!info||!hit)return;
+    const ayuda=ctcaeAyudaGrado(hit[3]);
+    info.innerHTML='<b>Término seleccionado:</b> '+esc(ctcaeNombreES(hit,event&&event.value))+' · '+esc(hit[1])+' · Código '+esc(hit[0])+
+      '<div style="margin-top:5px"><b>Ayuda para elegir el grado:</b><br>'+ayuda.map(esc).join('<br>')+'</div>';
+  };
+  if(event)event.addEventListener('input',mostrar);if(term)term.addEventListener('change',actualizar);
+  mostrar(); if(actual&&actual.ctcaeCode&&term){term.value=actual.ctcaeCode;actualizar();}
 }
 function logForm(id){
   const def = LOG_DEFS[LOG_TIPO];
@@ -8831,15 +8854,16 @@ function logForm(id){
   }
   h += '</div><div class="row">';
   for(const c of def.campos){
-    if(c.t==='calc') continue;
+    if(c.t==='calc' || (LOG_TIPO==='ea' && (c.k==='reportado' || c.k==='conocido'))) continue;
     const v = r[c.k]===undefined?'':(c.t==='date'?fechaISO(r[c.k]):r[c.k]);
     const ancho = (c.t==='area') ? 'style="flex:1 1 100%"' : 'class="grow"';
     h += '<div '+ancho+'><label>'+esc(T(c.n))+(c.req?' *':'')+'</label>';
     if(c.t==='area') h += '<textarea id="lf_'+c.k+'" rows="2">'+esc(v)+'</textarea>';
     else if(c.t==='sel') h += '<select id="lf_'+c.k+'"><option value=""></option>'+
       c.op.map(o=>'<option'+(v===o?' selected':'')+'>'+esc(T(o))+'</option>').join('')+'</select>';
+    else if(c.k==='ctcaeTerm') h += '<select id="lf_ctcaeTerm"><option value="">Seleccioná el término CTCAE</option></select>';
     else h += '<input type="'+(c.t==='date'?'date':c.t==='time'?'time':c.t==='num'?'number':'text')+
-      '" id="lf_'+c.k+'" value="'+esc(v)+'"'+(c.k==='ctcaeTerm'?' list="ctcaeTerms" autocomplete="off"':'')+(c.t==='num'?' step="any"':'')+'>';
+      '" id="lf_'+c.k+'" value="'+esc(v)+'"'+(c.t==='num'?' step="any"':'')+'>';
     h += '</div>';
   }
   h += '</div><div class="toolbar" style="margin-top:10px;margin-bottom:0">'+
@@ -8854,9 +8878,11 @@ function logForm(id){
         T('El texto se toma de la plantilla del protocolo con los datos de este registro; podés editarlo para este paciente. Lo que quede escrito es lo que va a la evolución.')+'</div>'
       : '');
   const box = $('logForm');
-  if(LOG_TIPO==='ea') h += '<div style="flex:1 1 100%;margin-top:6px"><input type="hidden" id="lf_ctcaeCode"><datalist id="ctcaeTerms"></datalist><div id="ctcaeVersionInfo" class="muted small"></div><div id="ctcaeInfo" class="muted small" style="margin-top:4px"></div></div>';
+  if(LOG_TIPO==='ea') h += '<div style="flex:1 1 100%;margin-top:6px"><input type="hidden" id="lf_ctcaeCode"><div id="lf_reportadoWrap" class="hidden"><label>Fecha de conocimiento por el sitio</label><input type="date" id="lf_conocido" value="'+esc(r.conocido||'')+'"><label>Fecha de reporte al patrocinador</label><input type="date" id="lf_reportado" value="'+esc(r.reportado||'')+'"></div><div id="ctcaeVersionInfo" class="muted small"></div><div id="ctcaeInfo" class="muted small" style="margin-top:4px"></div></div>';
   box.innerHTML = h; box.classList.remove('hidden');
   prepararCtcaeFormulario(($('lf_estudio')||{}).value||sid,r);
+  const actualizarSAE=()=>{ const esSAE=($('lf_serio')||{}).value==='Sí'; $('lf_reportadoWrap').classList.toggle('hidden',!esSAE); if(!esSAE) $('lf_reportado').value=''; };
+  if($('lf_serio')) $('lf_serio').addEventListener('change',actualizarSAE); actualizarSAE();
   $('lf_cancel').addEventListener('click', ()=>{ box.classList.add('hidden'); LOG_EDIT=null; });
   /* consentimiento: traer la plantilla del protocolo con los datos ya cargados */
   const bTpl = $('lf_ciTpl');
@@ -8882,9 +8908,10 @@ function logForm(id){
       const el = $('lf_'+c.k);
       obj[c.k] = el ? (c.t==='date' ? fechaISO(el.value) : el.value.trim()) : '';
     }
-    if(LOG_TIPO==='ea'){ obj.ctcaeVersion=(r&&r.ctcaeVersion)||ctcaeVersionDe(obj.estudioId); obj.ctcaeCode=(($('lf_ctcaeCode')||{}).value||'').trim(); const hit=ctcaeCoincidencia(obj.ctcaeVersion,obj.ctcaeTerm); if(hit){obj.ctcaeCode=hit[0];obj.ctcaeSoc=hit[1];} }
+    if(LOG_TIPO==='ea'){ obj.ctcaeVersion=(r&&r.ctcaeVersion)||ctcaeVersionDe(obj.estudioId); obj.ctcaeCode=(($('lf_ctcaeCode')||{}).value||'').trim(); const hit=ctcaeCoincidencia(obj.ctcaeVersion,obj.ctcaeCode); if(hit){obj.ctcaeCode=hit[0];obj.ctcaeSoc=hit[1];obj.ctcaeTerm=ctcaeNombreES(hit,obj.evento);obj.ctcaeTermOficial=hit[2];} }
     const falta = def.campos.filter(c=>c.req && !obj[c.k]);
     if(falta.length){ toast(T('Completá')+': '+falta.map(c=>T(c.n)).join(', ')); return; }
+    if(LOG_TIPO==='ea'){ const sae=obj.serio==='Sí'; obj.conocido=(sae && $('lf_conocido')) ? $('lf_conocido').value.trim() : ''; obj.reportado=(sae && $('lf_reportado')) ? $('lf_reportado').value.trim() : ''; }
     let motivoCambio = '';
     if(LOG_EDIT && LOG_CLINICOS.includes(LOG_TIPO)){
       motivoCambio = prompt(T('Motivo del cambio (obligatorio para registros clínicos ya guardados):'),'') || '';
