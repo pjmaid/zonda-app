@@ -3739,11 +3739,10 @@ function buildEvolution(log){
   const st = getStudy(log.estudioId) || {};
   const L = [];
   const sep = '--------------------------------------------------';
-  L.push(T('EVOLUCIÓN – ENSAYO CLÍNICO'));
+  L.push((log.nombreVisita||T('Visita')).toUpperCase());
   L.push(sep);
-  L.push(T('Fecha: ')+fmtDate(log.fecha));
-  /* encabezado: «Paciente … concurre a visita … del protocolo …, patrocinado por …» */
-  L.push(T('Paciente')+' '+(p.codigo||'—')+', '+T('sexo')+' '+sexoTxt(p)+', '+T('concurre a visita')+' '+(log.nombreVisita||'—')+
+  /* Encabezado breve, igual al formato de las evoluciones clínicas. */
+  L.push('El paciente '+(p.codigo ? p.codigo+' ' : '')+'concurre a la visita '+(log.nombreVisita||'—')+
     (log.visitaId?'':' '+T('(no programada)'))+
     ' '+T('del protocolo')+' '+(st.codigo||'—')+(st.nombre?' – '+st.nombre:'')+
     (st.patrocinador?', '+T('patrocinado por')+' '+st.patrocinador:'')+'.');
