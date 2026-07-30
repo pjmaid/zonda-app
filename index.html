@@ -780,12 +780,10 @@ details>summary{color:var(--acc-dark)}
     <div class="muted" id="evoMeta" style="margin-bottom:8px"></div>
     <div id="evoWarnings"></div>
     <div id="evoStale"></div>
-    <div id="evoFirma"></div>
-    <div class="card">
+        <div class="card">
       <textarea id="evoText"></textarea>
       <div class="toolbar" style="margin-top:10px;margin-bottom:0">
         <button class="primary" id="btnCopyEvo">📋 Copiar al portapapeles</button>
-        <button id="btnSignEvo">✍ Firmar la evolución</button>
         <button id="btnRegenEvo">↻ Regenerar desde los datos</button>
         <button id="btnSaveEvo">Guardar texto editado</button>
       </div>
@@ -804,13 +802,6 @@ details>summary{color:var(--acc-dark)}
       <div class="row">
         <div style="flex:0 0 240px"><select id="cfgLang"></select></div>
       </div>
-    </div>
-
-    <div class="card">
-      <h3>Profesional</h3>
-      <label>Firma que aparece al pie de cada evolución</label>
-      <input type="text" id="cfgFirma" placeholder="Ej: Dr. Juan Pérez – Sub-investigador – MN 12345">
-      <div class="toolbar" style="margin-top:10px;margin-bottom:0"><button id="btnSaveFirma">Guardar firma</button></div>
     </div>
 
     <div class="card">
@@ -2756,7 +2747,8 @@ function collectStVisitas(){
       dia: parseInt(c.querySelector('.v-dia').value,10),
       venAntes: Math.abs(parseInt(c.querySelector('.v-antes').value,10)||0),
       venDesp: Math.abs(parseInt(c.querySelector('.v-desp').value,10)||0),
-      tareas: c.querySelector('.v-tareas').value.split('\n').map(t=>t.trim()).filter(Boolean)
+      tareas: c.querySelector('.v-tareas').value.split('\n').map(t=>t.trim()).filter(Boolean),
+      tablet: c.querySelector('.v-tablet').value.split('\n').map(t=>t.trim()).filter(Boolean)
     });
   }
   return out;
@@ -2780,8 +2772,11 @@ function renderStVisitas(){
           '<button class="ghost v-del" style="color:var(--bad)" title="Quitar visita">✕</button>'+
         '</div>'+
       '</div>'+
-      '<label>Tareas / procedimientos (uno por línea)</label>'+
-      '<textarea class="v-tareas" rows="4" placeholder="Signos vitales&#10;Laboratorio&#10;Registro de EAs y medicación concomitante">'+esc((v.tareas||[]).join('\n'))+'</textarea>';
+      '<label>Procedimientos fuera de tablet (uno por línea)</label>'+
+      '<textarea class="v-tareas" rows="4" placeholder="Signos vitales&#10;Laboratorio&#10;Registro de EAs y medicación concomitante">'+esc((v.tareas||[]).join('\n'))+'</textarea>'+
+      '<label>Cuestionarios en tablet (uno por línea)</label>'+
+      '<div class="muted small">Cargá aquí los cuestionarios que completa el paciente en tablet. Se mostrarán reunidos bajo el título “Tablet” en la evolución.</div>'+
+      '<textarea class="v-tablet" rows="3" placeholder="FACIT-F&#10;PESQ&#10;Otro cuestionario">'+esc((v.tablet||[]).join('\n'))+'</textarea>';
     d.querySelector('.v-del').addEventListener('click', ()=>{ EDIT_VISITAS = collectStVisitas(); EDIT_VISITAS.splice(idx,1); renderStVisitas(); });
     d.querySelector('.v-up').addEventListener('click', ()=>{ if(idx===0) return; EDIT_VISITAS = collectStVisitas(); const t=EDIT_VISITAS[idx-1]; EDIT_VISITAS[idx-1]=EDIT_VISITAS[idx]; EDIT_VISITAS[idx]=t; renderStVisitas(); });
     d.querySelector('.v-down').addEventListener('click', ()=>{ EDIT_VISITAS = collectStVisitas(); if(idx>=EDIT_VISITAS.length-1) return; const t=EDIT_VISITAS[idx+1]; EDIT_VISITAS[idx+1]=EDIT_VISITAS[idx]; EDIT_VISITAS[idx]=t; renderStVisitas(); });
@@ -3359,8 +3354,10 @@ function onViVisitaChange(keepTasks){
     const p = getPatient($('viPaciente').value);
     const st = p ? getStudy(p.estudioId) : null;
     const v = st ? (st.visitas||[]).find(x=>x.id===vid) : null;
-    VI_TASKS = v ? (v.tareas||[]).map(t=>({ nombre:t, hecha:true, comentario:'' }))
-                 : [{ nombre:'Evaluación clínica', hecha:true, comentario:'' }];
+    VI_TASKS = v ? [
+      ...(v.tareas||[]).map(t=>({ nombre:t, hecha:true, comentario:'', tablet:false })),
+      ...(v.tablet||[]).map(t=>({ nombre:t, hecha:true, comentario:'', tablet:true }))
+    ] : [{ nombre:'Evaluación clínica', hecha:true, comentario:'', tablet:false }];
     renderViTareas();
     suggestProxima();
   }
@@ -3401,7 +3398,7 @@ function renderViTareas(){
     const d = document.createElement('div'); d.className='taskline';
     d.innerHTML =
       '<input type="checkbox" '+(t.hecha?'checked':'')+'>'+
-      '<div class="tname">'+esc(t.nombre)+'</div>'+
+      '<div class="tname">'+esc(t.nombre)+(t.tablet?' <span class="chip acc">Tablet</span>':'')+'</div>'+
       '<input type="text" class="tcom" placeholder="Comentario / motivo si no se realizó" value="'+esc(t.comentario||'')+'">';
     d.querySelector('input[type=checkbox]').addEventListener('change', e=>{ VI_TASKS[idx].hecha = e.target.checked; });
     d.querySelector('.tcom').addEventListener('input', e=>{ VI_TASKS[idx].comentario = e.target.value; });
@@ -3455,7 +3452,6 @@ $('btnSaveVisit').addEventListener('click', async ()=>{
   let motivoCambio = '';
   if($('viId').value){
     const prev = getVisitLog($('viId').value);
-    if(prev && prev.firma){ toast(T('Esta visita está firmada: para corregirla hay que anularla y registrar una nueva.')); return; }
     motivoCambio = prompt(T('Motivo del cambio (obligatorio para modificar una visita ya guardada):'),'') || '';
     if(!motivoCambio.trim()){ toast(T('El cambio requiere un motivo.')); return; }
   }
@@ -3757,6 +3753,9 @@ function buildEvolution(log){
   L.push(sep);
   const hechas = (log.tareas||[]).filter(t=>t.hecha);
   const noHechas = (log.tareas||[]).filter(t=>!t.hecha);
+  const tabletHechas = hechas.filter(t=>t.tablet);
+  const labHechas = hechas.filter(t=>!t.tablet && clasifDe(String(t.nombre||''))==='lab');
+  const otrasHechas = hechas.filter(t=>!t.tablet && clasifDe(String(t.nombre||''))!=='lab');
   L.push(T('PROCEDIMIENTOS REALIZADOS EN LA VISITA:'));
   /* El consentimiento se documenta primero, como procedimiento independiente. */
   const cons = ciDeVisita(log);
@@ -3768,14 +3767,33 @@ function buildEvolution(log){
     if(r.quien) L.push(T('Profesional que lo realizó')+': '+r.quien+'.');
     if((r.obs||'').trim()) L.push(r.obs.trim());
   }
-  if(hechas.length){
-    for(const t of hechas){
+  if(otrasHechas.length){
+    for(const t of otrasHechas){
       const nombre = String(t.nombre||T('Procedimiento')).trim();
       const detalle = String(t.comentario||'').trim();
       L.push(nombre+':');
       L.push(detalle || (T('Se realizó el procedimiento programado')+': '+nombre+'.'));
     }
-  } else if(!cons.length) {
+  }
+  if(tabletHechas.length){
+    const cuestionarios = tabletHechas.map(t=>{
+      const nombre = String(t.nombre||T('Cuestionario')).trim();
+      const detalle = String(t.comentario||'').trim();
+      return detalle ? nombre+' ('+detalle+')' : nombre;
+    }).join(', ');
+    L.push(T('TABLET:'));
+    L.push(T('El paciente completa en tablet los siguientes cuestionarios')+': '+cuestionarios+'.');
+  }
+  if(labHechas.length){
+    const determinaciones = labHechas.map(t=>{
+      const nombre = String(t.nombre||T('Determinación')).trim();
+      const detalle = String(t.comentario||'').trim();
+      return detalle ? nombre+' ('+detalle+')' : nombre;
+    }).join(', ');
+    L.push(T('LABORATORIO:'));
+    L.push(T('El paciente concurre a laboratorio para la toma de muestras para realizar las siguientes determinaciones')+': '+determinaciones+'.');
+  }
+  if(!hechas.length && !cons.length) {
     L.push(T('No se registraron procedimientos realizados en esta visita.'));
   }
   if(noHechas.length){
@@ -3847,9 +3865,6 @@ function buildEvolution(log){
   }
   L.push(T('EVOLUCIÓN CLÍNICA: ')+((log.obs||'').trim()||T('(completar)')));
   if((log.proxima||'').trim()) L.push(T('PRÓXIMA VISITA: ')+log.proxima.trim());
-  L.push(sep);
-  const firma = (CFG.firma||'').trim();
-  L.push(firma ? firma : T('Firma y sello: ____________________'));
   return L.join('\n');
 }
 
@@ -3865,7 +3880,7 @@ function openEvolution(logId){
   /* si el texto no se editó a mano, se regenera al abrirlo: así toma los
      eventos adversos y la medicación concomitante cargados después de guardar
      la visita, sin tener que apretar «Regenerar». */
-  if(log.editadoManual || log.firma){
+  if(log.editadoManual){
     $('evoText').value = log.evolucionTexto || buildEvolution(log);
     $('evoStale').innerHTML = '<div class="banner gray">'+
       T('Estás viendo el texto que editaste a mano. Si cargaste eventos adversos o medicación después, usá «Regenerar desde los datos».')+'</div>';
@@ -3881,69 +3896,12 @@ function openEvolution(logId){
   $('evoText').readOnly = false;
   $('btnSaveEvo').classList.remove('hidden');
   $('btnRegenEvo').classList.remove('hidden');
-  $('btnSignEvo').classList.remove('hidden');
-  renderFirmaEvo(log);
   showView('view-evolution');
 }
-
-/* ---- firma electrónica de la evolución ----
-   Dos componentes (usuario + clave), significado explícito, sello de tiempo y
-   hash SHA-256 del texto firmado como vínculo firma-registro. Una evolución
-   firmada no se edita ni se regenera: se anula la visita con motivo y se
-   registra una nueva. */
-const FIRMA_SIG = ['Autor','Revisado','Aprobado'];
-async function renderFirmaEvo(log){
-  const box = $('evoFirma');
-  if(!log.firma){ box.innerHTML=''; return; }
-  const f = log.firma;
-  const hashOk = (await sha256hex(log.evolucionTexto||'')) === f.hash;
-  box.innerHTML = '<div class="banner '+(hashOk?'ok':'bad')+'">'+
-    (hashOk?'🔏 ':'⚠ ')+'<b>'+T('Firmado electrónicamente por')+' '+esc(f.por)+'</b>'+
-    (f.rol?' ('+esc(T(ROLES[f.rol]?ROLES[f.rol].n:f.rol))+')':'')+
-    ' — '+esc((f.ts||'').replace('T',' ').slice(0,19))+' — '+T('Significado')+': '+esc(T(f.significado||''))+
-    (hashOk?'':'<br><b>'+T('El contenido no coincide con el texto firmado: el registro fue alterado después de la firma.')+'</b>')+
-    '<br><span class="small">'+T('Para corregir una evolución firmada, anulá la visita (con motivo) y registrá una nueva.')+'</span></div>';
-  $('evoText').readOnly = true;
-  $('btnSaveEvo').classList.add('hidden');
-  $('btnRegenEvo').classList.add('hidden');
-  $('btnSignEvo').classList.add('hidden');
-}
-function firmaManifiesto(f){
-  return '\n--------------------------------------------------\n'+
-    T('FIRMADO ELECTRÓNICAMENTE')+'\n'+
-    T('Firmante')+': '+f.por+(f.rol?' ('+(ROLES[f.rol]?T(ROLES[f.rol].n):f.rol)+')':'')+'\n'+
-    T('Fecha y hora')+': '+(f.ts||'').replace('T',' ').slice(0,19)+' (UTC)\n'+
-    T('Significado')+': '+T(f.significado||'')+'\n'+
-    T('Huella del texto (SHA-256)')+': '+String(f.hash||'').slice(0,16)+'…';
-}
-$('btnSignEvo').addEventListener('click', async ()=>{
-  const log = getVisitLog($('evoVisitId').value); if(!log) return;
-  if(log.firma){ toast(T('Esta evolución ya está firmada.')); return; }
-  const texto = $('evoText').value;
-  if(!texto.trim()){ toast(T('No hay texto para firmar.')); return; }
-  if(texto !== (log.evolucionTexto||'')){
-    if(!confirm(T('El texto en pantalla tiene cambios sin guardar. Se guarda y se firma tal como se ve. ¿Continuar?'))) return;
-    log.evolucionTexto = texto; log.editadoManual = true;
-  }
-  const idx = prompt(T('Significado de la firma')+':\n1 = '+T('Autor')+'\n2 = '+T('Revisado')+'\n3 = '+T('Aprobado'),'1');
-  if(idx===null) return;
-  const significado = FIRMA_SIG[(parseInt(idx,10)||1)-1] || 'Autor';
-  if(!await verificarClave()){ alert(T('Clave incorrecta. No se firmó.')); return; }
-  const hash = await sha256hex(log.evolucionTexto||'');
-  log.firma = {
-    por: (ME&&(ME.email||ME.nombre))||CURRENT_USER||'',
-    rol: (ME&&ME.rol)||'',
-    ts: new Date().toISOString(),
-    significado, hash
-  };
-  await persist('visits', log, T('Evolución firmada.'), T('firma electrónica')+' – '+T(significado));
-  await renderFirmaEvo(log);
-});
 
 $('btnBackEvo').addEventListener('click', ()=>showView('view-visits'));
 $('btnRegenEvo').addEventListener('click', ()=>{
   const log = getVisitLog($('evoVisitId').value); if(!log) return;
-  if(log.firma){ toast(T('Esta evolución está firmada y no se puede regenerar.')); return; }
   if(log.editadoManual && !confirm('Vas a reemplazar el texto editado por el generado automáticamente. ¿Continuar?')) return;
   log.evolucionTexto = buildEvolution(log);
   log.editadoManual = false;
@@ -3952,16 +3910,11 @@ $('btnRegenEvo').addEventListener('click', ()=>{
 });
 $('btnSaveEvo').addEventListener('click', ()=>{
   const log = getVisitLog($('evoVisitId').value); if(!log) return;
-  if(log.firma){ toast(T('Esta evolución está firmada y no se puede editar.')); return; }
   log.evolucionTexto = $('evoText').value;
   log.editadoManual = true;
   persist('visits', log, 'Texto de la evolución guardado.');
 });
 $('btnCopyEvo').addEventListener('click', async ()=>{
-  const logF = getVisitLog($('evoVisitId').value);
-  if(logF && logF.firma){
-    try{ await navigator.clipboard.writeText(($('evoText').value||'')+firmaManifiesto(logF.firma)); toast(T('Copiada con la constancia de firma.')); return; }catch(e){}
-  }
   const txt = $('evoText').value;
   try{
     await navigator.clipboard.writeText(txt);
@@ -10983,7 +10936,6 @@ function initConfigUI(){
   ($('cfgModeOnline')).checked = CFG.mode==='supabase';
   $('cfgSupaUrl').value = CFG.supaUrl||'';
   $('cfgSupaKey').value = CFG.supaKey||'';
-  $('cfgFirma').value = CFG.firma||'';
   $('cfgAiProvider').value = aiProvider();
   pintarAvisoIA();
   $('cfgAiKey').value = CFG.aiKey||'';
@@ -11090,12 +11042,6 @@ $('btnResetCi').addEventListener('click', ()=>{
   $('ciTplMsg').textContent = T('Plantillas restauradas.');
 });
 
-$('btnSaveFirma').addEventListener('click', ()=>{
-  CFG.firma = $('cfgFirma').value.trim();
-  saveJSON(LS.CFG, CFG);
-  toast('Firma guardada. Se usará en las próximas evoluciones.');
-});
-
 /* ayuda contextual del proveedor elegido; si cambió, propone el modelo por defecto */
 function renderAiProviderUi(cambio){
   const v = $('cfgAiProvider').value, p = AI_PROVIDERS[v];
@@ -11131,7 +11077,6 @@ $('btnSaveCfg').addEventListener('click', ()=>{
   }
   const changed = CFG.mode !== newMode;
   CFG.mode = newMode;
-  CFG.firma = $('cfgFirma').value.trim();
   saveJSON(LS.CFG, CFG);
   $('cfgMsg').textContent='Configuración guardada.'; $('cfgMsg').style.color='var(--ok)';
   if(changed){
