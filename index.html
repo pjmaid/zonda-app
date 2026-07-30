@@ -997,7 +997,7 @@ details>summary{color:var(--acc-dark)}
     <div id="impPasteBox" class="hidden" style="margin-top:8px"><label>Texto (pegá las secciones de criterios y el calendario de visitas)</label><textarea id="impPaste" rows="8"></textarea></div>
     <div id="impStatus" class="small" style="margin-top:8px"></div>
     <div id="impResults" class="hidden" style="margin-top:12px">
-      <h3>Criterios de inclusión detectados <span class="muted small">(uno por línea, editá libremente)</span></h3>
+      <h3>Criterios de inclusión detectados</h3>
       <textarea id="impIncl" rows="6"></textarea>
       <h3 style="margin-top:12px">Criterios de exclusión detectados</h3>
       <textarea id="impExcl" rows="6"></textarea>
@@ -5230,8 +5230,8 @@ $('btnAnalyze').addEventListener('click', async ()=>{
       crit = parseCriteria(text);
       IMP_VISITS = parseVisits(text);
     }
-    $('impIncl').value = crit.incl.join('\n');
-    $('impExcl').value = crit.excl.join('\n');
+    $('impIncl').value = formatImpCriteria(crit.incl);
+    $('impExcl').value = formatImpCriteria(crit.excl);
     renderImpCriteriaPreview();
     renderImpVisits();
     $('impResults').classList.remove('hidden');
@@ -5269,11 +5269,20 @@ $('btnAnalyze').addEventListener('click', async ()=>{
 
 /* Vista de lectura: conserva un criterio por ítem, como NotebookLM, antes de
    que el usuario lo aplique. Los textarea siguen siendo editables. */
+function formatImpCriteria(items){
+  return (items||[]).map((x,i)=>(i+1)+'. '+String(x||'').trim()).filter(x=>x.length>3).join('\n');
+}
+function impCriteriaLines(valor){
+  return String(valor||'').split('\n').map(x=>x.trim())
+    .filter(Boolean).map(x=>x.replace(/^\d{1,2}[.)]\s*/,'').trim()).filter(Boolean);
+}
+/* Los cuadros muestran la misma numeración que la vista previa estructurada.
+   Al aplicar al estudio se quita solo la numeración visual, no el contenido. */
 function renderImpCriteriaPreview(){
   const box = $('impCritPreviewBody');
   if(!box) return;
   const grupo = (titulo, valor) => {
-    const items = String(valor||'').split('\n').map(x=>x.trim()).filter(Boolean);
+    const items = impCriteriaLines(valor);
     if(!items.length) return '';
     const formato = x => esc(x).replace(/\u2028/g,'<br>').replace(/\s*([•])\s*/g, '<br><span style="padding-left:12px">$1 </span>');
     return '<h4 style="margin:8px 0 4px">'+titulo+'</h4><ol style="margin:0;padding-left:22px">'+
@@ -5325,8 +5334,8 @@ function renderImpVisits(){
 
 $('btnApplyImport').addEventListener('click', ()=>{
   const mode = $('impMode').value;
-  const incl = $('impIncl').value.split('\n').map(s=>s.trim()).filter(Boolean);
-  const excl = $('impExcl').value.split('\n').map(s=>s.trim()).filter(Boolean);
+  const incl = impCriteriaLines($('impIncl').value);
+  const excl = impCriteriaLines($('impExcl').value);
   if(incl.length) $('stIncl').value = (mode==='append' && $('stIncl').value.trim()) ? $('stIncl').value.trim()+'\n'+incl.join('\n') : incl.join('\n');
   if(excl.length) $('stExcl').value = (mode==='append' && $('stExcl').value.trim()) ? $('stExcl').value.trim()+'\n'+excl.join('\n') : excl.join('\n');
   const vs = IMP_VISITS.filter(v=>!v._skip && !isNaN(v.dia))
