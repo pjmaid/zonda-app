@@ -7341,36 +7341,43 @@ function renderNarr(){
 function narrBody(p, st){
   const pend = NARR.items.filter(x=>x.estado==='pendiente').length;
   const noC  = NARR.items.filter(x=>x.estado==='no_cumple').length;
-  let h = '<h1>Fundamentación de criterios de elegibilidad</h1>'+
-    '<div class="meta"><b>Paciente:</b> '+esc(p.codigo||'')+
+  let h = '<h1>'+T('Fundamentación de criterios de elegibilidad')+'</h1>'+
+    '<div class="meta"><b>'+T('Paciente')+':</b> '+esc(p.codigo||'')+
       (p.iniciales?' ('+esc(p.iniciales)+')':'')+
-      ' · <b>Protocolo:</b> '+esc(st.codigo||'')+(st.nombre?' — '+esc(st.nombre):'')+
-      (st.patrocinador?' · <b>Patrocinador:</b> '+esc(st.patrocinador):'')+
-      '<br><b>Fecha:</b> '+fmtDate(todayISO())+
-      ' · <b>Evaluación:</b> '+esc(eligibility(p))+'</div>';
+      ' · <b>'+T('Protocolo')+':</b> '+esc(st.codigo||'')+(st.nombre?' — '+esc(st.nombre):'')+
+      (st.patrocinador?' · <b>'+T('Patrocinador')+':</b> '+esc(st.patrocinador):'')+
+      '<br><b>'+T('Fecha')+':</b> '+fmtDate(todayISO())+
+      ' · <b>'+T('Evaluación')+':</b> '+esc(eligibility(p))+'</div>';
   if(noC || pend){
-    h += '<div class="box"><b>Atención:</b> '+
-      (noC ? noC+' criterio(s) no se cumplen. ' : '')+
-      (pend ? pend+' criterio(s) sin documentación suficiente.' : '')+'</div>';
+    h += '<div class="box"><b>'+T('Atención')+':</b> '+
+      (noC ? noC+' '+T('criterio(s) no se cumplen')+'. ' : '')+
+      (pend ? pend+' '+T('criterio(s) sin documentación suficiente')+'.' : '')+'</div>';
   }
-  for(const [tipo, titulo] of [['inclusion', 'CRITERIOS DE INCLUSIÓN'], ['exclusion', 'CRITERIOS DE EXCLUSIÓN (EVALUADOS Y DESCARTADOS)']]){
+  /* numeración corrida a lo largo de todo el documento: inclusión primero y
+     exclusión continuando la cuenta, con la referencia al criterio del
+     protocolo al margen para poder rastrearlo */
+  let nro = 0;
+  for(const [tipo, titulo] of [['inclusion', T('Criterios de inclusión')], ['exclusion', T('Criterios de exclusión')]]){
     const its = NARR.items.filter(x=>x.tipo===tipo);
     if(!its.length) continue;
-    h += '<h2 style="margin-top:20px">'+titulo+'</h2>';
+    h += '<h2>'+titulo+'</h2><ol start="'+(nro+1)+'" style="margin:6px 0 6px 22px;padding:0">';
     for(const it of its){
-      const detalle = (it.texto||'').trim() || narrOracion(it);
-      h += '<section style="margin:0 0 14px;page-break-inside:avoid">'+
-        '<h3 style="margin:0 0 4px;font-size:14px;color:#182430">'+esc(it.criterio)+' <span style="font-weight:500;color:#5b6b7b">(Criterio '+it.n+')</span></h3>'+
-        '<div style="white-space:pre-wrap;line-height:1.55">'+esc(detalle)+'</div>'+
-      '</section>';
+      nro++;
+      const ref = (tipo==='inclusion'?'I':'E')+it.n;
+      h += '<li style="margin-bottom:9px;page-break-inside:avoid">'+
+        '<div>'+esc(narrOracion(it))+
+          ' <span style="font-size:10.5px;color:#8a97a4">['+ref+']</span></div>'+
+        '<div style="font-size:11px;color:#6a7887;margin-top:1px"><i>'+T('Criterio')+':</i> '+esc(it.criterio)+'</div>'+
+      '</li>';
     }
+    h += '</ol>';
   }
-  h += '<div class="sig">Revisado y confirmado por: ______________________________'+
-       '<br>Aclaración y firma del investigador · Fecha: ____/____/______</div>'+
-       '<div class="foot">Documento generado con Zonda a partir de la documentación cargada del participante. Las fundamentaciones deben ser revisadas y confirmadas por el investigador antes de su uso clínico.</div>';
+  h += '<div class="sig">'+T('Revisado y confirmado por')+': ______________________________'+
+       '<br>'+T('Aclaración y firma del investigador')+' · '+T('Fecha')+': ____/____/______</div>'+
+       '<div class="foot">'+T('Documento generado con Zonda a partir de la documentación cargada del participante. '+
+       'Las fundamentaciones son un borrador asistido: la evaluación de elegibilidad es responsabilidad del investigador.')+'</div>';
   return h;
 }
-
 function narrTexto(p, st){
   const L = [T('Fundamentación de criterios de elegibilidad'), ''];
   L.push(T('Paciente')+': '+(p.codigo||'')+(p.iniciales?' ('+p.iniciales+')':''));
