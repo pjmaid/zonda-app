@@ -8815,6 +8815,16 @@ const CTCAE_GUIA_ES={
  Headache:['Grado 1: dolor leve.','Grado 2: dolor moderado que limita actividades instrumentales.','Grado 3: dolor severo que limita el autocuidado.']
 };
 function ctcaeGuiaVisible(hit){ return (CFG&&CFG.lang)==='es' && CTCAE_GUIA_ES[hit[2]] ? CTCAE_GUIA_ES[hit[2]] : ctcaeAyudaGrado(hit[3]); }
+async function sugerirCtcaeConIA(version, evento){
+  if(!aiConfigured()) throw new Error('Configurá una clave de IA en Configuración para usar esta ayuda.');
+  const catalogo=ctcaeLista(version).map(x=>({codigo:x[0],categoria:x[1],termino:x[2]}));
+  const r=await aiChat({
+    system:'Sos un asistente de codificación CTCAE. Usá únicamente el catálogo CTCAE suministrado. Para el evento escrito por el usuario, elegí el término más apropiado. Respondé solo JSON válido con los campos codigo, termino_es y explicacion. La explicación debe estar en '+AI_LANG_NAME()+'. No elijas un código si no hay equivalencia clara.',
+    content:'Evento informado: '+String(evento||'')+'\\n\\nCatálogo CTCAE v'+version+':\\n'+JSON.stringify(catalogo),
+    maxTokens:500
+  });
+  return JSON.parse(String(r.text||'').trim());
+}
 function prepararCtcaeFormulario(estudioId, actual){
   if(LOG_TIPO!=='ea') return;
   const version=(actual&&actual.ctcaeVersion)||ctcaeVersionDe(estudioId), lista=ctcaeLista(version);
@@ -8843,6 +8853,18 @@ function prepararCtcaeFormulario(estudioId, actual){
   };
   if(event)event.addEventListener('input',mostrar);if(term)term.addEventListener('change',actualizar);
   mostrar(); if(actual&&actual.ctcaeCode&&term){term.value=actual.ctcaeCode;actualizar();}
+  const aiBtn=$('btnCtcaeAI'), aiMsg=$('ctcaeAiMsg');
+  if(aiBtn) aiBtn.addEventListener('click',async ()=>{
+    const texto=(event&&event.value||'').trim(); if(!texto){ if(aiMsg)aiMsg.textContent='Primero escribí el evento.'; return; }
+    aiBtn.disabled=true; if(aiMsg)aiMsg.textContent='Consultando la guía CTCAE…';
+    try{
+      const sug=await sugerirCtcaeConIA(version,texto), hit=ctcaeCoincidencia(version,sug.codigo);
+      if(!hit) throw new Error('La IA no encontró un término CTCAE válido.');
+      term.innerHTML='<option value="'+esc(hit[0])+'">'+esc(sug.termino_es||ctcaeNombreES(hit,texto))+'</option>';term.value=hit[0];actualizar();
+      if(aiMsg)aiMsg.textContent='Sugerencia de IA: '+(sug.explicacion||'revisá y confirmá la selección.');
+    }catch(e){ if(aiMsg)aiMsg.textContent=e.message||'No se pudo obtener una sugerencia.'; }
+    finally{aiBtn.disabled=false;}
+  });
 }
 function logForm(id){
   const def = LOG_DEFS[LOG_TIPO];
@@ -8885,7 +8907,7 @@ function logForm(id){
         T('El texto se toma de la plantilla del protocolo con los datos de este registro; podés editarlo para este paciente. Lo que quede escrito es lo que va a la evolución.')+'</div>'
       : '');
   const box = $('logForm');
-  if(LOG_TIPO==='ea') h += '<div style="flex:1 1 100%;margin-top:6px"><input type="hidden" id="lf_ctcaeCode"><div id="lf_reportadoWrap" class="hidden"><label>Fecha de conocimiento por el sitio</label><input type="date" id="lf_conocido" value="'+esc(r.conocido||'')+'"><label>Fecha de reporte al patrocinador</label><input type="date" id="lf_reportado" value="'+esc(r.reportado||'')+'"></div><div id="ctcaeVersionInfo" class="muted small"></div><div id="ctcaeInfo" class="muted small" style="margin-top:4px"></div></div>';
+  if(LOG_TIPO==='ea') h += '<div style="flex:1 1 100%;margin-top:6px"><input type="hidden" id="lf_ctcaeCode"><div id="lf_reportadoWrap" class="hidden"><label>Fecha de conocimiento por el sitio</label><input type="date" id="lf_conocido" value="'+esc(r.conocido||'')+'"><label>Fecha de reporte al patrocinador</label><input type="date" id="lf_reportado" value="'+esc(r.reportado||'')+'"></div><div class="toolbar" style="margin:7px 0 0"><button type="button" id="btnCtcaeAI">✨ Sugerir término CTCAE con IA</button><span id="ctcaeAiMsg" class="muted small"></span></div><div id="ctcaeVersionInfo" class="muted small"></div><div id="ctcaeInfo" class="muted small" style="margin-top:4px"></div></div>';
   box.innerHTML = h; box.classList.remove('hidden');
   prepararCtcaeFormulario(($('lf_estudio')||{}).value||sid,r);
   const actualizarSAE=()=>{ const esSAE=($('lf_serio')||{}).value==='Sí'; $('lf_reportadoWrap').classList.toggle('hidden',!esSAE); if(!esSAE) $('lf_reportado').value=''; };
