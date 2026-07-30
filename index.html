@@ -2689,13 +2689,12 @@ function renderStudies(){
         '</div>'+
       '</div>'+
       '<div class="actions">'+
+        '<button class="primary" data-act="edit" style="padding:9px 18px">'+T('Editar')+'</button>'+
         (ci?'<button class="ghost" data-act="ci" title="'+T('Ver la última versión del consentimiento informado')+'">📄 '+T('CI vigente')+'</button>'+
             (featOn('ia.askCi')?'<button class="ghost" data-act="ciask" title="'+T('Consultar el consentimiento informado')+'">❓</button>':'')+
             '<button class="ghost" data-act="ciprint" title="'+T('Imprimir')+'">🖨</button>':'')+
         (featOn('ia.askDocs') && docsOf(s.id).some(d=>d.tipo!=='ci')
           ?'<button class="ghost" data-act="docsask" title="'+T('Consultar los documentos del estudio')+'">🔎 '+T('Protocolo')+'</button>':'')+
-        '<button class="ghost" data-act="edit">'+T('Editar')+'</button>'+
-        '<button class="ghost" data-act="dup">'+T('Duplicar')+'</button>'+
         '<button class="ghost" data-act="del" style="color:var(--bad)">'+T('Eliminar')+'</button>'+
       '</div>';
     if(ci){
@@ -2707,7 +2706,6 @@ function renderStudies(){
     const bDocs = div.querySelector('[data-act=docsask]');
     if(bDocs) bDocs.addEventListener('click', ()=>openStudyAsk(s.id));
     div.querySelector('[data-act=edit]').addEventListener('click', ()=>openStudyEditor(s.id));
-    div.querySelector('[data-act=dup]').addEventListener('click', ()=>duplicateStudy(s.id));
     div.querySelector('[data-act=del]').addEventListener('click', ()=>deleteStudy(s.id));
     box.appendChild(div);
   }
@@ -2971,8 +2969,8 @@ function renderPatients(){
       '<td>'+fmtDate(p.fechaBasal)+'</td>'+
       '<td>'+nvTxt+'</td>'+
       '<td class="actions">'+
+        '<button class="primary" data-act="edit" style="padding:9px 18px">'+T('Editar')+'</button>'+
         '<button class="ghost" data-act="visit" title="'+T('Registrar visita')+'">'+T('+ Visita')+'</button>'+
-        '<button class="ghost" data-act="edit">'+T('Editar')+'</button>'+
         '<button class="ghost" data-act="del" style="color:var(--bad)">✕</button>'+
       '</td>';
     tr.querySelector('[data-act=edit]').addEventListener('click', ()=>openPatientEditor(p.id));
@@ -10404,7 +10402,7 @@ function renderUsers(){
     : '<b>'+T('Modo local')+':</b> '+T('esta lista organiza roles y protocolos, pero no es una barrera de seguridad: los datos viven en este navegador. Para control de acceso real, pasá al modo online con Supabase.');
   const us = usersAll().slice().sort((a,b)=>(a.nombre||a.email||'').localeCompare(b.nombre||b.email||''));
   $('usersList').innerHTML = us.length ? us.map(u=>{
-    const ests = (u.estudios||[]).map(id=>{ const s=getStudy(id); return s?s.codigo:null; }).filter(Boolean);
+    const ests = (u.estudios||[]).map(id=>getStudy(id)).filter(s=>s && noAnulado(s)).map(s=>s.codigo);
     return '<div class="doc-line" style="flex-wrap:wrap">'+
       '<div style="flex:1;min-width:220px">'+
         '<b>'+esc(u.nombre||u.email)+'</b> '+(u.activo===false?'<span class="chip bad">'+T('desactivado')+'</span>':'')+
@@ -10565,8 +10563,8 @@ function userForm(id){
       '<b>💵 '+T('Acceso al módulo de facturación')+'</b> — '+
       T('ve el contrato, el tarifario y arma la factura del período. Los administradores lo tienen siempre.')+'</label>'+
     '<div id="uf_estBox"><label>'+T('Protocolos en los que participa')+'</label>'+
-      (DB.studies.length ? '<div style="max-height:160px;overflow:auto;border:1px solid var(--line);border-radius:6px;padding:8px">'+
-        DB.studies.map(s=>'<label style="display:block;font-weight:400;color:var(--ink);margin:2px 0">'+
+      (visibleStudies().length ? '<div style="max-height:160px;overflow:auto;border:1px solid var(--line);border-radius:6px;padding:8px">'+
+        visibleStudies().map(s=>'<label style="display:block;font-weight:400;color:var(--ink);margin:2px 0">'+
           '<input type="checkbox" class="uf_est" value="'+s.id+'"'+((u.estudios||[]).includes(s.id)?' checked':'')+' style="width:auto;margin-right:7px">'+
           esc(s.codigo)+(s.nombre?' — '+esc(s.nombre):'')+'</label>').join('')+'</div>'
         : '<div class="muted small">'+T('Todavía no hay estudios cargados.')+'</div>')+
