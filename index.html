@@ -255,6 +255,7 @@ details>summary{color:var(--acc-dark)}
       <div class="row">
         <div class="grow"><label>Patrocinador</label><input type="text" id="stPatro"></div>
         <div class="grow"><label>Indicación / Patología</label><input type="text" id="stIndic"></div>
+        <div style="flex:0 0 210px"><label>Pacientes comprometidos</label><input type="number" id="stPacientesComprometidos" min="0" step="1" placeholder="Ej: 25" title="Cantidad de pacientes comprometidos para participar en este estudio."></div>
         <div style="flex:0 0 190px"><label>Número de sitio</label><input type="text" id="stNumeroSitio" inputmode="numeric" placeholder="Ej: 0123"></div>
       </div>
       <div class="row">
@@ -2676,6 +2677,7 @@ function renderStudies(){
         '<div class="small" style="margin-top:4px">'+
           '<span class="chip acc">'+nVis+' '+T('visitas')+'</span> '+
           '<span class="chip gray">'+nPac+' '+T('pacientes')+'</span> '+
+          (s.pacientesComprometidos !== undefined && s.pacientesComprometidos !== null && s.pacientesComprometidos !== '' ? '<span class="chip gray">'+s.pacientesComprometidos+' comprometidos</span> ' : '')+
           '<span class="chip gray">'+(s.criteriosInclusion||[]).length+' '+T('incl. / ')+(s.criteriosExclusion||[]).length+' '+T('excl.')+'</span> '+
           (nDocs?'<span class="chip gray">'+nDocs+' '+T('doc.')+'</span>':'')+
         '</div>'+
@@ -2711,6 +2713,7 @@ function openStudyEditor(id){
   $('stNombre').value = s ? s.nombre : '';
   $('stPatro').value = s ? (s.patrocinador||'') : '';
   $('stIndic').value = s ? (s.indicacion||'') : '';
+  $('stPacientesComprometidos').value = s && s.pacientesComprometidos !== undefined ? s.pacientesComprometidos : '';
   $('stNumeroSitio').value = s ? (s.numeroSitio||'') : '';
   $('stComiteEtica').value = s ? (s.comiteEtica||'') : '';
   ['stTitulo:tituloCompleto','stTituloAbrev:tituloAbrev','stNroProt:nroProtocolo','stFase:fase',
@@ -2806,6 +2809,7 @@ $('btnSaveStudy').addEventListener('click', async ()=>{
     /* Se conserva el cálculo histórico de las visitas sin exponerlo como
        campo del estudio. Los estudios nuevos usan Día 1 como fecha basal. */
     diaBase: prev && prev.diaBase!==undefined ? prev.diaBase : 1,
+    pacientesComprometidos: $('stPacientesComprometidos').value === '' ? null : Math.max(0, parseInt($('stPacientesComprometidos').value,10) || 0),
     numeroSitio: $('stNumeroSitio').value.trim(),
     comiteEtica: $('stComiteEtica').value.trim(),
     tituloCompleto: $('stTitulo').value.trim(),
