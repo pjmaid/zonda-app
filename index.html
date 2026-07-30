@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="es-AR">
+<script src="ctcae.js"></script>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -252,6 +253,7 @@ details>summary{color:var(--acc-dark)}
         <div class="grow"><label>Patrocinador</label><input type="text" id="stPatro"></div>
         <div class="grow"><label>Indicación / Patología</label><input type="text" id="stIndic"></div>
         <div style="flex:0 0 210px"><label>Pacientes comprometidos</label><input type="number" id="stPacientesComprometidos" min="0" step="1" placeholder="Ej: 25" title="Cantidad de pacientes comprometidos para participar en este estudio."></div>
+        <div style="flex:0 0 190px"><label>CTCAE del protocolo</label><select id="stCtcaeVersion"><option value="6.0">CTCAE v6.0 (predeterminada)</option><option value="5.0">CTCAE v5.0</option></select></div>
         <div style="flex:0 0 190px"><label>Día que corresponde a la fecha basal</label><input type="number" id="stDiaBase" value="1" title="Si la visita basal/randomización es 'Día 1' poné 1; si es 'Día 0' poné 0."></div>
       </div>
       <div class="row">
@@ -2737,6 +2739,7 @@ function openStudyEditor(id){
   $('stPatro').value = s ? (s.patrocinador||'') : '';
   $('stIndic').value = s ? (s.indicacion||'') : '';
   $('stPacientesComprometidos').value = s && s.pacientesComprometidos !== undefined ? s.pacientesComprometidos : '';
+  $('stCtcaeVersion').value = s ? (s.ctcaeVersion||'6.0') : '6.0';
   $('stDiaBase').value = s ? (s.diaBase===undefined?1:s.diaBase) : 1;
   $('stAnticon').value = s ? (s.anticonReq||'') : '';
   ['stTitulo:tituloCompleto','stTituloAbrev:tituloAbrev','stNroProt:nroProtocolo','stFase:fase',
@@ -2831,6 +2834,7 @@ $('btnSaveStudy').addEventListener('click', async ()=>{
     patrocinador: $('stPatro').value.trim(),
     indicacion: $('stIndic').value.trim(),
     pacientesComprometidos: $('stPacientesComprometidos').value === '' ? null : Math.max(0, parseInt($('stPacientesComprometidos').value,10) || 0),
+    ctcaeVersion: $('stCtcaeVersion').value || '6.0',
     diaBase: parseInt($('stDiaBase').value,10)||0,
     anticonReq: $('stAnticon').value,
     tituloCompleto: $('stTitulo').value.trim(),
@@ -3671,7 +3675,8 @@ function eaLinea(r, fecha){
     [T('Acciones tomadas'), acciones.length ? acciones.join('; ') : nd],
     [T('Desenlace'), r.desenlace || (abierto ? T('pendiente, evento en curso') : nd)]
   ];
-  return (r.evento||'—')+'. '+campos.map(([k,v])=>k+': '+v).join('. ')+'.';
+  const ctcae=r.ctcaeTerm ? ' CTCAE v'+(r.ctcaeVersion||'6.0')+': '+r.ctcaeTerm+(r.ctcaeCode?' ('+r.ctcaeCode+')':'')+'.' : '';
+  return (r.evento||'—')+ctcae+' '+campos.map(([k,v])=>k+': '+v).join('. ')+'.';
 }
 function conmedVigentes(pacienteId, fecha){
   fecha=fechaISO(fecha);
@@ -8395,7 +8400,8 @@ const LOG_DEFS = {
   ea:{ icon:'⚠️', grupo:'seg', nombre:'Eventos adversos', paciente:true,
     ayuda:'EA y EAS con gravedad, causalidad y desenlace. El reloj de reporte avisa los plazos de 24 h y 15 días.',
     campos:[
-      {k:'evento',t:'text',n:'Evento',req:true},
+      {k:'evento',t:'text',n:'Evento informado',req:true},
+      {k:'ctcaeTerm',t:'text',n:'Término CTCAE (guía)'},
       {k:'inicio',t:'date',n:'Fecha de inicio',req:true}, {k:'fin',t:'date',n:'Fecha de fin'},
       {k:'grado',t:'sel',n:'Grado (CTCAE)',op:['1 – Leve','2 – Moderado','3 – Grave','4 – Amenaza la vida','5 – Muerte']},
       {k:'serio',t:'sel',n:'¿Es serio (EAS)?',op:['No','Sí'],alerta:'Sí'},
@@ -8789,6 +8795,26 @@ function renderLog(){
     renderLog(); toast(T('Registro borrado.'));
   }));
 }
+function ctcaeVersionDe(estudioId){ const st=getStudy(estudioId); return (st&&st.ctcaeVersion)||'6.0'; }
+function ctcaeLista(version){ return (window.CTCAE_DATA&&window.CTCAE_DATA[version])||[]; }
+function ctcaeCoincidencia(version, termino){ const q=String(termino||'').trim().toLocaleLowerCase(); return ctcaeLista(version).find(x=>String(x[2]||'').toLocaleLowerCase()===q || String(x[0])===q) || null; }
+const CTCAE_ALIAS_ES={cefalea:'Headache','dolor de cabeza':'Headache',náusea:'Nausea',nausea:'Nausea',náuseas:'Nausea',nauseas:'Nausea',vómito:'Vomiting',vomito:'Vomiting',vómitos:'Vomiting',vomitos:'Vomiting',diarrea:'Diarrhoea',fatiga:'Fatigue',fiebre:'Fever',prurito:'Pruritus',insomnio:'Insomnia',mareo:'Dizziness',tos:'Cough',disnea:'Dyspnoea',anemia:'Anemia',neutropenia:'Neutrophil count decreased',leucopenia:'White blood cell decreased',trombocitopenia:'Platelet count decreased'};
+function ctcaeSugerir(version, evento){
+  const q=String(evento||'').trim().toLocaleLowerCase(); if(!q)return null;
+  const termino=CTCAE_ALIAS_ES[q]||String(evento).trim();
+  return ctcaeCoincidencia(version,termino)||ctcaeLista(version).find(x=>String(x[2]||'').toLocaleLowerCase().includes(q))||null;
+}
+function prepararCtcaeFormulario(estudioId, actual){
+  if(LOG_TIPO!=='ea') return; const version=(actual&&actual.ctcaeVersion)||ctcaeVersionDe(estudioId), lista=ctcaeLista(version);
+  const dl=$('ctcaeTerms'); if(dl) dl.innerHTML=lista.map(x=>'<option value="'+esc(x[2])+'" label="'+esc(x[0]+' · '+x[1])+'"></option>').join('');
+  const term=$('lf_ctcaeTerm'), event=$('lf_evento'), code=$('lf_ctcaeCode'), info=$('ctcaeInfo'), ver=$('ctcaeVersionInfo');
+  if(ver) ver.textContent='CTCAE v'+version+' · '+lista.length+' términos oficiales. Al escribir el evento se propone un término; confirmalo siempre.';
+  const actualizar=()=>{ const hit=ctcaeCoincidencia(version,term&&term.value); if(code) code.value=hit?hit[0]:''; if(!info)return;
+    if(!hit){info.textContent=(term&&term.value)?'Elegí un término de la guía para asociarlo al evento.':'Escribí el evento y se sugerirá un término CTCAE.';return;}
+    const grados=hit[3].map((g,i)=>g&&g!=='-'?('Grado '+(i+1)+': '+g):'').filter(Boolean); info.textContent='Sugerencia CTCAE: '+hit[2]+' · Código '+hit[0]+' · '+hit[1]+'. '+grados.join(' | '); };
+  const sugerir=()=>{ if(!term||term.value.trim())return; const hit=ctcaeSugerir(version,event&&event.value); if(hit){term.value=hit[2];actualizar();} };
+  if(term) term.addEventListener('input',actualizar); if(event) event.addEventListener('input',sugerir); actualizar();
+}
 function logForm(id){
   const def = LOG_DEFS[LOG_TIPO];
   LOG_EDIT = id || null;
@@ -8813,7 +8839,7 @@ function logForm(id){
     else if(c.t==='sel') h += '<select id="lf_'+c.k+'"><option value=""></option>'+
       c.op.map(o=>'<option'+(v===o?' selected':'')+'>'+esc(T(o))+'</option>').join('')+'</select>';
     else h += '<input type="'+(c.t==='date'?'date':c.t==='time'?'time':c.t==='num'?'number':'text')+
-      '" id="lf_'+c.k+'" value="'+esc(v)+'"'+(c.t==='num'?' step="any"':'')+'>';
+      '" id="lf_'+c.k+'" value="'+esc(v)+'"'+(c.k==='ctcaeTerm'?' list="ctcaeTerms" autocomplete="off"':'')+(c.t==='num'?' step="any"':'')+'>';
     h += '</div>';
   }
   h += '</div><div class="toolbar" style="margin-top:10px;margin-bottom:0">'+
@@ -8828,7 +8854,9 @@ function logForm(id){
         T('El texto se toma de la plantilla del protocolo con los datos de este registro; podés editarlo para este paciente. Lo que quede escrito es lo que va a la evolución.')+'</div>'
       : '');
   const box = $('logForm');
+  if(LOG_TIPO==='ea') h += '<div style="flex:1 1 100%;margin-top:6px"><input type="hidden" id="lf_ctcaeCode"><datalist id="ctcaeTerms"></datalist><div id="ctcaeVersionInfo" class="muted small"></div><div id="ctcaeInfo" class="muted small" style="margin-top:4px"></div></div>';
   box.innerHTML = h; box.classList.remove('hidden');
+  prepararCtcaeFormulario(($('lf_estudio')||{}).value||sid,r);
   $('lf_cancel').addEventListener('click', ()=>{ box.classList.add('hidden'); LOG_EDIT=null; });
   /* consentimiento: traer la plantilla del protocolo con los datos ya cargados */
   const bTpl = $('lf_ciTpl');
@@ -8854,6 +8882,7 @@ function logForm(id){
       const el = $('lf_'+c.k);
       obj[c.k] = el ? (c.t==='date' ? fechaISO(el.value) : el.value.trim()) : '';
     }
+    if(LOG_TIPO==='ea'){ obj.ctcaeVersion=(r&&r.ctcaeVersion)||ctcaeVersionDe(obj.estudioId); obj.ctcaeCode=(($('lf_ctcaeCode')||{}).value||'').trim(); const hit=ctcaeCoincidencia(obj.ctcaeVersion,obj.ctcaeTerm); if(hit){obj.ctcaeCode=hit[0];obj.ctcaeSoc=hit[1];} }
     const falta = def.campos.filter(c=>c.req && !obj[c.k]);
     if(falta.length){ toast(T('Completá')+': '+falta.map(c=>T(c.n)).join(', ')); return; }
     let motivoCambio = '';
