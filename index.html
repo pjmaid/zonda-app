@@ -7080,7 +7080,7 @@ async function aiNarrarCriterios(st, texto, p, imagenes, st_el){
           if(!Object.keys(rL.porClave).length && rL.crudo) NARR_CRUDO = rL.crudo;
         }
         catch(eR){
-          if(ragEstricto() || !aiConfigured()) throw eR;
+          if(ragEstricto() && !aiConfigured()) throw eR;
           Object.assign(porClave, await aiNarrarLote(lotes[i], st, texto, p, imagenes));
         }
       } else if(ragEstricto()){
