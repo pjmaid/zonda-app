@@ -991,7 +991,7 @@ details>summary{color:var(--acc-dark)}
           <option value="paste">Pegar texto copiado del protocolo</option>
         </select>
       </div>
-      <div class="grow" id="impDocBox"><label>Documento</label><select id="impDoc"></select></div>
+      <div class="grow" id="impDocBox"><label>Documentos a combinar</label><select id="impDoc" multiple size="4"></select><div class="muted small" style="margin-top:4px">Seleccioná todos los documentos que aportan criterios, visitas o procedimientos.</div></div>
       <label style="display:block;font-weight:400;color:var(--ink);margin:6px 0 0">
         <input type="checkbox" id="impVisual" style="width:auto;margin-right:7px">
         <b>Leer las páginas como imagen</b> — para criterios en tablas o PDF escaneados. Más preciso, consume más créditos.
@@ -1074,7 +1074,7 @@ details>summary{color:var(--acc-dark)}
         </select>
       </div>
       <div class="grow" id="flowFileBox"><label>Archivo (PDF o Word .docx)</label><input type="file" id="flowFile" accept=".pdf,.docx,.txt"></div>
-      <div class="grow hidden" id="flowDocBox"><label>Documento</label><select id="flowDoc"></select></div>
+      <div class="grow hidden" id="flowDocBox"><label>Documentos a combinar</label><select id="flowDoc" multiple size="4"></select><div class="muted small" style="margin-top:4px">Seleccioná el protocolo, las enmiendas o los manuales que completan la tabla.</div></div>
       <div><button class="primary" id="btnFlowAnalyze">Leer la tabla</button></div>
     </div>
     <div class="row" style="margin-top:8px">
@@ -4934,7 +4934,7 @@ function openImportModal(){
   const stId = $('stId').value;
   const docs = stId ? docsOf(stId) : [];
   $('impDoc').innerHTML = docs.length
-    ? docs.map(d=>'<option value="'+d.id+'">'+esc(DOC_TIPOS[d.tipo]||d.tipo)+' — '+esc(d.filename)+'</option>').join('')
+    ? docs.map(d=>'<option value="'+d.id+'"'+(['protocolo','manual','enmienda'].includes(d.tipo)?' selected':'')+'>'+esc(DOC_TIPOS[d.tipo]||d.tipo)+' — '+esc(d.filename)+'</option>').join('')
     : '<option value="">(este estudio no tiene documentos adjuntos)</option>';
   $('impSource').value = docs.length ? 'doc' : 'file';
   $('impIntro').innerHTML = aiConfigured()
@@ -5258,12 +5258,17 @@ $('btnAnalyze').addEventListener('click', async ()=>{
       text = await extractTextTablas(f, f.name);
       IMP_BLOB = f; IMP_NOMBRE = f.name;
     } else {
-      const doc = (DB.docs||[]).find(d=>d.id===$('impDoc').value);
-      if(!doc) throw new Error('No hay documento adjunto para analizar. Adjuntá uno o usá otra fuente.');
-      const b = await docBlob(doc);
-      if(!b) throw new Error('El archivo no está disponible en este navegador.');
-      text = await extractTextTablas(b, doc.filename);
-      IMP_BLOB = b; IMP_NOMBRE = doc.filename;
+      const seleccionados = [...$('impDoc').selectedOptions].map(o=>(DB.docs||[]).find(d=>d.id===o.value)).filter(Boolean);
+      if(!seleccionados.length) throw new Error('Seleccioná al menos un documento para analizar.');
+      const partes = [];
+      for(let i=0;i<seleccionados.length;i++){
+        const doc=seleccionados[i], b=await docBlob(doc);
+        if(!b) throw new Error('El archivo «'+doc.filename+'» no está disponible en este navegador.');
+        const t=await extractTextTablas(b,doc.filename);
+        partes.push('=== DOCUMENTO: '+doc.filename+' ===\n'+t);
+        if(i===0){ IMP_BLOB=b; IMP_NOMBRE=doc.filename; }
+      }
+      text=partes.join('\n\n');
     }
     if((text||'').trim().length<50 && !($('impVisual').checked && IMP_BLOB))
       throw new Error('El documento no tiene texto legible (puede ser un PDF escaneado). Tildá «Leer las páginas como imagen» o pegá el texto.');
@@ -6316,12 +6321,12 @@ function openFlowModal(){
   const stId = $('stId').value;
   const docs = stId ? docsOf(stId) : [];
   $('flowDoc').innerHTML = docs.length
-    ? docs.map(dd=>'<option value="'+dd.id+'">'+esc(DOC_TIPOS[dd.tipo]||dd.tipo)+' — '+esc(dd.filename)+'</option>').join('')
+    ? docs.map(dd=>'<option value="'+dd.id+'"'+(['protocolo','manual','enmienda'].includes(dd.tipo)?' selected':'')+'>'+esc(DOC_TIPOS[dd.tipo]||dd.tipo)+' — '+esc(dd.filename)+'</option>').join('')
     : '<option value="">'+T('(este estudio no tiene documentos adjuntos)')+'</option>';
   /* la tabla se toma del protocolo adjunto: no hace falta subir nada */
   const prot = docs.filter(d=>d.tipo==='protocolo')
                    .sort((a,b)=>String(b.subido||'').localeCompare(String(a.subido||'')))[0];
-  if(prot){ $('flowSource').value = 'doc'; $('flowDoc').value = prot.id; }
+  if(prot){ $('flowSource').value = 'doc'; }
   else $('flowSource').value = 'file';
   $('flowMethod').value = 'geom';
   onFlowSource();
@@ -6375,11 +6380,22 @@ $('btnFlowAnalyze').addEventListener('click', async ()=>{
       if(!f) throw new Error(T('Elegí un archivo.'));
       blob = f; filename = f.name;
     } else {
-      const doc = (DB.docs||[]).find(d=>d.id===$('flowDoc').value);
-      if(!doc) throw new Error(T('No hay documento adjunto para analizar. Adjuntá uno o usá otra fuente.'));
-      blob = await docBlob(doc);
-      if(!blob) throw new Error(T('El archivo no está disponible en este navegador.'));
-      filename = doc.filename;
+      const seleccionados=[...$('flowDoc').selectedOptions].map(o=>(DB.docs||[]).find(d=>d.id===o.value)).filter(Boolean);
+      if(!seleccionados.length) throw new Error(T('Seleccioná al menos un documento para analizar.'));
+      if(seleccionados.length===1){
+        blob=await docBlob(seleccionados[0]);
+        if(!blob) throw new Error(T('El archivo no está disponible en este navegador.'));
+        filename=seleccionados[0].filename;
+      }else{
+        const partes=[];
+        for(const doc of seleccionados){
+          const b=await docBlob(doc);
+          if(!b) throw new Error(T('El archivo no está disponible en este navegador.')+' '+doc.filename);
+          partes.push('=== DOCUMENTO: '+doc.filename+' ===\n'+await extractTextTablas(b,doc.filename));
+        }
+        pasteTxt=partes.join('\n\n'); filename='documentos combinados';
+        st.textContent='Combinando '+seleccionados.length+' documentos para armar los procedimientos...';
+      }
     }
     const esPdf = !!blob && ((filename||'').toLowerCase().endsWith('.pdf') || (blob.type||'').toLowerCase().includes('pdf'));
     const modo = $('flowMethod').value;
