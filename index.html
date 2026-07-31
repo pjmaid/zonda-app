@@ -8799,14 +8799,14 @@ function renderLog(){
 function ctcaeVersionDe(estudioId){ const st=getStudy(estudioId); return (st&&st.ctcaeVersion)||'6.0'; }
 function ctcaeLista(version){ return (window.CTCAE_DATA&&window.CTCAE_DATA[version])||[]; }
 function ctcaeCoincidencia(version, termino){ const q=String(termino||'').trim().toLocaleLowerCase(); return ctcaeLista(version).find(x=>String(x[2]||'').toLocaleLowerCase()===q || String(x[0])===q) || null; }
-const CTCAE_ALIAS_ES={cefalea:'Headache','dolor de cabeza':'Headache',náusea:'Nausea',nausea:'Nausea',náuseas:'Nausea',nauseas:'Nausea',vómito:'Vomiting',vomito:'Vomiting',vómitos:'Vomiting',vomitos:'Vomiting',diarrea:'Diarrhea',fatiga:'Fatigue',fiebre:'Fever',prurito:'Pruritus',insomnio:'Insomnia',mareo:'Dizziness',tos:'Cough',disnea:'Dyspnoea',anemia:'Anemia',neutropenia:'Neutrophil count decreased',leucopenia:'White blood cell decreased',trombocitopenia:'Platelet count decreased'};
+const CTCAE_ALIAS_ES={cefalea:'Headache','dolor de cabeza':'Headache',náusea:'Nausea',nausea:'Nausea',náuseas:'Nausea',nauseas:'Nausea',vómito:'Vomiting',vomito:'Vomiting',vómitos:'Vomiting',vomitos:'Vomiting',diarrea:'Diarrhea',fatiga:'Fatigue',fiebre:'Fever',prurito:'Pruritus',insomnio:'Insomnia',mareo:'Dizziness',tos:'Cough',disnea:'Dyspnoea',laringitis:'Laryngitis',anemia:'Anemia',neutropenia:'Neutrophil count decreased',leucopenia:'White blood cell decreased',trombocitopenia:'Platelet count decreased'};
 function ctcaeSugerir(version, evento){
   const q=String(evento||'').trim().toLocaleLowerCase(); if(!q)return null;
   const termino=CTCAE_ALIAS_ES[q]||String(evento).trim();
   return ctcaeCoincidencia(version,termino)||ctcaeLista(version).find(x=>String(x[2]||'').toLocaleLowerCase().includes(q))||null;
 }
 function ctcaeNombreES(hit, texto){
-  const nombres={Headache:'Cefalea',Diarrhea:'Diarrea',Nausea:'Náuseas',Vomiting:'Vómitos',Fatigue:'Fatiga',Fever:'Fiebre',Pruritus:'Prurito',Insomnia:'Insomnio',Dizziness:'Mareo',Cough:'Tos',Dyspnoea:'Disnea',Anemia:'Anemia'};
+  const nombres={Headache:'Cefalea',Diarrhea:'Diarrea',Nausea:'Náuseas',Vomiting:'Vómitos',Fatigue:'Fatiga',Fever:'Fiebre',Pruritus:'Prurito',Insomnia:'Insomnio',Dizziness:'Mareo',Cough:'Tos',Dyspnoea:'Disnea',Laryngitis:'Laringitis',Anemia:'Anemia'};
   return nombres[hit[2]]||String(texto||hit[2]||'').trim();
 }
 const CTCAE_GRADOS_GUIA={es:['Grado 1: leve; observación o intervención no indicada.','Grado 2: moderado; puede limitar actividades instrumentales.','Grado 3: severo o médicamente significativo; puede requerir internación o limitar el autocuidado.','Grado 4: riesgo vital; requiere intervención urgente.','Grado 5: muerte relacionada con el evento.'],en:['Grade 1: mild.','Grade 2: moderate.','Grade 3: severe or medically significant.','Grade 4: life-threatening; urgent intervention.','Grade 5: death related to the event.']};
@@ -8824,7 +8824,15 @@ async function sugerirCtcaeConIA(version, evento){
     content:'Evento informado: '+String(evento||'')+'\\n\\nCatálogo CTCAE v'+version+':\\n'+JSON.stringify(catalogo),
     maxTokens:500
   });
-  return JSON.parse(String(r.text||'').trim());
+  return ctcaeJsonDeIA(r.text);
+}
+function ctcaeJsonDeIA(valor){
+  let t=String(valor||'').trim().replace(/^\s*```(?:json)?\s*/i,'').replace(/\s*```\s*$/,'');
+  const intentar=(x)=>{ const y=JSON.parse(x); return typeof y==='string'?JSON.parse(y):y; };
+  try{return intentar(t);}catch(_){}
+  const a=t.indexOf('{'), b=t.lastIndexOf('}');
+  if(a>=0&&b>a){try{return intentar(t.slice(a,b+1));}catch(_){}}
+  throw new Error('La IA devolvió una respuesta no interpretable. Probá nuevamente o seleccioná el término sugerido.');
 }
 function prepararCtcaeFormulario(estudioId, actual){
   if(LOG_TIPO!=='ea') return;
@@ -8869,7 +8877,13 @@ function prepararCtcaeFormulario(estudioId, actual){
 }
 function eaCampoFechaHora(k, etiqueta, r, requerido){
   const suf={inicio:'Inicio',fin:'Fin',conocido:'Conocido',reportado:'Reportado'}[k], hora='hora'+suf, nd=hora+'NoDisponible';
-  return '<div class="grow"><label>'+esc(etiqueta)+(requerido?' *':'')+'</label><input type="text" inputmode="numeric" id="lf_'+k+'" value="'+esc(r[k]?fmtDate(r[k]):'')+'" placeholder="dd/mm/aaaa"><div class="row" style="margin-top:5px;gap:7px"><div style="flex:1"><label style="margin:0 0 3px">Hora</label><input type="time" id="lf_'+hora+'" value="'+esc(r[hora]||'')+'"></div><label style="margin:20px 0 0;text-transform:none;letter-spacing:0"><input type="checkbox" id="lf_'+nd+'"'+(r[nd]?' checked':'')+'> Hora no disponible</label></div></div>';
+  return '<div class="grow" style="min-width:290px;border:1px solid var(--line);border-radius:9px;padding:10px"><label style="margin-bottom:8px">'+esc(etiqueta)+(requerido?' *':'')+'</label>'+
+    '<div class="row" style="gap:8px;align-items:end">'+
+      '<div style="flex:1"><label style="margin:0 0 3px">Día</label><input type="text" inputmode="numeric" id="lf_'+k+'" value="'+esc(r[k]?fmtDate(r[k]):'')+'" placeholder="dd/mm/aaaa"></div>'+
+      '<div style="width:118px"><label style="margin:0 0 3px">Hora</label><input type="time" id="lf_'+hora+'" value="'+esc(r[hora]||'')+'"></div>'+
+    '</div>'+
+    '<label style="margin:8px 0 0;text-transform:none;letter-spacing:0"><input type="checkbox" id="lf_'+nd+'"'+(r[nd]?' checked':'')+'> Hora no disponible</label>'+
+  '</div>';
 }
 function logForm(id){
   const def = LOG_DEFS[LOG_TIPO];
