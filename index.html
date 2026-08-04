@@ -11422,49 +11422,6 @@ $('importFile').addEventListener('change', async e=>{
   }catch(err){ alert('No se pudo importar: '+err.message); }
 });
 
-const uploadLocalButton = $('btnUploadLocal');
-if(uploadLocalButton) uploadLocalButton.addEventListener('click', async ()=>{
-  if(!Store.online()){ alert('Primero guardá el modo online e ingresá con tu cuenta. Después volvé acá para subir los datos locales.'); return; }
-  const local = loadJSON(LS.DB);
-  if(!local || (!local.studies?.length && !local.patients?.length && !local.visits?.length)){ alert('No hay datos locales guardados en este navegador.'); return; }
-  const n = (local.studies||[]).length+' estudios, '+(local.patients||[]).length+' pacientes, '+(local.visits||[]).length+' visitas';
-  if(!confirm('Se subirán a la nube: '+n+'. ¿Continuar?')) return;
-  try{
-    for(const s of (local.studies||[])) await Store.upsert('studies', s);
-    for(const p of (local.patients||[])) await Store.upsert('patients', p);
-    for(const v of (local.visits||[])) await Store.upsert('visits', v);
-    for(const doc of (local.docs||[])){
-      try{
-        if(doc.storage!=='supabase'){
-          const b = await idbGet(doc.id);
-          if(b){ doc.path = doc.id+'/'+(doc.filename||'archivo').replace(/[^\w.\-]+/g,'_'); await storagePut(doc.path, b); doc.storage='supabase'; }
-        }
-        await Store.upsert('docs', doc);
-      }catch(e){}
-    }
-    renderAll();
-    toast('Datos locales subidos a la nube (incluidos los documentos adjuntos).');
-  }catch(err){ alert('Error al subir: '+err.message); }
-});
-
-/* ---- clave local ---- */
-$('btnChangePass').addEventListener('click', async ()=>{
-  const auth = localAuth();
-  if(!auth){ alert('No hay usuario local creado.'); return; }
-  const oldp = $('chOld').value, newp = $('chNew').value;
-  if(!await verificarHash(oldp, auth.salt, auth.hash, auth.user)){ alert(T('La clave actual no es correcta.')); return; }
-  const pc = passCheck(newp);
-  if(!pc.ok){ alert(T('La clave no cumple los requisitos. Falta')+': '+pc.faltan.map(f=>T(f)).join(', ')+'.'); return; }
-  if(await claveRepetida(newp, auth)){ alert(T('Esa clave ya se usó antes. Elegí una distinta.')); return; }
-  const salt = uid();
-  const hash = await hashClave(newp, salt);
-  const nuevo = pushHistorial(Object.assign({}, auth, { salt, hash, email:auth.email||auth.user }), salt, hash);
-  saveJSON(LS.AUTH, nuevo);
-  auditar('sesion','cambio_de_clave','', auth.user);
-  $('chOld').value=''; $('chNew').value='';
-  toast(T('Clave local actualizada.'));
-});
-
 
 </script>
 </body>
