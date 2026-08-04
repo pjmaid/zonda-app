@@ -929,14 +929,12 @@ details>summary{color:var(--acc-dark)}
     </div>
 
     <div class="card">
-      <h3>Modo de datos</h3>
+      <h3>Conexión web</h3>
       <div class="muted small" style="margin-bottom:8px">
-        <b>Local:</b> los datos quedan solo en este navegador (esta computadora).<br>
-        <b>Online (Supabase):</b> usuario y clave reales por internet, datos compartidos entre computadoras y usuarios del equipo. Requiere crear un proyecto gratuito en supabase.com (ver guía).
+        Zonda utiliza siempre la nube del equipo: los datos, documentos y usuarios se comparten de forma segura entre computadoras autorizadas.
       </div>
-      <label><input type="radio" name="cfgMode" value="local" id="cfgModeLocal" style="width:auto"> Local (este navegador)</label>
-      <label><input type="radio" name="cfgMode" value="supabase" id="cfgModeOnline" style="width:auto"> Online con Supabase</label>
-      <div id="cfgSupaBox" class="hidden" style="margin-top:10px">
+      <input type="radio" name="cfgMode" value="supabase" id="cfgModeOnline" checked class="hidden">
+      <div id="cfgSupaBox" style="margin-top:10px">
         <div class="row">
           <div class="grow"><label>URL del proyecto Supabase</label><input type="text" id="cfgSupaUrl" placeholder="https://xxxxx.supabase.co"></div>
           <div class="grow"><label>Clave pública (anon key)</label><input type="text" id="cfgSupaKey" placeholder="eyJhbGciOi..."></div>
@@ -948,18 +946,14 @@ details>summary{color:var(--acc-dark)}
         <h3 style="margin-top:14px">Script SQL (ejecutar una sola vez en Supabase → SQL Editor)</h3>
         <pre class="sql" id="sqlBox"></pre>
         <button id="btnCopySql">Copiar SQL</button>
-        <div class="toolbar" style="margin-top:14px;margin-bottom:0">
-          <button id="btnUploadLocal">☁ Subir mis datos locales a la nube</button>
-        </div>
-        <div class="muted small" style="margin-top:6px">Usalo una sola vez al migrar de modo local a online (estando conectado en modo online).</div>
       </div>
       <div class="toolbar" style="margin-top:12px;margin-bottom:0">
-        <button class="primary" id="btnSaveCfg">Guardar modo</button>
+        <button class="primary" id="btnSaveCfg">Guardar conexión</button>
       </div>
       <div id="cfgMsg" class="small" style="margin-top:6px"></div>
     </div>
 
-    <div class="card" id="localPassCard">
+    <div class="card hidden" id="localPassCard">
       <h3>Clave local</h3>
       <div class="muted small" style="margin-bottom:8px">Protección básica de acceso en esta computadora. Para seguridad real entre varios usuarios usá el modo online.</div>
       <div class="row">
@@ -1818,7 +1812,17 @@ const $ = id => document.getElementById(id);
 const $$ = sel => Array.from(document.querySelectorAll(sel));
 const LS = { CFG:'ecx_cfg', AUTH:'ecx_auth', DB:'ecx_db', SES:'ecx_session' };
 
-let CFG = loadJSON(LS.CFG) || { mode:'local', supaUrl:'', supaKey:'' };
+const WEB_DEFAULTS = {
+  mode:'supabase',
+  supaUrl:'https://aqinxboxjklsyvesdcyr.supabase.co',
+  supaKey:'sb_publishable_ypqDPv6T3S4cDuNFi2Yq2A_Lt5rJ68m'
+};
+/* Zonda funciona únicamente conectado a la nube. Se conservan las demás
+   preferencias del navegador (idioma, IA, firma), pero nunca el modo local. */
+let CFG = Object.assign({}, WEB_DEFAULTS, loadJSON(LS.CFG) || {});
+CFG.mode = 'supabase';
+if(!CFG.supaUrl) CFG.supaUrl = WEB_DEFAULTS.supaUrl;
+if(!CFG.supaKey) CFG.supaKey = WEB_DEFAULTS.supaKey;
 let DB = { studies:[], patients:[], visits:[], docs:[], users:[] };
 let SESSION = loadJSON(LS.SES) || null;   // supabase tokens
 let CURRENT_USER = '';
@@ -2019,7 +2023,7 @@ async function supaRefresh(){
 }
 
 const Store = {
-  online(){ return CFG.mode==='supabase'; },
+  online(){ return true; },
   async loadAll(){
     if(!this.online()){
       const d = loadJSON(LS.DB);
@@ -11190,8 +11194,7 @@ end $$;
 `;
 
 function initConfigUI(){
-  ($('cfgModeLocal')).checked = CFG.mode!=='supabase';
-  ($('cfgModeOnline')).checked = CFG.mode==='supabase';
+  $('cfgModeOnline').checked = true;
   $('cfgSupaUrl').value = CFG.supaUrl||'';
   $('cfgSupaKey').value = CFG.supaKey||'';
   $('cfgAiProvider').value = aiProvider();
@@ -11205,14 +11208,12 @@ function initConfigUI(){
   $('cfgCiRe').value = CFG.ciPlantillaRe || CI_PLANTILLA_RE;
   $('sqlBox').textContent = SQL_SCRIPT;
   toggleSupaBox();
-  $('localPassCard').classList.toggle('hidden', Store.online());
+  $('localPassCard').classList.add('hidden');
   renderUsers();
 }
 function toggleSupaBox(){
-  $('cfgSupaBox').classList.toggle('hidden', !$('cfgModeOnline').checked);
+  $('cfgSupaBox').classList.remove('hidden');
 }
-$('cfgModeLocal').addEventListener('change', toggleSupaBox);
-$('cfgModeOnline').addEventListener('change', toggleSupaBox);
 
 /* datos que se pueden intercalar en la plantilla; se insertan donde está el cursor */
 const CI_CAMPOS = [
@@ -11326,19 +11327,17 @@ $('btnSaveAi').addEventListener('click', ()=>{
 });
 
 $('btnSaveCfg').addEventListener('click', ()=>{
-  const newMode = $('cfgModeOnline').checked ? 'supabase' : 'local';
-  if(newMode==='supabase'){
-    const url = $('cfgSupaUrl').value.trim(), key = $('cfgSupaKey').value.trim();
-    if(!/^https:\/\/.+\.supabase\.co$/.test(url.replace(/\/+$/,''))){ $('cfgMsg').textContent='La URL debe tener el formato https://xxxxx.supabase.co'; $('cfgMsg').style.color='var(--bad)'; return; }
-    if(!key){ $('cfgMsg').textContent='Falta la clave pública (anon key).'; $('cfgMsg').style.color='var(--bad)'; return; }
-    CFG.supaUrl = url; CFG.supaKey = key;
-  }
-  const changed = CFG.mode !== newMode;
-  CFG.mode = newMode;
+  const url = $('cfgSupaUrl').value.trim(), key = $('cfgSupaKey').value.trim();
+  if(!/^https:\/\/.+\.supabase\.co$/.test(url.replace(/\/+$/,''))){ $('cfgMsg').textContent='La URL debe tener el formato https://xxxxx.supabase.co'; $('cfgMsg').style.color='var(--bad)'; return; }
+  if(!key){ $('cfgMsg').textContent='Falta la clave pública (anon key).'; $('cfgMsg').style.color='var(--bad)'; return; }
+  const changed = CFG.supaUrl !== url || CFG.supaKey !== key;
+  CFG.mode = 'supabase';
+  CFG.supaUrl = url; CFG.supaKey = key;
+  CFG.firma = $('cfgFirma').value.trim();
   saveJSON(LS.CFG, CFG);
-  $('cfgMsg').textContent='Configuración guardada.'; $('cfgMsg').style.color='var(--ok)';
+  $('cfgMsg').textContent='Conexión web guardada.'; $('cfgMsg').style.color='var(--ok)';
   if(changed){
-    alert('Cambiaste el modo de datos. Vas a tener que ingresar de nuevo.');
+    alert('Cambiaste la conexión web. Vas a tener que ingresar de nuevo.');
     doLogout();
   } else {
     initConfigUI();
@@ -11423,7 +11422,8 @@ $('importFile').addEventListener('change', async e=>{
   }catch(err){ alert('No se pudo importar: '+err.message); }
 });
 
-$('btnUploadLocal').addEventListener('click', async ()=>{
+const uploadLocalButton = $('btnUploadLocal');
+if(uploadLocalButton) uploadLocalButton.addEventListener('click', async ()=>{
   if(!Store.online()){ alert('Primero guardá el modo online e ingresá con tu cuenta. Después volvé acá para subir los datos locales.'); return; }
   const local = loadJSON(LS.DB);
   if(!local || (!local.studies?.length && !local.patients?.length && !local.visits?.length)){ alert('No hay datos locales guardados en este navegador.'); return; }
