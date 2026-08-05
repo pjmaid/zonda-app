@@ -5098,19 +5098,59 @@ $('btnClearCrit').addEventListener('click', ()=>{
   $('stIncl').value=''; $('stExcl').value='';
   toast('Criterios vaciados. Importalos de nuevo o cargalos a mano, y guardá el estudio.');
 });
+
+/* Traducción controlada de los criterios ya cargados. Vertex recupera muy bien
+   las fuentes, pero puede devolver el pasaje original; para una traducción real
+   se usa el proveedor configurado y se conserva cada ítem, en el mismo orden. */
+async function traducirListaCriterios(lineas, tipo){
+  const entrada = (lineas||[]).map(x=>String(x||'').trim()).filter(Boolean);
+  if(!entrada.length) return [];
+  const grupos=[]; let actual=[]; let largo=0;
+  for(const texto of entrada){
+    if(actual.length && (actual.length>=18 || largo+texto.length>12000)){
+      grupos.push(actual); actual=[]; largo=0;
+    }
+    actual.push({ id: grupos.reduce((n,g)=>n+g.length,0)+actual.length, texto });
+    largo += texto.length;
+  }
+  if(actual.length) grupos.push(actual);
+  const salida=[];
+  for(const grupo of grupos){
+    const r = await aiChat({
+      system:'Sos traductor médico para investigación clínica. Respondés exclusivamente JSON válido, sin comentarios ni bloques de código.',
+      content:'Traducí al español rioplatense los siguientes criterios de '+tipo+'. '+
+        'Conservá cada id y el orden. No resumas ni agregues información. Conservá exactamente números, unidades, símbolos, rangos, plazos, negaciones, nombres propios, siglas y nombres de medicamentos. '+
+        'Si un texto ya está en español, devolvelo sin cambios.\n\n'+
+        'Respondé con: {"traducciones":[{"id":0,"texto":"..."}]}\n\n'+JSON.stringify(grupo),
+      maxTokens: 12000
+    });
+    const o = parseAiObjectLoose(r.text);
+    const items = o && Array.isArray(o.traducciones) ? o.traducciones : [];
+    const porId = new Map(items.map(x=>[Number(x&&x.id), String((x&&x.texto)||'').trim()]));
+    for(const it of grupo){
+      const texto = porId.get(it.id);
+      if(!texto) throw new Error('La traducción devolvió un criterio incompleto. No se aplicaron cambios.');
+      salida.push(texto);
+    }
+  }
+  return salida;
+}
+
 $('btnTranslateCrit').addEventListener('click', async ()=>{
-  const stId = $('stId').value;
-  if(!stId){ toast('Guardá primero el estudio y adjuntá el protocolo para traducir los criterios.'); return; }
-  if(!docsOf(stId).some(d=>d.tipo==='protocolo')){ toast('Adjuntá primero el protocolo de este estudio.'); return; }
-  if(!ragActivo()){ toast('La búsqueda documental no está activada en Configuración.'); return; }
   const b = $('btnTranslateCrit'), anterior = b.textContent;
+  const incl = $('stIncl').value.split('\n').map(x=>x.trim()).filter(Boolean);
+  const excl = $('stExcl').value.split('\n').map(x=>x.trim()).filter(Boolean);
+  if(!incl.length && !excl.length){ toast('No hay criterios para traducir.'); return; }
+  if(!aiConfigured()){ toast('Configurá una clave de IA para traducir los criterios ya cargados.'); return; }
   b.disabled=true; b.textContent='Traduciendo...';
   try{
-    const r = await ragExtraerCriterios(stId);
-    if(!r.incl.length && !r.excl.length) throw new Error('El protocolo no devolvió criterios para traducir.');
-    if(r.incl.length) $('stIncl').value=r.incl.join('\n');
-    if(r.excl.length) $('stExcl').value=r.excl.join('\n');
-    toast('Criterios traducidos al español. Revisalos contra el protocolo y guardá el estudio.');
+    const [ti,te] = await Promise.all([
+      traducirListaCriterios(incl, 'inclusión'),
+      traducirListaCriterios(excl, 'exclusión')
+    ]);
+    if(ti.length) $('stIncl').value=ti.join('\n');
+    if(te.length) $('stExcl').value=te.join('\n');
+    toast('Criterios traducidos al español. Revisalos y guardá el estudio.');
   }catch(e){ toast('⚠ No se pudieron traducir los criterios: '+e.message); }
   finally{ b.disabled=false; b.textContent=anterior; }
 });
