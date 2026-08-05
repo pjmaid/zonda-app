@@ -354,6 +354,17 @@ details>summary{color:var(--acc-dark)}
 
     <div class="card">
       <div class="toolbar" style="margin-bottom:6px">
+        <h3 style="margin:0">Medicamentos prohibidos o restringidos</h3>
+        <span class="spacer"></span>
+        <button id="btnImportMedsProhib">⚡ Tomar del protocolo</button>
+        <button id="btnAddMedProhib">+ Agregar medicamento</button>
+      </div>
+      <div class="muted small" style="margin-bottom:10px">Incluí medicamentos, clases terapéuticas y tratamientos concomitantes no permitidos. La importación consulta el protocolo y queda para revisión antes de guardar.</div>
+      <div id="stMedsProhibBox"></div>
+    </div>
+
+    <div class="card">
+      <div class="toolbar" style="margin-bottom:6px">
         <h3 style="margin:0">Tabla de visitas y tareas (flowchart)</h3>
         <span class="spacer"></span>
         <button class="primary" id="btnImportFlow">📋 Importar tabla de procedimientos</button>
@@ -2694,6 +2705,7 @@ $('btnLogout').addEventListener('click', doLogout);
 
 /* ================= ESTUDIOS ================= */
 let EDIT_VISITAS = [];
+let EDIT_MEDS_PROHIBIDOS = [];
 
 function renderStudies(){
   const box = $('studiesList'); box.innerHTML='';
@@ -2765,16 +2777,66 @@ function openStudyEditor(id){
   $('stNotas').value = s ? (s.notas||'') : '';
   $('stIncl').value = s ? (s.criteriosInclusion||[]).join('\n') : '';
   $('stExcl').value = s ? (s.criteriosExclusion||[]).join('\n') : '';
+  EDIT_MEDS_PROHIBIDOS = s ? JSON.parse(JSON.stringify(s.medicamentosProhibidos||[])) : [];
   EDIT_VISITAS = s ? JSON.parse(JSON.stringify(s.visitas||[])) : [];
   if(!EDIT_VISITAS.length && !s){
     EDIT_VISITAS = [{ id:uid(), nombre:'Screening', dia:-14, venAntes:14, venDesp:0, tareas:[] },
                     { id:uid(), nombre:'Visita 1 (Basal)', dia:1, venAntes:0, venDesp:0, tareas:[] }];
   }
+  renderStMedsProhib();
   renderStVisitas();
   renderDocsList();
   renderCiPanel();
   showView('view-study-edit');
 }
+
+function collectStMedsProhib(){
+  const rows = $$('#stMedsProhibBox .med-prohib-row');
+  return rows.map(row=>( {
+    medicamento: row.querySelector('.mp-medicamento').value.trim(),
+    restriccion: row.querySelector('.mp-restriccion').value.trim(),
+    excepciones: row.querySelector('.mp-excepciones').value.trim(),
+    fuente: row.querySelector('.mp-fuente').value.trim()
+  })).filter(m=>m.medicamento || m.restriccion || m.excepciones || m.fuente);
+}
+
+function renderStMedsProhib(){
+  const box = $('stMedsProhibBox'); box.innerHTML='';
+  if(!EDIT_MEDS_PROHIBIDOS.length){
+    box.innerHTML='<div class="muted small">Todavía no hay medicamentos cargados. Podés agregarlos a mano o tomarlos del protocolo.</div>';
+    return;
+  }
+  const head = document.createElement('div');
+  head.className='small muted';
+  head.style.cssText='display:grid;grid-template-columns:1.2fr 1.4fr 1fr 1.3fr 42px;gap:8px;margin:0 0 4px;font-weight:600';
+  head.innerHTML='<span>Medicamento o clase</span><span>Restricción</span><span>Excepciones / lavado</span><span>Sección o cita del protocolo</span><span></span>';
+  box.appendChild(head);
+  EDIT_MEDS_PROHIBIDOS.forEach((m,idx)=>{
+    const d = document.createElement('div');
+    d.className='med-prohib-row';
+    d.style.cssText='display:grid;grid-template-columns:1.2fr 1.4fr 1fr 1.3fr 42px;gap:8px;margin:6px 0;align-items:start';
+    d.innerHTML =
+      '<input class="mp-medicamento" value="'+esc(m.medicamento||'')+'" placeholder="Ej.: anticoagulantes">'+
+      '<input class="mp-restriccion" value="'+esc(m.restriccion||'')+'" placeholder="No permitido durante el estudio">'+
+      '<input class="mp-excepciones" value="'+esc(m.excepciones||'')+'" placeholder="Excepción o período de lavado">'+
+      '<input class="mp-fuente" value="'+esc(m.fuente||'')+'" placeholder="Sección / cita textual">'+
+      '<button class="ghost mp-del" title="Quitar" style="color:var(--bad)">✕</button>';
+    d.querySelector('.mp-del').addEventListener('click', ()=>{
+      EDIT_MEDS_PROHIBIDOS = collectStMedsProhib();
+      EDIT_MEDS_PROHIBIDOS.splice(idx,1);
+      renderStMedsProhib();
+    });
+    box.appendChild(d);
+  });
+}
+
+$('btnAddMedProhib').addEventListener('click', ()=>{
+  EDIT_MEDS_PROHIBIDOS = collectStMedsProhib();
+  EDIT_MEDS_PROHIBIDOS.push({ medicamento:'', restriccion:'', excepciones:'', fuente:'' });
+  renderStMedsProhib();
+  const rows = $$('#stMedsProhibBox .med-prohib-row');
+  if(rows.length) rows[rows.length-1].querySelector('.mp-medicamento').focus();
+});
 
 function collectStVisitas(){
   const cards = $$('#stVisitasBox .visitcard');
@@ -2863,6 +2925,7 @@ $('btnSaveStudy').addEventListener('click', async ()=>{
     notas: $('stNotas').value.trim(),
     criteriosInclusion: $('stIncl').value.split('\n').map(t=>t.trim()).filter(Boolean),
     criteriosExclusion: $('stExcl').value.split('\n').map(t=>t.trim()).filter(Boolean),
+    medicamentosProhibidos: collectStMedsProhib(),
     visitas
   };
   const hadPatients = DB.patients.some(p=>p.estudioId===id && !p.anulado);
@@ -4813,6 +4876,30 @@ async function ragExtraerCriterios(estudioId){
            citas: (inc.citas||[]).concat(exc.citas||[]).length };
 }
 
+/* Medicación concomitante: se conserva la restricción y su fuente para que el
+   equipo pueda revisarla directamente contra el protocolo antes de guardarla. */
+async function ragExtraerMedicamentosProhibidos(estudioId){
+  if(!estudioId) throw new Error('Guardá primero el estudio y adjuntá su protocolo para poder consultarlo.');
+  const r = await ragJson(
+    'Del protocolo de este estudio, extraé TODOS los medicamentos, clases terapéuticas, vacunas, suplementos '+
+    'o tratamientos concomitantes que estén prohibidos, no permitidos o restringidos. Incluí también períodos '+
+    'de lavado y excepciones cuando el protocolo los indique. No incluyas la medicación del estudio salvo que el '+
+    'protocolo la nombre explícitamente como prohibida. Si no hay restricciones, devolvé una lista vacía.',
+    { estudio_id: estudioId, max_fragmentos: 30 },
+    '{"medicamentos":[{"medicamento":"nombre o clase","restriccion":"prohibido/restringido y período","excepciones":"excepción o lavado; vacío si no figura","fuente":"sección y cita textual breve"}]}'
+  );
+  const o = parseAiObjectLoose(r.texto);
+  const lista = (o && Array.isArray(o.medicamentos)) ? o.medicamentos : [];
+  return lista.map(m=>( {
+    medicamento: String((m&&m.medicamento)||'').trim().slice(0,240),
+    restriccion: String((m&&m.restriccion)||'').trim().slice(0,400),
+    excepciones: String((m&&m.excepciones)||'').trim().slice(0,300),
+    fuente: String((m&&m.fuente)||'').trim().slice(0,600)
+  })).filter(m=>m.medicamento || m.restriccion).filter((m,i,a)=>
+    a.findIndex(x=>x.medicamento.toLowerCase()===m.medicamento.toLowerCase() && x.restriccion===m.restriccion)===i
+  ).slice(0,80);
+}
+
 /* Aísla la sección de inclusión o de exclusión dentro del texto del protocolo.
    Devuelve '' si no encuentra el encabezado, y en ese caso se usa todo el texto. */
 function seccionCriterios(texto, tipo){
@@ -4972,6 +5059,34 @@ $('btnClearCrit').addEventListener('click', ()=>{
 });
 $('btnImportCrit').addEventListener('click', openImportModal);
 $('btnImportVis').addEventListener('click', openImportModal);
+$('btnImportMedsProhib').addEventListener('click', async ()=>{
+  const stId = $('stId').value;
+  if(!stId){ toast('Guardá primero el estudio y adjuntá el protocolo para poder tomar esta tabla del documento.'); return; }
+  const docs = docsOf(stId).filter(d=>d.tipo==='protocolo');
+  if(!docs.length){ toast('Adjuntá primero el protocolo de este estudio.'); return; }
+  if(!ragActivo()){ toast('La búsqueda documental no está activada en Configuración.'); return; }
+  const b = $('btnImportMedsProhib');
+  const anterior = b.textContent;
+  b.disabled = true; b.textContent = 'Consultando protocolo...';
+  try{
+    const meds = await ragExtraerMedicamentosProhibidos(stId);
+    if(!meds.length){
+      toast('El protocolo no devolvió medicamentos prohibidos o restringidos. Revisá que esté indexado y cargalos manualmente si corresponde.');
+      return;
+    }
+    const actuales = collectStMedsProhib();
+    const clave = m=>(m.medicamento+'|'+m.restriccion).toLowerCase();
+    const existentes = new Set(actuales.map(clave));
+    const nuevos = meds.filter(m=>!existentes.has(clave(m)));
+    EDIT_MEDS_PROHIBIDOS = actuales.concat(nuevos);
+    renderStMedsProhib();
+    toast(nuevos.length+' medicamento(s) o restricción(es) tomados del protocolo. Revisalos y guardá el estudio.');
+  }catch(e){
+    toast('⚠ No se pudo consultar el protocolo: '+e.message);
+  }finally{
+    b.disabled = false; b.textContent = anterior;
+  }
+});
 /* ================= BÚSQUEDA DOCUMENTAL (RAG con Vertex AI Search) =================
    Es el motor que usa NotebookLM por debajo. La diferencia con mandarle a la IA
    el texto completo: acá Google indexa el documento una sola vez y en cada
