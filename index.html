@@ -3067,9 +3067,8 @@ function renderPaMedProtocolo(){
   const box = $('paMedProtAlert');
   const st = getStudy(($('paEstudio')||{}).value);
   const meds = (st&&st.medicamentosProhibidos)||[];
-  if(!meds.length){ box.innerHTML=''; return; }
-  box.innerHTML='<div class="banner warn small" style="margin:0 0 9px"><b>Restricciones del protocolo para este paciente</b><div style="overflow:auto;margin-top:5px"><table style="width:100%;border-collapse:collapse"><thead><tr><th style="text-align:left">Medicamento o clase</th><th style="text-align:left">Restricción</th><th style="text-align:left">Excepción / lavado</th></tr></thead><tbody>'+
-    meds.map(m=>'<tr><td style="padding:3px 6px 3px 0">'+esc(m.medicamento||'—')+'</td><td style="padding:3px 6px">'+esc(m.restriccion||'—')+'</td><td style="padding:3px 0 3px 6px">'+esc(m.excepciones||'—')+'</td></tr>').join('')+
+  box.innerHTML='<div class="banner '+(meds.length?'warn':'gray')+' small" style="margin:0 0 9px"><b>Medicamentos prohibidos o restringidos del protocolo</b><div style="overflow:auto;margin-top:5px"><table style="width:100%;border-collapse:collapse"><thead><tr><th style="text-align:left">Medicamento o clase</th><th style="text-align:left">Restricción</th><th style="text-align:left">Excepción / lavado</th></tr></thead><tbody>'+
+    (meds.length ? meds.map(m=>'<tr><td style="padding:3px 6px 3px 0">'+esc(m.medicamento||'—')+'</td><td style="padding:3px 6px">'+esc(m.restriccion||'—')+'</td><td style="padding:3px 0 3px 6px">'+esc(m.excepciones||'—')+'</td></tr>').join('') : '<tr><td colspan="3" style="padding:5px 0">Todavía no se cargaron restricciones desde el protocolo. Abrí el estudio, usá «Tomar del protocolo» y guardalo.</td></tr>')+
     '</tbody></table></div></div>';
 }
 
