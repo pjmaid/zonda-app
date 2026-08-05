@@ -1815,7 +1815,11 @@ const LS = { CFG:'ecx_cfg', AUTH:'ecx_auth', DB:'ecx_db', SES:'ecx_session' };
 const WEB_DEFAULTS = {
   mode:'supabase',
   supaUrl:'https://aqinxboxjklsyvesdcyr.supabase.co',
-  supaKey:'sb_publishable_ypqDPv6T3S4cDuNFi2Yq2A_Lt5rJ68m'
+  supaKey:'sb_publishable_ypqDPv6T3S4cDuNFi2Yq2A_Lt5rJ68m',
+  /* La búsqueda documental es el camino normal de Zonda: evita respuestas
+     generadas fuera de las fuentes que el equipo cargó. */
+  ragOn:true,
+  ragSolo:true
 };
 /* Zonda funciona únicamente conectado a la nube. Se conservan las demás
    preferencias del navegador (idioma, IA, firma), pero nunca el modo local. */
@@ -1823,6 +1827,10 @@ let CFG = Object.assign({}, WEB_DEFAULTS, loadJSON(LS.CFG) || {});
 CFG.mode = 'supabase';
 if(!CFG.supaUrl) CFG.supaUrl = WEB_DEFAULTS.supaUrl;
 if(!CFG.supaKey) CFG.supaKey = WEB_DEFAULTS.supaKey;
+/* Las instalaciones anteriores podían conservar esta opción apagada en el
+   navegador. Zonda ahora consulta siempre el índice documental de Vertex. */
+CFG.ragOn = true;
+CFG.ragSolo = true;
 let DB = { studies:[], patients:[], visits:[], docs:[], users:[] };
 let SESSION = loadJSON(LS.SES) || null;   // supabase tokens
 let CURRENT_USER = '';
