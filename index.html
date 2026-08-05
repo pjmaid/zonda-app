@@ -461,6 +461,7 @@ details>summary{color:var(--acc-dark)}
         <button id="btnPaMedAdd">+ Agregar medicamento</button>
       </div>
       <div class="muted small" style="margin-bottom:8px">Cargá cada medicamento por separado. Los que estén vigentes se incluirán automáticamente en las evoluciones.</div>
+      <div id="paMedProtAlert"></div>
       <div id="paMedRows"></div>
     </div>
 
@@ -3042,18 +3043,56 @@ let PA_CRIT = {};
 let PA_CONMED = [];
 let PA_CONMED_BAJAS = [];
 
+function normMed(v){
+  return String(v||'').toLocaleLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+    .replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim();
+}
+function coincidenciasMedProhibida(estudioId, farmaco){
+  const q = normMed(farmaco);
+  const st = getStudy(estudioId);
+  if(!q || !st) return [];
+  return (st.medicamentosProhibidos||[]).filter(m=>{
+    const nombre = normMed(m.medicamento);
+    return nombre && (q.includes(nombre) || nombre.includes(q));
+  });
+}
+function avisoMedProhibidaHtml(coincidencias){
+  if(!coincidencias.length) return '';
+  return '<div class="banner bad small" style="margin:6px 0 0">⚠ Posible medicación prohibida o restringida por el protocolo: '+
+    coincidencias.map(m=>'<b>'+esc(m.medicamento||'')+'</b>'+(m.restriccion?' — '+esc(m.restriccion):'')+(m.excepciones?' · '+esc(m.excepciones):'')).join('<br>')+
+    '. Verificá la cita del protocolo y documentá la decisión.</div>';
+}
+function renderPaMedProtocolo(){
+  const box = $('paMedProtAlert');
+  const st = getStudy(($('paEstudio')||{}).value);
+  const meds = (st&&st.medicamentosProhibidos)||[];
+  if(!meds.length){ box.innerHTML=''; return; }
+  box.innerHTML='<div class="banner warn small" style="margin:0 0 9px"><b>Restricciones del protocolo para este paciente</b><div style="overflow:auto;margin-top:5px"><table style="width:100%;border-collapse:collapse"><thead><tr><th style="text-align:left">Medicamento o clase</th><th style="text-align:left">Restricción</th><th style="text-align:left">Excepción / lavado</th></tr></thead><tbody>'+
+    meds.map(m=>'<tr><td style="padding:3px 6px 3px 0">'+esc(m.medicamento||'—')+'</td><td style="padding:3px 6px">'+esc(m.restriccion||'—')+'</td><td style="padding:3px 0 3px 6px">'+esc(m.excepciones||'—')+'</td></tr>').join('')+
+    '</tbody></table></div></div>';
+}
+
 function renderPaConmed(){
   const box = $('paMedRows'); box.innerHTML='';
+  renderPaMedProtocolo();
   if(!PA_CONMED.length) box.innerHTML='<div class="muted small">Sin medicación concomitante actual cargada.</div>';
   PA_CONMED.forEach((m,idx)=>{
+    const coincidencias = coincidenciasMedProhibida(($('paEstudio')||{}).value, m.farmaco);
     const d=document.createElement('div'); d.className='row'; d.style.cssText='padding:8px 0;border-bottom:1px dashed var(--line);align-items:flex-end';
-    d.innerHTML='<div class="grow"><label>Medicamento</label><input type="text" class="pm-farmaco" value="'+esc(m.farmaco||'')+'" placeholder="Ej: enalapril"></div>'+
+    d.innerHTML='<div class="grow"><label>Medicamento</label><input type="text" class="pm-farmaco" value="'+esc(m.farmaco||'')+'" placeholder="Ej: enalapril"><div class="pm-alert">'+avisoMedProhibidaHtml(coincidencias)+'</div></div>'+
       '<div style="flex:0 0 130px"><label>Dosis</label><input type="text" class="pm-dosis" value="'+esc(m.dosis||'')+'" placeholder="Ej: 10 mg/día"></div>'+
       '<div style="flex:0 0 130px"><label>Vía</label><select class="pm-via"><option value="">—</option>'+['Oral','IV','IM','SC','Tópica','Inhalatoria','Otra'].map(x=>'<option'+(m.via===x?' selected':'')+'>'+x+'</option>').join('')+'</select></div>'+
       '<div class="grow"><label>Indicación</label><input type="text" class="pm-indicacion" value="'+esc(m.indicacion||'')+'"></div>'+
       '<div style="flex:0 0 150px"><label>Desde (opcional)</label><input type="date" class="pm-inicio" value="'+esc(m.inicio||'')+'"></div>'+
       '<div><button class="ghost pm-del" title="Quitar medicación actual" style="color:var(--bad)">✕</button></div>';
-    ['farmaco','dosis','via','indicacion','inicio'].forEach(k=>d.querySelector('.pm-'+k).addEventListener('input',e=>{PA_CONMED[idx][k]=e.target.value;}));
+    ['farmaco','dosis','via','indicacion','inicio'].forEach(k=>d.querySelector('.pm-'+k).addEventListener('input',e=>{
+      PA_CONMED[idx][k]=e.target.value;
+      if(k==='farmaco'){
+        const hits = coincidenciasMedProhibida(($('paEstudio')||{}).value, e.target.value);
+        d.querySelector('.pm-alert').innerHTML = avisoMedProhibidaHtml(hits);
+        if(hits.length) PA_CONMED[idx].prohibida='Sí';
+      }
+    }));
     d.querySelector('.pm-del').addEventListener('click',()=>{ if(PA_CONMED[idx].id) PA_CONMED_BAJAS.push(PA_CONMED[idx].id); PA_CONMED.splice(idx,1); renderPaConmed(); });
     box.appendChild(d);
   });
@@ -3128,7 +3167,7 @@ function openPatientEditor(id){
   showView('view-patient-edit');
 }
 
-$('paEstudio').addEventListener('change', ()=>{ PA_CRIT={}; PA_JUST={}; $('paAiNotice').innerHTML=''; renderPaCriterios(); });
+$('paEstudio').addEventListener('change', ()=>{ PA_CRIT={}; PA_JUST={}; $('paAiNotice').innerHTML=''; renderPaCriterios(); renderPaConmed(); });
 
 function renderPaCriterios(){
   const st = getStudy($('paEstudio').value);
@@ -3242,7 +3281,8 @@ $('btnSavePatient').addEventListener('click', async ()=>{
   }
   const medsValidos=PA_CONMED.filter(m=>String(m.farmaco||'').trim());
   for(const m of medsValidos){
-    const registro=Object.assign({},m,{id:m.id||uid(),pacienteId:p.id,estudioId:p.estudioId,farmaco:String(m.farmaco).trim(),dosis:String(m.dosis||'').trim(),via:String(m.via||'').trim(),indicacion:String(m.indicacion||'').trim(),inicio:m.inicio||'',fin:'',creado:m.creado||new Date().toISOString()});
+    const hits = coincidenciasMedProhibida(p.estudioId, m.farmaco);
+    const registro=Object.assign({},m,{id:m.id||uid(),pacienteId:p.id,estudioId:p.estudioId,farmaco:String(m.farmaco).trim(),dosis:String(m.dosis||'').trim(),via:String(m.via||'').trim(),indicacion:String(m.indicacion||'').trim(),inicio:m.inicio||'',fin:'',creado:m.creado||new Date().toISOString(),prohibida:hits.length?'Sí':(m.prohibida||'No'),alertaProtocolo:hits.map(x=>x.medicamento).join('; ')});
     LOGS.conmed=(LOGS.conmed||[]).filter(x=>x.id!==registro.id).concat([registro]);
   }
   if(bajas.size||medsValidos.length){ logsSave(); auditar('log:conmed','actualización desde ficha del paciente',p.id,p.codigo); }
@@ -3459,11 +3499,12 @@ function refreshViClinico(antiSel, comoSel){
           (post.length?' '+post.length+' '+T('cargado(s) después de esta fecha.'):'')+'</div>'
         : '<div class="muted small">'+T('Sin eventos adversos registrados para este paciente.')+'</div>');
   const meds = conmedVigentes(p.id, fecha);
-  const prohib = meds.filter(m=>m.prohibida==='Sí' || m.prohibida==='A verificar');
+  const estaProhibida = m=>m.prohibida==='Sí' || m.prohibida==='A verificar' || coincidenciasMedProhibida(p.estudioId, m.farmaco).length>0;
+  const prohib = meds.filter(estaProhibida);
   $('viMedAuto').innerHTML = meds.length
     ? '<div class="banner '+(prohib.length?'warn':'gray')+'" style="padding:6px 10px"><b>'+T('Concomitantes activos a la fecha')+' ('+meds.length+'):</b> '+
       meds.map(m=>esc(m.farmaco||'—')+(m.dosis?' '+esc(m.dosis):'')+
-        (m.prohibida==='Sí'?' <span class="chip bad">'+T('prohibida')+'</span>':
+        (estaProhibida(m)?' <span class="chip bad">'+T('prohibida / restringida')+'</span>':
          m.prohibida==='A verificar'?' <span class="chip warn">'+T('a verificar')+'</span>':'')).join(' · ')+
       '<div class="muted small" style="margin-top:3px">'+T('Se listan solos en la evolución. Cargá altas y bajas en Herramientas → Medicación concomitante.')+'</div></div>'
     : '<div class="muted small">'+T('Sin medicación concomitante registrada a esta fecha.')+'</div>';
@@ -3766,7 +3807,7 @@ function conmedLinea(r){
   if(r.via) p.push(r.via);
   if(r.indicacion) p.push(T('por')+' '+r.indicacion);
   if(r.inicio) p.push(T('desde')+' '+fmtDate(r.inicio));
-  if(r.prohibida==='Sí') p.push('⚠ '+T('PROHIBIDA POR EL PROTOCOLO'));
+  if(r.prohibida==='Sí' || coincidenciasMedProhibida(r.estudioId, r.farmaco).length) p.push('⚠ '+T('PROHIBIDA POR EL PROTOCOLO'));
   else if(r.prohibida==='A verificar') p.push('⚠ '+T('a verificar contra el protocolo'));
   return p.join(' ');
 }
@@ -9057,6 +9098,19 @@ function logForm(id){
   if(LOG_TIPO==='ea') h += '<div style="flex:1 1 100%;margin-top:6px"><input type="hidden" id="lf_ctcaeCode"><div id="lf_reportadoWrap" class="hidden"><div class="row">'+eaCampoFechaHora('conocido','Fecha de conocimiento por el sitio',r,false)+eaCampoFechaHora('reportado','Fecha de reporte al patrocinador',r,false)+'</div></div><div class="toolbar" style="margin:7px 0 0"><button type="button" id="btnCtcaeAI">✨ Sugerir término CTCAE con IA</button><span id="ctcaeAiMsg" class="muted small"></span></div><div id="ctcaeVersionInfo" class="muted small"></div><div id="ctcaeInfo" class="muted small" style="margin-top:4px"></div></div>';
   box.innerHTML = h; box.classList.remove('hidden');
   prepararCtcaeFormulario(($('lf_estudio')||{}).value||sid,r);
+  if(LOG_TIPO==='conmed'){
+    const aviso = document.createElement('div'); aviso.id='lf_conmed_alert';
+    aviso.style.flexBasis='100%';
+    box.insertBefore(aviso, box.querySelector('.toolbar'));
+    const actualizarAlertaConmed = ()=>{
+      const hits = coincidenciasMedProhibida(($('lf_estudio')||{}).value, ($('lf_farmaco')||{}).value);
+      aviso.innerHTML = avisoMedProhibidaHtml(hits);
+      if(hits.length && $('lf_prohibida')) $('lf_prohibida').value='Sí';
+    };
+    if($('lf_farmaco')) $('lf_farmaco').addEventListener('input', actualizarAlertaConmed);
+    if($('lf_estudio')) $('lf_estudio').addEventListener('change', actualizarAlertaConmed);
+    actualizarAlertaConmed();
+  }
   const configurarHora=s=>{const h=$('lf_hora'+s),n=$('lf_hora'+s+'NoDisponible');if(!h||!n)return;const f=()=>{h.disabled=n.checked;if(n.checked)h.value='';};n.addEventListener('change',f);f();};
   ['Inicio','Fin','Conocido','Reportado'].forEach(configurarHora);
   const actualizarSAE=()=>{ const esSAE=($('lf_serio')||{}).value==='Sí'; $('lf_reportadoWrap').classList.toggle('hidden',!esSAE); if(!esSAE){['conocido','reportado'].forEach(k=>{$('lf_'+k).value='';});['Conocido','Reportado'].forEach(s=>{$('lf_hora'+s).value='';$('lf_hora'+s+'NoDisponible').checked=false;});} };
@@ -9090,6 +9144,11 @@ function logForm(id){
     const falta = def.campos.filter(c=>c.req && !obj[c.k]);
     if(falta.length){ toast(T('Completá')+': '+falta.map(c=>T(c.n)).join(', ')); return; }
     if(LOG_TIPO==='ea'){ const sae=obj.serio==='Sí'; obj.conocido=(sae && $('lf_conocido')) ? $('lf_conocido').value.trim() : ''; obj.reportado=(sae && $('lf_reportado')) ? $('lf_reportado').value.trim() : ''; }
+    if(LOG_TIPO==='conmed'){
+      const hits = coincidenciasMedProhibida(obj.estudioId, obj.farmaco);
+      if(hits.length){ obj.prohibida='Sí'; obj.alertaProtocolo=hits.map(x=>x.medicamento).join('; '); }
+      else obj.alertaProtocolo='';
+    }
     let motivoCambio = '';
     if(LOG_EDIT && LOG_CLINICOS.includes(LOG_TIPO)){
       motivoCambio = prompt(T('Motivo del cambio (obligatorio para registros clínicos ya guardados):'),'') || '';
