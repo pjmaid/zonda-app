@@ -343,6 +343,7 @@ details>summary{color:var(--acc-dark)}
         <h3 style="margin:0">Criterios de inclusión</h3>
         <span class="spacer"></span>
         <button id="btnClearCrit">🧹 Vaciar criterios</button>
+        <button id="btnTranslateCrit">🌐 Traducir al español</button>
         <button id="btnImportCrit">⚡ Importar desde documento</button>
       </div>
       <div class="muted small">Uno por línea. Después se evalúan Sí/No en cada paciente.</div>
@@ -4880,15 +4881,22 @@ async function ragExtraerCriterios(estudioId){
     const cual = tipo==='inclusion' ? 'INCLUSIÓN' : 'EXCLUSIÓN';
     const preg =
       'Listá TODOS los criterios de '+cual+' del protocolo, sin omitir ninguno.\n'+
-      'Respondé solo con una lista numerada, un criterio por línea, transcrito completo y textual, sin resumir.\n'+
+      'Un criterio con su «Nota:» aclaratoria va en la misma línea. No incluyas los subtítulos temáticos '+
+      'que agrupan criterios, ni encabezados, ni introducciones, ni conclusiones.';
+      'Respondé solo con una lista numerada, un criterio por línea, completo y sin resumir.\n'+
+      'La salida debe estar siempre en español: si el protocolo está en otro idioma, traducí fielmente cada criterio '+
+      'sin cambiar umbrales, unidades, plazos, negaciones, nombres de medicamentos ni condiciones.\n'+
+      'Un criterio con su «Nota:» aclaratoria va en la misma línea. No incluyas los subtítulos temáticos '+
+      'que agrupan criterios, ni encabezados, ni introducciones, ni conclusiones.';
       'Un criterio con su «Nota:» aclaratoria va en la misma línea. No incluyas los subtítulos temáticos '+
       'que agrupan criterios, ni encabezados, ni introducciones, ni conclusiones.';
     const r = await ragPreguntar(preg, {
       estudio_id: estudioId,
       max_fragmentos: 30,
-      preambulo: 'Sos un asistente de investigación clínica. Transcribís los criterios de elegibilidad '+
-                 'exactamente como figuran en el protocolo recuperado, en una lista numerada, sin resumir '+
-                 'ni interpretar. No agregás criterios que no estén en el texto.'
+      preambulo: 'Sos un asistente de investigación clínica. Devolvés los criterios de elegibilidad en español '+
+                 'en una lista numerada, sin resumir ni interpretar. Si la fuente está en otro idioma, la traducís '+
+                 'fielmente sin alterar números, unidades, negaciones, plazos, nombres de fármacos ni condiciones. '+
+                 'No agregás criterios que no estén en el texto.'
     });
     return { texto: r.a, citas: r.citas };
   };
@@ -4976,7 +4984,18 @@ async function aiCriteriosSeccion(texto, tipo, imagenes){
     'FRAGMENTO:\n<<<\n'+doc+'\n>>>\n\n'+
     'Respondé ÚNICAMENTE con este objeto JSON:\n{"criterios":[{"texto":"criterio principal","subitems":["condición interna"]}]}\n\n'+
     'Reglas:\n'+
-    '- Transcribí cada criterio tal como figura, sin el número de ítem. Uno por elemento del array.\n'+
+    '- Si un criterio tiene viñetas, incisos o condiciones internas, dejá el enunciado principal en "texto" y cada condición en "subitems". No las conviertas en criterios independientes.\n'+
+    '- Un criterio numerado que trae una «Nota:» aclaratoria va en UN SOLO elemento junto con su nota.\n'+
+    '- Los subtítulos temáticos que agrupan criterios (por ejemplo «Afecciones médicas e infecciones», «Medicación previa o concomitante») NO son criterios: no los incluyas como elemento.\n'+
+    '- No incluyas títulos de sección, entradas del índice, pies de página, texto narrativo del consentimiento ni actas de comité.\n'+
+    '- Si el fragmento contiene criterios de la otra categoría, ignorálos: acá van solo los de '+cual+'.\n'+
+    '- Si el texto trae una sección «TABLAS RECONSTRUIDAS», cada renglón es una fila con columnas separadas por «|»: tomá el enunciado del criterio.\n'+
+    '- Si no hay criterios de '+cual+' en el fragmento, devolvé {"criterios":[]}. No inventes.';
+    '- Devolvé siempre los criterios en español. Si la fuente está en otro idioma, traducí fielmente sin cambiar números, unidades, plazos, negaciones, nombres de fármacos ni condiciones.\n'+
+    '- Un criterio va por elemento del array, sin el número de ítem. Si tiene viñetas, incisos o condiciones internas, dejá el enunciado principal en "texto" y cada condición en "subitems".\n'+
+    '- Un criterio numerado que trae una «Nota:» aclaratoria va en UN SOLO elemento junto con su nota.\n'+
+    '- Los subtítulos temáticos que agrupan criterios no son criterios: no los incluyas. No incluyas títulos de sección, índice, pies de página, consentimiento ni actas.\n'+
+    '- Si el fragmento contiene criterios de la otra categoría, ignorálos. Si no hay criterios de '+cual+' en el fragmento, devolvé {"criterios":[]}. No inventes.';
     '- Si un criterio tiene viñetas, incisos o condiciones internas, dejá el enunciado principal en "texto" y cada condición en "subitems". No las conviertas en criterios independientes.\n'+
     '- Un criterio numerado que trae una «Nota:» aclaratoria va en UN SOLO elemento junto con su nota.\n'+
     '- Los subtítulos temáticos que agrupan criterios (por ejemplo «Afecciones médicas e infecciones», «Medicación previa o concomitante») NO son criterios: no los incluyas como elemento.\n'+
@@ -5097,6 +5116,22 @@ $('btnClearCrit').addEventListener('click', ()=>{
   if(!confirm('¿Vaciar los criterios de inclusión y exclusión de este estudio? (Se aplica al guardar el estudio.)')) return;
   $('stIncl').value=''; $('stExcl').value='';
   toast('Criterios vaciados. Importalos de nuevo o cargalos a mano, y guardá el estudio.');
+});
+$('btnTranslateCrit').addEventListener('click', async ()=>{
+  const stId = $('stId').value;
+  if(!stId){ toast('Guardá primero el estudio y adjuntá el protocolo para traducir los criterios.'); return; }
+  if(!docsOf(stId).some(d=>d.tipo==='protocolo')){ toast('Adjuntá primero el protocolo de este estudio.'); return; }
+  if(!ragActivo()){ toast('La búsqueda documental no está activada en Configuración.'); return; }
+  const b = $('btnTranslateCrit'), anterior = b.textContent;
+  b.disabled=true; b.textContent='Traduciendo...';
+  try{
+    const r = await ragExtraerCriterios(stId);
+    if(!r.incl.length && !r.excl.length) throw new Error('El protocolo no devolvió criterios para traducir.');
+    if(r.incl.length) $('stIncl').value=r.incl.join('\n');
+    if(r.excl.length) $('stExcl').value=r.excl.join('\n');
+    toast('Criterios traducidos al español. Revisalos contra el protocolo y guardá el estudio.');
+  }catch(e){ toast('⚠ No se pudieron traducir los criterios: '+e.message); }
+  finally{ b.disabled=false; b.textContent=anterior; }
 });
 $('btnImportCrit').addEventListener('click', openImportModal);
 $('btnImportVis').addEventListener('click', openImportModal);
