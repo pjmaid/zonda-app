@@ -154,7 +154,6 @@ details>summary{color:var(--acc-dark)}
       <h1>Zonda</h1>
     </div>
     <div class="sub" id="loginSub">Asistente para sitios de investigación clínica</div>
-    <div style="margin-bottom:6px"><label style="margin-top:0">Idioma</label><select id="loginLang"></select></div>
     <div id="loginModeBadge"></div>
     <div id="loginFields">
       <label id="lblUser">Usuario</label>
@@ -183,7 +182,6 @@ details>summary{color:var(--acc-dark)}
     <span class="logo"><svg viewBox="0 0 32 32" width="22" height="22" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true" style="vertical-align:-4px;color:var(--zonda)"><path d="M3 10h14a4 4 0 1 0-4-4"/><path d="M3 16h22a4 4 0 1 1-4 4"/><path d="M3 22h11a3.5 3.5 0 1 1-3.5 3.5"/></svg> Zonda <span class="tagline">· Asistente para sitios de investigación clínica</span></span>
     <span class="badge-mode local" id="modeBadge">LOCAL</span>
     <span class="spacer"></span>
-    <select id="langSelect" style="width:auto;padding:5px 8px;font-size:13px" title="Idioma"></select>
     <span class="muted" id="userBadge"></span>
     <button id="btnLogout">Salir</button>
   </div>
@@ -826,14 +824,6 @@ details>summary{color:var(--acc-dark)}
   <!-- ==== CONFIGURACIÓN ==== -->
   <section id="view-config" class="view hidden">
     <h2>Configuración</h2>
-
-    <div class="card">
-      <h3>Idioma</h3>
-      <div class="muted small" style="margin-bottom:8px">Cambia la interfaz, el texto de las evoluciones y los informes imprimibles.</div>
-      <div class="row">
-        <div style="flex:0 0 240px"><select id="cfgLang"></select></div>
-      </div>
-    </div>
 
     <div class="card">
       <h3>Evaluación automática con IA (opcional)</h3>
@@ -1765,7 +1755,7 @@ const DICT = {
 function T(s, lang){
   if(s===undefined || s===null) return s;
   s = String(s);
-  lang = lang || (CFG && CFG.lang) || 'es';
+  lang = 'es';
   if(lang==='es') return s;
   const i = LANG_IDX[lang];
   if(i===undefined) return s;
@@ -1775,7 +1765,7 @@ function T(s, lang){
   return s.replace(raw, e[i]);   /* conserva los espacios originales */
 }
 function applyLang(){
-  const lang = (CFG && CFG.lang) || 'es';
+  const lang = 'es';
   document.documentElement.lang = LANG_TAG[lang] || 'es';
   const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
   const nodes = [];
@@ -1801,11 +1791,8 @@ function applyLang(){
   }
 }
 function setLang(lang){
-  if(!LANGS[lang]) return;
-  CFG.lang = lang;
+  CFG.lang = 'es';
   saveJSON(LS.CFG, CFG);
-  const sels = ['langSelect','loginLang','cfgLang'];
-  sels.forEach(id=>{ const el = document.getElementById(id); if(el && el.value!==lang) el.value = lang; });
   applyLang();
   if(document.getElementById('appShell') && !document.getElementById('appShell').classList.contains('hidden')){
     renderAll();
@@ -1838,6 +1825,7 @@ const WEB_DEFAULTS = {
    preferencias del navegador (idioma, IA, firma), pero nunca el modo local. */
 let CFG = Object.assign({}, WEB_DEFAULTS, loadJSON(LS.CFG) || {});
 CFG.mode = 'supabase';
+CFG.lang = 'es';
 if(!CFG.supaUrl) CFG.supaUrl = WEB_DEFAULTS.supaUrl;
 if(!CFG.supaKey) CFG.supaKey = WEB_DEFAULTS.supaKey;
 /* Las instalaciones anteriores podían conservar esta opción apagada en el
@@ -2690,13 +2678,6 @@ $('btnLogout').addEventListener('click', doLogout);
 
 /* arranque: si hay sesión online válida, entrar directo */
 (async function boot(){
-  ['langSelect','loginLang','cfgLang'].forEach(id=>{
-    const el = $(id);
-    if(!el) return;
-    el.innerHTML = langOptions();
-    el.value = CFG.lang || 'es';
-    el.addEventListener('change', e=>setLang(e.target.value));
-  });
   initLoginScreen();
   applyLang();
   if(Store.online() && SESSION && SESSION.refresh_token){
@@ -4722,6 +4703,7 @@ async function ragJson(pregunta, filtros, formato){
     'sin texto antes ni después y sin bloques de código. '+
     'Usás únicamente lo que dicen los fragmentos recuperados: no completás con conocimiento externo. '+
     'Si un dato no figura en los fragmentos, lo declarás ausente en lugar de inventarlo. '+
+    'Todo texto narrativo debe estar en español, aun cuando el documento fuente esté en otro idioma. '+
     (formato ? 'Formato exacto de la respuesta: '+formato : '');
   const r = await ragLlamar(Object.assign({ accion:'preguntar', pregunta, preambulo:pre,
                                             max_fragmentos:30 }, filtros||{}));
@@ -5222,7 +5204,8 @@ async function ragBorrar(doc){
 
 /* consulta con recuperación: devuelve { a, citas } como el resto del panel */
 async function ragPreguntar(pregunta, filtros){
-  const j = await ragLlamar(Object.assign({ accion:'preguntar', pregunta }, filtros||{}));
+  const j = await ragLlamar(Object.assign({ accion:'preguntar', pregunta,
+    preambulo:'Respondé en español, usando únicamente los fragmentos recuperados y sin agregar información externa.' }, filtros||{}));
   if(j.sinRespuesta && !j.respuesta)
     throw new Error(T('El buscador no encontró contenido para responder. Puede que los documentos todavía se estén indexando.'));
   return { a: j.respuesta || T('Sin respuesta.'), citas: j.citas || [] };
@@ -6793,7 +6776,7 @@ let PA_JUST = {};
 function aiConfigured(){ return !!((CFG.aiKey||'').trim()); }
 /* idioma en el que la IA debe redactar sus textos */
 function AI_LANG_NAME(){
-  return ({ es:'español', en:'inglés', pt:'portugués', de:'alemán', zh:'chino simplificado', fr:'francés', it:'italiano' })[(CFG.lang||'es')] || 'español';
+  return 'español';
 }
 
 $('btnEvalCrit').addEventListener('click', openEvalModal);
@@ -9012,12 +8995,12 @@ function ctcaeNombreES(hit, texto){
   return nombres[hit[2]]||String(texto||hit[2]||'').trim();
 }
 const CTCAE_GRADOS_GUIA={es:['Grado 1: leve; observación o intervención no indicada.','Grado 2: moderado; puede limitar actividades instrumentales.','Grado 3: severo o médicamente significativo; puede requerir internación o limitar el autocuidado.','Grado 4: riesgo vital; requiere intervención urgente.','Grado 5: muerte relacionada con el evento.'],en:['Grade 1: mild.','Grade 2: moderate.','Grade 3: severe or medically significant.','Grade 4: life-threatening; urgent intervention.','Grade 5: death related to the event.']};
-function ctcaeAyudaGrado(grados){ const a=CTCAE_GRADOS_GUIA[(CFG&&CFG.lang)||'es']||CTCAE_GRADOS_GUIA.es; return grados.map((g,i)=>g&&g!=='-'?a[i]:'').filter(Boolean); }
+function ctcaeAyudaGrado(grados){ const a=CTCAE_GRADOS_GUIA.es; return grados.map((g,i)=>g&&g!=='-'?a[i]:'').filter(Boolean); }
 const CTCAE_GUIA_ES={
  Diarrhea:['Grado 1: cambio en la consistencia o frecuencia de las deposiciones.','Grado 2: aumento de 4 a 6 deposiciones por día sobre el basal, o limitación de actividades instrumentales.','Grado 3: aumento de 7 o más deposiciones por día, internación, necesidad de hidratación intravenosa o limitación del autocuidado.','Grado 4: compromiso vital; intervención urgente.','Grado 5: muerte relacionada con el evento.'],
  Headache:['Grado 1: dolor leve.','Grado 2: dolor moderado que limita actividades instrumentales.','Grado 3: dolor severo que limita el autocuidado.']
 };
-function ctcaeGuiaVisible(hit){ return (CFG&&CFG.lang)==='es' && CTCAE_GUIA_ES[hit[2]] ? CTCAE_GUIA_ES[hit[2]] : ctcaeAyudaGrado(hit[3]); }
+function ctcaeGuiaVisible(hit){ return CTCAE_GUIA_ES[hit[2]] || ctcaeAyudaGrado(hit[3]); }
 async function sugerirCtcaeConIA(version, evento){
   if(!aiConfigured()) throw new Error('Configurá una clave de IA en Configuración para usar esta ayuda.');
   const catalogo=ctcaeLista(version).map(x=>({codigo:x[0],categoria:x[1],termino:x[2]}));
