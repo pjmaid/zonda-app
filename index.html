@@ -1,6 +1,11 @@
 <!DOCTYPE html>
 <html lang="es-AR">
+<script src="runtime-config.js"></script>
+<script src="release-tools.js"></script>
 <script src="ctcae.js"></script>
+<script src="quality-rules.js"></script>
+<script src="today-rules.js"></script>
+<script src="flow-trace.js"></script>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -115,16 +120,25 @@ input[type=checkbox],input[type=radio]{accent-color:var(--acc)}
 #loginBox .brand svg{color:var(--zonda)}
 #loginBox h1{font-size:30px;letter-spacing:-.02em;margin:0}
 #loginBox .sub{color:var(--muted);font-size:13.5px;margin-bottom:16px}
+#loginBuild{margin-top:14px;text-align:center;color:var(--muted);font-size:11.5px}
 #loginMsg{margin-top:10px;font-size:13.5px;min-height:18px}
 #loginMsg.err{color:var(--bad)} #loginMsg.ok{color:var(--ok)}
 pre.sql{background:#0f2233;color:#d8e6f3;padding:14px;border-radius:10px;overflow-x:auto;font-size:12.5px;line-height:1.5}
 #evoText{font-family:ui-monospace,Consolas,Menlo,monospace;font-size:13.5px;line-height:1.5;min-height:420px;white-space:pre;overflow-x:auto}
 /* aviso flotante */
 #toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1b2a38;color:#fff;padding:11px 20px;border-radius:10px;font-size:14px;z-index:99;box-shadow:0 10px 30px rgba(0,0,0,.35);opacity:0;pointer-events:none;transition:opacity .25s}
+#syncStatus{position:fixed;right:18px;bottom:18px;max-width:430px;padding:10px 14px;border-radius:10px;font-size:13px;font-weight:600;z-index:98;box-shadow:0 8px 24px rgba(0,0,0,.2);display:none}
+#syncStatus.saving{display:block;background:#fff4cc;color:#654d00;border:1px solid #e8ca60}
+#syncStatus.error{display:block;background:#ffe4e4;color:#8b1717;border:1px solid #e89a9a}
+#syncStatus.ok{display:block;background:#e5f7ed;color:#145c34;border:1px solid #91d4ae}
 #toast.show{opacity:1}
 .badge-mode{font-size:11px;font-weight:700;padding:3px 10px;border-radius:999px;letter-spacing:.02em}
 .badge-mode.local{background:rgba(255,255,255,.12);color:#c6d5e2}
 .badge-mode.online{background:rgba(46,180,120,.25);color:#7ee2b3}
+.badge-mode.test{background:rgba(224,147,47,.28);color:#ffd38d}
+.badge-mode.unconfigured{background:rgba(192,57,43,.3);color:#ffaaa1}
+#environmentBanner{position:sticky;top:56px;z-index:19;margin:0;border-radius:0;text-align:center}
+#environmentBanner:not(.hidden)+nav#tabs{top:97px}
 #loginModeBadge .badge-mode.local{background:var(--gray-soft);color:var(--muted)}
 #loginModeBadge .badge-mode.online{background:var(--ok-soft);color:var(--ok)}
 .actions{white-space:nowrap}
@@ -172,6 +186,7 @@ details>summary{color:var(--acc-dark)}
       <div style="margin-top:8px"><a href="#" id="lnkForgot" class="small">¿Olvidaste la clave?</a></div>
       <div id="loginMsg"></div>
       <div class="muted small" id="loginHint" style="margin-top:8px"></div>
+      <div id="loginBuild"></div>
     </div>
   </div>
 </div>
@@ -181,12 +196,14 @@ details>summary{color:var(--acc-dark)}
   <div id="topbar">
     <span class="logo"><svg viewBox="0 0 32 32" width="22" height="22" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true" style="vertical-align:-4px;color:var(--zonda)"><path d="M3 10h14a4 4 0 1 0-4-4"/><path d="M3 16h22a4 4 0 1 1-4 4"/><path d="M3 22h11a3.5 3.5 0 1 1-3.5 3.5"/></svg> Zonda <span class="tagline">· Asistente para sitios de investigación clínica</span></span>
     <span class="badge-mode local" id="modeBadge">LOCAL</span>
+    <span class="badge-mode unconfigured" id="versionBadge"></span>
     <span class="spacer"></span>
     <span class="muted" id="userBadge"></span>
     <button id="btnLogout">Salir</button>
   </div>
+  <div id="environmentBanner" class="banner bad hidden"></div>
   <nav id="tabs">
-    <button data-tab="dashboard" class="active">📅 Dashboard</button>
+    <button data-tab="dashboard" class="active">📅 Hoy</button>
     <button data-tab="studies">📚 Estudios</button>
     <button data-tab="patients">🧑‍⚕️ Pacientes</button>
     <button data-tab="visits">📝 Visitas y evoluciones</button>
@@ -201,8 +218,10 @@ details>summary{color:var(--acc-dark)}
 
   <!-- ==== DASHBOARD ==== -->
   <section id="view-dashboard" class="view">
-    <h2>Próximas visitas</h2>
+    <h2>Hoy</h2>
     <div id="dashCards"></div>
+    <div id="dashPriorities"></div>
+    <h3>Visitas pendientes</h3>
     <div class="toolbar">
       <select id="dashFilterStudy" style="max-width:280px"></select>
       <select id="dashFilterDays" style="max-width:220px">
@@ -371,6 +390,7 @@ details>summary{color:var(--acc-dark)}
         <button id="btnAddVisita">+ Agregar visita</button>
       </div>
       <div class="muted small" style="margin-bottom:10px">Día = día del protocolo respecto de la fecha basal. Ventana: días permitidos antes y después. Tareas: una por línea.</div>
+      <div id="stFlowHistory"></div>
       <div id="stVisitasBox"></div>
     </div>
 
@@ -732,6 +752,7 @@ details>summary{color:var(--acc-dark)}
         <div style="flex:0 0 180px"><label>Fecha real de la visita *</label><input type="date" id="viFecha"></div>
       </div>
       <div id="viWindowInfo"></div>
+      <div id="viQualityInfo"></div>
       <div id="viNombreLibreBox" class="hidden">
         <label>Nombre de la visita no programada</label>
         <input type="text" id="viNombreLibre" placeholder="Ej: Visita no programada por EA">
@@ -776,6 +797,11 @@ details>summary{color:var(--acc-dark)}
           <input type="text" id="viAntiComo" placeholder="Ej: refiere uso de preservativo en todas las relaciones desde el screening"></div>
       </div>
       <div id="viEaAuto" class="small" style="margin-bottom:6px"></div>
+      <div class="toolbar" style="margin:0 0 6px">
+        <button type="button" class="ghost" id="btnViNewEa">+ Registrar nuevo EA</button>
+        <button type="button" class="ghost" id="btnViNewConmed">+ Agregar medicación</button>
+        <button type="button" class="ghost" id="btnViOpenDesv">📐 Registrar desviación</button>
+      </div>
       <label>Eventos adversos (nuevos o en curso; si no hay, dejar vacío)</label>
       <textarea id="viEA" rows="3" placeholder="Ej: Cefalea leve desde el 20/07, en curso, no relacionada..."></textarea>
       <div id="viMedAuto" class="small" style="margin:6px 0"></div>
@@ -790,6 +816,12 @@ details>summary{color:var(--acc-dark)}
       </select>
       <label>Próxima visita (se sugiere automáticamente, editable)</label>
       <input type="text" id="viProxima">
+    </div>
+
+    <div class="card hidden" id="viDeviationCard">
+      <h3 style="margin-top:0">Desviación propuesta</h3>
+      <div id="viDeviationInfo" class="small"></div>
+      <label style="margin-top:8px;text-transform:none;letter-spacing:0"><input type="checkbox" id="viCreateDeviation" checked> Crear una desviación abierta vinculada a esta visita al guardar</label>
     </div>
 
     <div class="toolbar">
@@ -827,20 +859,9 @@ details>summary{color:var(--acc-dark)}
 
     <div class="card">
       <h3>Evaluación automática con IA (opcional)</h3>
-      <div class="muted small" style="margin-bottom:8px">Con una clave de API de Anthropic (Claude), Google (Gemini) u OpenAI (ChatGPT), la app lee los documentos del paciente y sugiere la respuesta de cada criterio de elegibilidad con su justificación, extrae criterios y visitas del protocolo, lee la tabla de procedimientos y responde preguntas del CI. Sin clave, esas funciones trabajan en modo básico (solo evidencia encontrada).<br><b>Privacidad:</b> al usar IA, el texto de los documentos seleccionados se envía a la API del proveedor elegido. Adjuntá documentos identificados solo por código/iniciales.</div>
-      <div class="row">
-        <div style="flex:0 0 220px"><label>Proveedor</label>
-          <select id="cfgAiProvider">
-            <option value="anthropic">Anthropic (Claude)</option>
-            <option value="gemini">Google (Gemini)</option>
-            <option value="openai">OpenAI (ChatGPT)</option>
-          </select>
-        </div>
-        <div class="grow"><label>Clave de API (queda guardada solo en este navegador)</label><input type="password" id="cfgAiKey" placeholder="sk-ant-..."></div>
-        <div style="flex:0 0 200px"><label>Modelo</label><input type="text" id="cfgAiModel" placeholder="claude-sonnet-5"></div>
-        <div><button id="btnSaveAi">Guardar</button></div>
-      </div>
-      <div id="aiProviderHelp" class="muted small" style="margin-top:6px"></div>
+      <div class="muted small" style="margin-bottom:8px">Las consultas de IA pasan por el servicio seguro del sitio. Las claves y el modelo se administran en Supabase y nunca llegan al navegador. Antes del envío se omiten identificadores textuales detectables; las imágenes requieren confirmación porque no pueden anonimizarse automáticamente sin OCR.</div>
+      <div class="banner warn" style="margin-bottom:8px"><b>Toda salida es un borrador asistido por IA.</b> Debe ser revisada y aceptada por una persona antes de incorporarla a un documento o registro clínico.</div>
+      <button id="btnCheckAi" type="button">Verificar servicio de IA</button>
       <div id="aiMsg" class="small" style="margin-top:6px"></div>
     </div>
 
@@ -898,10 +919,10 @@ details>summary{color:var(--acc-dark)}
 
     <div class="card">
       <h3>Respaldo de datos</h3>
-      <div class="muted small" style="margin-bottom:10px">Exportá periódicamente un respaldo. Podés importarlo en otra computadora o después de cambiar de modo.</div>
+      <div class="muted small" style="margin-bottom:10px">Exportá una copia operativa para verificación o recuperación controlada. No incluye los archivos adjuntos ni reemplaza el backup administrado de la base de datos.</div>
       <div class="toolbar" style="margin-bottom:0">
         <button class="primary" id="btnExport">⬇ Exportar respaldo (JSON)</button>
-        <button id="btnImportClick">⬆ Importar respaldo</button>
+        <button id="btnImportClick">↺ Restaurar respaldo validado</button>
         <input type="file" id="importFile" accept=".json" class="hidden">
       </div>
     </div>
@@ -946,9 +967,10 @@ details>summary{color:var(--acc-dark)}
           <button id="btnTestSupa">Probar conexión</button>
         </div>
         <div id="cfgSupaMsg" class="small" style="margin-top:6px"></div>
-        <h3 style="margin-top:14px">Script SQL (ejecutar una sola vez en Supabase → SQL Editor)</h3>
+        <h3 style="margin-top:14px">Esquema SQL inicial</h3>
+        <div class="banner warn small">Para esta versión no alcanza con copiar solamente este esquema: antes de publicar deben ejecutarse, en orden, las migraciones incluidas en <b>supabase/migrations</b>. Consultá el README del proyecto.</div>
         <pre class="sql" id="sqlBox"></pre>
-        <button id="btnCopySql">Copiar SQL</button>
+        <button id="btnCopySql">Copiar esquema inicial</button>
       </div>
       <div class="toolbar" style="margin-top:12px;margin-bottom:0">
         <button class="primary" id="btnSaveCfg">Guardar conexión</button>
@@ -1089,6 +1111,8 @@ details>summary{color:var(--acc-dark)}
       <textarea id="flowPaste" rows="8"></textarea></div>
     <div id="flowStatus" class="small" style="margin-top:8px"></div>
     <div id="flowResults" class="hidden" style="margin-top:12px">
+      <div id="flowTrace"></div>
+      <div id="flowDiff"></div>
       <div id="flowSummary"></div>
       <div class="muted small" style="margin:6px 0">Cada fila es un procedimiento y cada columna una visita. Tildá o destildá para corregir; agregá procedimientos que falten con el campo de abajo.</div>
       <div id="flowMatrixWrap" style="max-height:52vh;overflow:auto;border:1px solid var(--line);border-radius:8px"></div>
@@ -1198,6 +1222,7 @@ details>summary{color:var(--acc-dark)}
 </div>
 
 <div id="toast"></div>
+<div id="syncStatus" role="status" aria-live="polite"></div>
 
 <script>
 "use strict";
@@ -1814,8 +1839,8 @@ const LS = { CFG:'ecx_cfg', AUTH:'ecx_auth', DB:'ecx_db', SES:'ecx_session' };
 
 const WEB_DEFAULTS = {
   mode:'supabase',
-  supaUrl:'https://aqinxboxjklsyvesdcyr.supabase.co',
-  supaKey:'sb_publishable_ypqDPv6T3S4cDuNFi2Yq2A_Lt5rJ68m',
+  supaUrl:(window.ZONDA_RUNTIME_CONFIG&&window.ZONDA_RUNTIME_CONFIG.supaUrl)||'',
+  supaKey:(window.ZONDA_RUNTIME_CONFIG&&window.ZONDA_RUNTIME_CONFIG.supaKey)||'',
   /* La búsqueda documental es el camino normal de Zonda: evita respuestas
      generadas fuera de las fuentes que el equipo cargó. */
   ragOn:true,
@@ -1826,20 +1851,31 @@ const WEB_DEFAULTS = {
 let CFG = Object.assign({}, WEB_DEFAULTS, loadJSON(LS.CFG) || {});
 CFG.mode = 'supabase';
 CFG.lang = 'es';
+/* La conexión pertenece al despliegue, no a una preferencia del navegador.
+   Esto evita que una URL guardada en test reaparezca al abrir producción. */
+if(WEB_DEFAULTS.supaUrl) CFG.supaUrl = WEB_DEFAULTS.supaUrl;
+if(WEB_DEFAULTS.supaKey) CFG.supaKey = WEB_DEFAULTS.supaKey;
+/* Las versiones anteriores guardaban secretos de proveedores de IA en este
+   objeto. Se eliminan al cargar: la IA ahora usa exclusivamente secretos de
+   la Edge Function y ninguna clave debe permanecer en localStorage. */
+delete CFG.aiKey;
+delete CFG.aiProvider;
+delete CFG.aiModel;
 if(!CFG.supaUrl) CFG.supaUrl = WEB_DEFAULTS.supaUrl;
 if(!CFG.supaKey) CFG.supaKey = WEB_DEFAULTS.supaKey;
 /* Las instalaciones anteriores podían conservar esta opción apagada en el
    navegador. Zonda ahora consulta siempre el índice documental de Vertex. */
 CFG.ragOn = true;
 CFG.ragSolo = true;
-let DB = { studies:[], patients:[], visits:[], docs:[], users:[] };
+saveJSON(LS.CFG, CFG);
+let DB = { studies:[], patients:[], visits:[], docs:[], users:[], records:[], checklists:[], settings:[] };
 let SESSION = loadJSON(LS.SES) || null;   // supabase tokens
 let CURRENT_USER = '';
 
 function loadJSON(k){ try{ const v = localStorage.getItem(k); return v?JSON.parse(v):null; }catch(e){ return null; } }
 function saveJSON(k,v){ localStorage.setItem(k, JSON.stringify(v)); }
 function uid(){ return (crypto.randomUUID) ? crypto.randomUUID() : 'id-'+Date.now()+'-'+Math.random().toString(36).slice(2,10); }
-function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function esc(s){ return ZondaRelease.escapeHtml(s); }
 function toast(msg){ const t=$('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove('show'),2600); }
 
 /* ---- fechas (siempre en horario local) ---- */
@@ -1869,7 +1905,10 @@ async function sha256hex(str){
 }
 
 /* ---- almacenamiento: local o Supabase ---- */
-const KIND_TABLE = { studies:'ec_studies', patients:'ec_patients', visits:'ec_visits', docs:'ec_docs', users:'ec_users' };
+const KIND_TABLE = {
+  studies:'ec_studies', patients:'ec_patients', visits:'ec_visits', docs:'ec_docs', users:'ec_users',
+  records:'ec_records', checklists:'ec_checklists', settings:'ec_settings'
+};
 
 /* ================= USUARIOS Y ROLES =================
    Tres roles: administrador, médico y coordinadora de estudio. El administrador
@@ -1885,11 +1924,11 @@ const ROLES = {
 };
 /* qué puede hacer cada rol (lo que no figura, lo pueden todos) */
 const PERM = {
-  admin:  { usuarios:true, config:true, estudiosEditar:true, criterios:true, pacientes:true, visitas:true,
+  admin:  { usuarios:true, config:true, estudiosCrear:true, estudiosEditar:true, criterios:true, pacientes:true, visitas:true,
             registros:true, indicadores:true, borrar:true, todosLosEstudios:true },
-  medico: { usuarios:false, config:false, estudiosEditar:true, criterios:true, pacientes:true, visitas:true,
+  medico: { usuarios:false, config:false, estudiosCrear:false, estudiosEditar:true, criterios:true, pacientes:true, visitas:true,
             registros:true, indicadores:true, borrar:true, todosLosEstudios:false },
-  coord:  { usuarios:false, config:false, estudiosEditar:false, criterios:false, pacientes:true, visitas:true,
+  coord:  { usuarios:false, config:false, estudiosCrear:false, estudiosEditar:false, criterios:false, pacientes:true, visitas:true,
             registros:true, indicadores:true, borrar:false, todosLosEstudios:false }
 };
 let ME = null;   /* usuario actual: {id, email, nombre, rol, estudios:[], facturacion, activo} */
@@ -2002,6 +2041,35 @@ function passHint(p){
 
 function saveLocalDB(){ saveJSON(LS.DB, DB); }
 
+const SYNC_STATE = { storage:'', audit:'' };
+const SYNC_OK_TIMERS = { storage:null, audit:null };
+function syncStatus(area, state, message){
+  SYNC_STATE[area] = state ? { state, message } : '';
+  const el = $('syncStatus'); if(!el) return;
+  const problem = SYNC_STATE.storage && SYNC_STATE.storage.state==='error' ? SYNC_STATE.storage
+    : (SYNC_STATE.audit && SYNC_STATE.audit.state==='error' ? SYNC_STATE.audit : null);
+  const active = problem || SYNC_STATE.storage || SYNC_STATE.audit;
+  clearTimeout(SYNC_OK_TIMERS[area]);
+  if(!active){ el.className=''; el.textContent=''; return; }
+  el.className = active.state;
+  el.textContent = active.message;
+  if(active.state==='ok'){
+    const activeArea = SYNC_STATE.storage===active ? 'storage' : 'audit';
+    clearTimeout(SYNC_OK_TIMERS[activeArea]);
+    SYNC_OK_TIMERS[activeArea] = setTimeout(()=>{
+      if(SYNC_STATE[activeArea]===active){ SYNC_STATE[activeArea]=''; syncStatus(activeArea,'',''); }
+    }, 2200);
+  }
+}
+
+function cloneData(v){ return v==null ? v : JSON.parse(JSON.stringify(v)); }
+
+function assertDeploymentWritable(){
+  const env=String((window.ZONDA_RUNTIME_CONFIG&&window.ZONDA_RUNTIME_CONFIG.environment)||'unconfigured').toLowerCase();
+  if(env!=='test' && env!=='production')
+    throw new Error('El entorno no está configurado. No se permiten cambios hasta declarar test o production en runtime-config.js.');
+}
+
 function supaBase(){ return (CFG.supaUrl||'').trim().replace(/\/+$/,''); }
 function supaHeaders(){
   const tok = SESSION && SESSION.access_token ? SESSION.access_token : CFG.supaKey;
@@ -2032,40 +2100,141 @@ async function supaRefresh(){
 }
 
 const Store = {
+  revisions:{},
+  snapshots:{},
   online(){ return true; },
+  resetMeta(){
+    for(const kind of Object.keys(KIND_TABLE)){
+      this.revisions[kind] = new Map();
+      this.snapshots[kind] = new Map();
+    }
+  },
   async loadAll(){
     if(!this.online()){
       const d = loadJSON(LS.DB);
-      DB = d && d.studies ? d : { studies:[], patients:[], visits:[], docs:[], users:[] };
+      DB = d && d.studies ? d : { studies:[], patients:[], visits:[], docs:[], users:[], records:[], checklists:[], settings:[] };
       DB.studies=DB.studies||[]; DB.patients=DB.patients||[]; DB.visits=DB.visits||[];
-      DB.docs=DB.docs||[]; DB.users=DB.users||[];
+      DB.docs=DB.docs||[]; DB.users=DB.users||[]; DB.records=DB.records||[]; DB.checklists=DB.checklists||[]; DB.settings=DB.settings||[];
+      if(typeof hidratarDatosCompartidos==='function') hidratarDatosCompartidos();
+      if(typeof hidratarConfiguracionCompartida==='function') hidratarConfiguracionCompartida();
       return;
     }
+    this.resetMeta();
     const out = {};
     for(const kind of Object.keys(KIND_TABLE)){
-      const r = await supaFetch('/rest/v1/'+KIND_TABLE[kind]+'?select=data&order=updated_at.asc', { method:'GET' });
+      const r = await supaFetch('/rest/v1/'+KIND_TABLE[kind]+'?select=id,data,rev,updated_at&order=updated_at.asc', { method:'GET' });
       if(!r.ok) throw new Error('Error al leer '+KIND_TABLE[kind]+' ('+r.status+'). ¿Ejecutaste el script SQL?');
       const rows = await r.json();
-      out[kind] = rows.map(x=>x.data).filter(Boolean);
+      out[kind] = rows.map(x=>{
+        if(x && x.id && x.data){
+          this.revisions[kind].set(x.id, Number(x.rev||1));
+          this.snapshots[kind].set(x.id, cloneData(x.data));
+        }
+        return x.data;
+      }).filter(Boolean);
     }
-    DB = { studies:out.studies, patients:out.patients, visits:out.visits, docs:out.docs, users:out.users||[] };
+    DB = { studies:out.studies, patients:out.patients, visits:out.visits, docs:out.docs, users:out.users||[],
+           records:out.records||[], checklists:out.checklists||[], settings:out.settings||[] };
+    if(typeof hidratarDatosCompartidos==='function') hidratarDatosCompartidos();
+    if(typeof hidratarConfiguracionCompartida==='function') hidratarConfiguracionCompartida();
   },
-  async upsert(kind, obj){
-    const arr = DB[kind]; const i = arr.findIndex(x=>x.id===obj.id);
-    if(i>=0) arr[i]=obj; else arr.push(obj);
-    if(!this.online()){ saveLocalDB(); return; }
-    const r = await supaFetch('/rest/v1/'+KIND_TABLE[kind], {
-      method:'POST',
-      headers:{ 'Prefer':'resolution=merge-duplicates,return=minimal' },
-      body: JSON.stringify([{ id:obj.id, data:obj, updated_at:new Date().toISOString() }])
-    });
-    if(!r.ok) throw new Error('No se pudo guardar en la nube ('+r.status+')');
+  restore(kind, id){
+    const snap = this.snapshots[kind] && this.snapshots[kind].get(id);
+    const i = (DB[kind]||[]).findIndex(x=>x.id===id);
+    if(snap){
+      if(i>=0) DB[kind][i]=cloneData(snap); else DB[kind].push(cloneData(snap));
+    } else if(i>=0) DB[kind].splice(i,1);
   },
-  async remove(kind, id){
-    DB[kind] = DB[kind].filter(x=>x.id!==id);
-    if(!this.online()){ saveLocalDB(); return; }
-    const r = await supaFetch('/rest/v1/'+KIND_TABLE[kind]+'?id=eq.'+encodeURIComponent(id), { method:'DELETE' });
-    if(!r.ok) throw new Error('No se pudo borrar en la nube ('+r.status+')');
+  async refreshOne(kind,id){
+    const r=await supaFetch('/rest/v1/'+KIND_TABLE[kind]+'?select=id,data,rev,updated_at&id=eq.'+encodeURIComponent(id), {method:'GET'});
+    if(!r.ok) throw new Error('No se pudo recargar el registro en conflicto.');
+    const rows=await r.json(), row=rows&&rows[0];
+    if(!row){
+      DB[kind]=DB[kind].filter(x=>x.id!==id);
+      this.revisions[kind].delete(id); this.snapshots[kind].delete(id);
+      return;
+    }
+    const i=DB[kind].findIndex(x=>x.id===id);
+    if(i>=0) DB[kind][i]=row.data; else DB[kind].push(row.data);
+    this.revisions[kind].set(id,Number(row.rev||1));
+    this.snapshots[kind].set(id,cloneData(row.data));
+  },
+  async rpc(path, payload){
+    let r;
+    try{
+      r = await supaFetch('/rest/v1/rpc/'+path, { method:'POST', body:JSON.stringify(payload) });
+    }catch(firstError){
+      try{
+        r = await supaFetch('/rest/v1/rpc/'+path, { method:'POST', body:JSON.stringify(payload) });
+      }catch(secondError){
+        throw new Error('No hay conexión con el servidor. No se pudo confirmar el cambio.');
+      }
+    }
+    const raw = await r.text().catch(()=>'');
+    let body = {}; try{ body=raw?JSON.parse(raw):{}; }catch(e){ body={ message:raw }; }
+    if(!r.ok){
+      const msg = String(body.message||body.hint||'');
+      if(msg.includes('VERSION_CONFLICT')){
+        const err = new Error('Otro usuario modificó este registro. Se cargó la versión más reciente y tu edición no se sobrescribió.');
+        err.conflict=true; throw err;
+      }
+      if(r.status===404 || msg.includes('ec_save_record') || msg.includes('ec_remove_record'))
+        throw new Error('Falta aplicar una migración pendiente en Supabase. No se guardó ningún cambio.');
+      throw new Error('No se pudo confirmar la operación en la nube ('+r.status+'). No se guardó ningún cambio.');
+    }
+    return body;
+  },
+  async upsert(kind, obj, audit){
+    assertDeploymentWritable();
+    if(!obj || !obj.id || !KIND_TABLE[kind]) throw new Error('Registro inválido.');
+    if(!this.revisions[kind]) this.resetMeta();
+    const expected = this.revisions[kind].has(obj.id) ? this.revisions[kind].get(obj.id) : null;
+    const eventId = uid();
+    syncStatus('storage','saving','Guardando y registrando auditoría…');
+    try{
+      const result = await this.rpc('ec_save_record', {
+        p_kind:kind, p_id:obj.id, p_data:obj, p_expected_rev:expected,
+        p_event_id:eventId, p_action:(audit&&audit.accion)||'',
+        p_detail:(audit&&audit.detalle)||'', p_motivo:(audit&&audit.motivo)||''
+      });
+      const arr = DB[kind]; const i = arr.findIndex(x=>x.id===obj.id);
+      if(i>=0) arr[i]=obj; else arr.push(obj);
+      this.revisions[kind].set(obj.id, Number(result.rev));
+      this.snapshots[kind].set(obj.id, cloneData(obj));
+      if(typeof recordarAuditoriaConfirmada==='function')
+        recordarAuditoriaConfirmada(kind, (audit&&audit.accion)||(expected===null?'alta':'modificación'), obj.id,
+          (audit&&audit.detalle)||'', (audit&&audit.motivo)||'', eventId, result.updated_at);
+      syncStatus('storage','ok','✓ Cambio guardado y auditado.');
+      return result;
+    }catch(e){
+      if(e.conflict){ try{ await this.refreshOne(kind,obj.id); }catch(refreshError){ this.restore(kind,obj.id); } }
+      else this.restore(kind,obj.id);
+      syncStatus('storage','error','⚠ '+e.message);
+      throw e;
+    }
+  },
+  async remove(kind, id, audit){
+    assertDeploymentWritable();
+    if(!this.revisions[kind] || !this.revisions[kind].has(id)) throw new Error('El registro no tiene una versión confirmada. Recargá los datos.');
+    const eventId=uid();
+    syncStatus('storage','saving','Eliminando y registrando auditoría…');
+    try{
+      const result = await this.rpc('ec_remove_record', {
+        p_kind:kind, p_id:id, p_expected_rev:this.revisions[kind].get(id), p_event_id:eventId,
+        p_detail:(audit&&audit.detalle)||'', p_motivo:(audit&&audit.motivo)||''
+      });
+      DB[kind] = DB[kind].filter(x=>x.id!==id);
+      this.revisions[kind].delete(id); this.snapshots[kind].delete(id);
+      if(typeof recordarAuditoriaConfirmada==='function')
+        recordarAuditoriaConfirmada(kind,'baja',id,(audit&&audit.detalle)||'',(audit&&audit.motivo)||'',eventId);
+      syncStatus('storage','ok','✓ Registro eliminado y auditado.');
+      return result;
+    }catch(e){
+      if(e.conflict){ try{ await this.refreshOne(kind,id); }catch(refreshError){ this.restore(kind,id); } }
+      else this.restore(kind,id);
+      syncStatus('storage','error','⚠ '+e.message);
+      throw e;
+    }
   }
 };
 
@@ -2176,28 +2345,58 @@ function resetInactividad(){
 /* ---- pista de auditoría (append-only) ---- */
 const LS_AUDIT = 'ecx_audit';
 let AUDIT = loadJSON(LS_AUDIT) || [];
-function auditar(entidad, accion, id, detalle, motivo){
-  const ev = {
-    id: uid(), ts: new Date().toISOString(),
+let AUDIT_SYNCING = false;
+function auditEvent(entidad, accion, id, detalle, motivo, eventId, ts){
+  return {
+    id:eventId||uid(), ts:ts||new Date().toISOString(),
     usuario: (ME && (ME.email||ME.nombre)) || CURRENT_USER || '—',
     rol: (ME && ME.rol) || '',
-    entidad, accion, refId: id||'',
-    detalle: String(detalle||'').slice(0,600),
-    motivo: String(motivo||'').slice(0,300)
+    entidad, accion, refId:id||'',
+    detalle:String(detalle||'').slice(0,600),
+    motivo:String(motivo||'').slice(0,300)
   };
+}
+function recordarAuditoriaConfirmada(entidad, accion, id, detalle, motivo, eventId, ts){
+  if(AUDIT.some(e=>e.id===eventId)) return;
+  const ev=auditEvent(entidad,accion,id,detalle,motivo,eventId,ts);
+  ev.sincronizado=true;
+  AUDIT.push(ev); saveJSON(LS_AUDIT,AUDIT);
+}
+function auditar(entidad, accion, id, detalle, motivo){
+  const ev = auditEvent(entidad, accion, id, detalle, motivo);
+  ev.sincronizado=false;
   AUDIT.push(ev);
-  if(AUDIT.length > 5000) AUDIT = AUDIT.slice(-5000);   /* tope para no llenar el navegador */
   saveJSON(LS_AUDIT, AUDIT);
-  /* espejo en el servidor: tabla ec_audit de solo inserción (no bloquea la UI) */
-  if(typeof Store!=='undefined' && Store.online() && typeof supaFetch==='function'){
-    supaFetch('/rest/v1/ec_audit', {
-      method:'POST', headers:{ 'Prefer':'return=minimal' },
-      body: JSON.stringify([{ ts:ev.ts, usuario:ev.usuario, rol:ev.rol, entidad:ev.entidad,
-        accion:ev.accion, ref_id:ev.refId, detalle:ev.detalle, motivo:ev.motivo }])
-    }).catch(()=>{});
-  }
+  syncAuditQueue();
   return ev;
 }
+async function syncAuditQueue(){
+  if(AUDIT_SYNCING || !Store.online() || !SESSION || !SESSION.access_token) return;
+  const pendientes=AUDIT.filter(e=>!e.sincronizado).slice(0,100);
+  if(!pendientes.length){ syncStatus('audit','',''); return; }
+  AUDIT_SYNCING=true;
+  syncStatus('audit','saving','Sincronizando '+pendientes.length+' evento(s) de auditoría…');
+  try{
+    const payload=pendientes.map(ev=>({
+      event_id:ev.id, client_ts:ev.ts, usuario:ev.usuario, rol:ev.rol, entidad:ev.entidad,
+      accion:ev.accion, ref_id:ev.refId, detalle:ev.detalle, motivo:ev.motivo
+    }));
+    const r=await supaFetch('/rest/v1/ec_audit', {
+      method:'POST', headers:{'Prefer':'resolution=ignore-duplicates,return=minimal'}, body:JSON.stringify(payload)
+    });
+    if(!r.ok) throw new Error('La auditoría quedó pendiente de sincronización ('+r.status+').');
+    const ids=new Set(pendientes.map(e=>e.id));
+    AUDIT.forEach(e=>{ if(ids.has(e.id)) e.sincronizado=true; });
+    saveJSON(LS_AUDIT,AUDIT);
+    syncStatus('audit','ok','✓ Auditoría sincronizada.');
+  }catch(e){
+    syncStatus('audit','error','⚠ '+e.message+' No cierres esta sesión hasta recuperar la conexión.');
+  }finally{
+    AUDIT_SYNCING=false;
+    if(AUDIT.some(e=>!e.sincronizado)) setTimeout(syncAuditQueue,15000);
+  }
+}
+window.addEventListener('online', syncAuditQueue);
 /* lectura combinada: local + servidor (cuando hay) */
 async function auditRows(){
   let filas = AUDIT.slice().map(e=>Object.assign({origen:'local'}, e));
@@ -2230,26 +2429,27 @@ function auditResumen(kind, obj, prev){
 }
 
 async function persist(kind, obj, msg, motivo){
-  const prev = (DB[kind]||[]).find(x=>x.id===obj.id);
+  const confirmed = Store.snapshots[kind] && Store.snapshots[kind].get(obj.id);
+  const prev = confirmed || (DB[kind]||[]).find(x=>x.id===obj.id);
   const alta = !prev;
   const antes = prev ? JSON.parse(JSON.stringify(prev)) : null;
   try{
-    await Store.upsert(kind, obj);
-    auditar(kind, alta?'alta':'modificación', obj.id, auditResumen(kind, obj, antes), motivo);
+    await Store.upsert(kind, obj, { accion:alta?'alta':'modificación', detalle:auditResumen(kind,obj,antes), motivo });
     if(msg) toast(msg);
+    renderAll();
+    return true;
   }
-  catch(e){ toast('⚠ '+e.message); }
-  renderAll();
+  catch(e){ toast('⚠ '+e.message); renderAll(); return false; }
 }
 async function removeEntity(kind, id, msg, motivo){
   const prev = (DB[kind]||[]).find(x=>x.id===id);
   try{
-    await Store.remove(kind, id);
-    auditar(kind, 'baja', id, prev?auditResumen(kind, prev):'', motivo);
+    await Store.remove(kind, id, { detalle:prev?auditResumen(kind,prev):'', motivo });
     if(msg) toast(msg);
+    renderAll();
+    return true;
   }
-  catch(e){ toast('⚠ '+e.message); }
-  renderAll();
+  catch(e){ toast('⚠ '+e.message); renderAll(); return false; }
 }
 
 /* ---- helpers de dominio ---- */
@@ -2267,8 +2467,7 @@ async function anularRegistro(kind, id, detalle){
     anuladoPor:(ME&&(ME.email||ME.nombre))||CURRENT_USER||'',
     anuladoEn:new Date().toISOString()
   });
-  await persist(kind, nuevo, T('Registro anulado.'), motivo.trim());
-  return true;
+  return await persist(kind, nuevo, T('Registro anulado.'), motivo.trim());
 }
 function visitasDe(pacienteId){ return DB.visits.filter(v=>v.pacienteId===pacienteId && !v.anulado); }
 function noAnulado(x){ return !x.anulado; }
@@ -2323,6 +2522,65 @@ function windowStatus(nv){
   return { key:'proxima', chip:'gray', txt:T('PRÓXIMA') };
 }
 
+/* ================= CONTROLES AUTOMÁTICOS DE CALIDAD =================
+   Las reglas puras viven en quality-rules.js para poder probarlas sin el navegador.
+   El formulario bloquea incoherencias esenciales y exige confirmación para avisos
+   o pendientes que necesitan seguimiento. El resultado queda guardado junto al registro. */
+function consentimientosDePaciente(pacienteId){
+  return logRows('ciproceso').filter(r=>r.pacienteId===pacienteId);
+}
+function versionCiVigente(estudioId){
+  const d=latestCI(estudioId); return d && d.version ? String(d.version).trim() : '';
+}
+function qualityForVisit(log){
+  const p=getPatient(log.pacienteId), st=getStudy(log.estudioId);
+  if(!p||!st||!window.ZondaQuality) return [];
+  return ZondaQuality.visit({
+    visit:log, patient:p, study:st, today:todayISO(), eligibility:eligibility(p),
+    consents:consentimientosDePaciente(p.id), currentIcfVersion:versionCiVigente(st.id),
+    completedVisits:visitasDe(p.id), targetFor:visitTarget
+  });
+}
+function qualityForLog(tipo,obj){
+  if(!window.ZondaQuality) return [];
+  if(tipo==='ea') return ZondaQuality.adverseEvent({record:obj,today:todayISO()});
+  if(tipo==='ciproceso') return ZondaQuality.consent({record:obj,today:todayISO()});
+  if(tipo==='random'){
+    const p=getPatient(obj.pacienteId);
+    return ZondaQuality.randomization({
+      record:obj, patient:p, today:todayISO(), eligibility:p?eligibility(p):'sindatos',
+      consents:p?consentimientosDePaciente(p.id):[], currentIcfVersion:versionCiVigente(obj.estudioId),
+      randomizations:logRows('random')
+    });
+  }
+  return [];
+}
+function qualityStamp(issues){
+  return { evaluadoEn:new Date().toISOString(), reglas:'2026.08.10', issues:(issues||[]).map(i=>({level:i.level,code:i.code,message:i.message})) };
+}
+function qualityText(issues){
+  const g=ZondaQuality.byLevel(issues), lines=[];
+  if(g.block.length) lines.push('BLOQUEOS:\n'+g.block.map(i=>'• '+i.message).join('\n'));
+  if(g.warning.length) lines.push('ADVERTENCIAS:\n'+g.warning.map(i=>'• '+i.message).join('\n'));
+  if(g.pending.length) lines.push('PENDIENTES:\n'+g.pending.map(i=>'• '+i.message).join('\n'));
+  return lines.join('\n\n');
+}
+function qualityGate(issues,accion){
+  const g=ZondaQuality.byLevel(issues);
+  if(g.block.length){ alert('No se puede '+accion+' hasta corregir:\n\n'+qualityText(g.block)); return false; }
+  if(g.warning.length||g.pending.length)
+    return confirm('Control automático de calidad:\n\n'+qualityText(g.warning.concat(g.pending))+'\n\n¿Confirmás que querés continuar y dejar estos avisos registrados?');
+  return true;
+}
+function qualityBannerHtml(issues){
+  if(!issues||!issues.length) return '<div class="banner ok small">✓ Sin hallazgos automáticos de calidad.</div>';
+  const g=ZondaQuality.byLevel(issues), blocks=[];
+  if(g.block.length) blocks.push('<b>Bloqueos</b><br>'+g.block.map(i=>'• '+esc(i.message)).join('<br>'));
+  if(g.warning.length) blocks.push('<b>Advertencias</b><br>'+g.warning.map(i=>'• '+esc(i.message)).join('<br>'));
+  if(g.pending.length) blocks.push('<b>Pendientes</b><br>'+g.pending.map(i=>'• '+esc(i.message)).join('<br>'));
+  return '<div class="banner '+(g.block.length?'bad':'warn')+' small" style="margin-top:8px">'+blocks.join('<br><br>')+'</div>';
+}
+
 /* ---- navegación ---- */
 const TAB_OF_VIEW = {
   'view-dashboard':'dashboard', 'view-studies':'studies', 'view-study-edit':'studies',
@@ -2369,7 +2627,34 @@ function fillStudyFilters(){
 /* ================= LOGIN ================= */
 function localAuth(){ return loadJSON(LS.AUTH); }
 
+function renderBuildInfo(){
+  const cfg=window.ZONDA_RUNTIME_CONFIG||{};
+  const env=String(cfg.environment||'unconfigured').toLowerCase();
+  const version=String(cfg.appVersion||'sin versión');
+  const release=String(cfg.releaseId||'sin release');
+  const envLabel=env==='production'?'PRODUCCIÓN':(env==='test'?'PRUEBA':'ENTORNO SIN DECLARAR');
+  const badge=$('versionBadge');
+  if(badge){
+    badge.textContent=envLabel+' · v'+version;
+    badge.title='Release '+release;
+    badge.className='badge-mode '+(env==='production'?'online':(env==='test'?'test':'unconfigured'));
+  }
+  const login=$('loginBuild');
+  if(login) login.textContent=envLabel+' · v'+version+' · '+release;
+  const banner=$('environmentBanner');
+  if(!banner) return;
+  if(env==='production'){
+    banner.classList.add('hidden');
+  } else {
+    banner.textContent=env==='test'
+      ? 'ENTORNO DE PRUEBA — no ingresar datos reales de pacientes'
+      : 'ENTORNO SIN CONFIGURAR — no utilizar con datos reales ni publicar';
+    banner.className='banner '+(env==='test'?'warn':'bad');
+  }
+}
+
 function initLoginScreen(){
+  renderBuildInfo();
   const online = Store.online();
   $('loginModeBadge').innerHTML = online
     ? '<span class="badge-mode online">MODO ONLINE</span>'
@@ -2606,6 +2891,8 @@ async function enterApp(){
     const ok = await forzarCambioClave();
     if(!ok){ doLogout(); return; }
   }
+  await migrarDatosCompartidosLegacy();
+  await migrarConfiguracionCompartidaLegacy();
   refreshUserUi();
   resetInactividad();
   const mb = $('modeBadge');
@@ -2689,6 +2976,7 @@ $('btnLogout').addEventListener('click', doLogout);
 /* ================= ESTUDIOS ================= */
 let EDIT_VISITAS = [];
 let EDIT_MEDS_PROHIBIDOS = [];
+let EDIT_IMPORTACIONES_PROTOCOLO = [];
 
 function renderStudies(){
   const box = $('studiesList'); box.innerHTML='';
@@ -2715,13 +3003,13 @@ function renderStudies(){
         '</div>'+
       '</div>'+
       '<div class="actions">'+
-        '<button class="primary" data-act="edit" style="padding:9px 18px">'+T('Editar')+'</button>'+
+        (can('estudiosEditar')?'<button class="primary" data-act="edit" style="padding:9px 18px">'+T('Editar')+'</button>':'')+
         (ci?'<button class="ghost" data-act="ci" title="'+T('Ver la última versión del consentimiento informado')+'">📄 '+T('CI vigente')+'</button>'+
             (featOn('ia.askCi')?'<button class="ghost" data-act="ciask" title="'+T('Consultar el consentimiento informado')+'">❓</button>':'')+
             '<button class="ghost" data-act="ciprint" title="'+T('Imprimir')+'">🖨</button>':'')+
         (featOn('ia.askDocs') && docsOf(s.id).some(d=>d.tipo!=='ci')
           ?'<button class="ghost" data-act="docsask" title="'+T('Consultar los documentos del estudio')+'">🔎 '+T('Protocolo')+'</button>':'')+
-        '<button class="ghost" data-act="del" style="color:var(--bad)">'+T('Eliminar')+'</button>'+
+        (can('borrar')?'<button class="ghost" data-act="del" style="color:var(--bad)">'+T('Eliminar')+'</button>':'')+
       '</div>';
     if(ci){
       div.querySelector('[data-act=ci]').addEventListener('click', ()=>openDoc(ci.id));
@@ -2731,13 +3019,15 @@ function renderStudies(){
     }
     const bDocs = div.querySelector('[data-act=docsask]');
     if(bDocs) bDocs.addEventListener('click', ()=>openStudyAsk(s.id));
-    div.querySelector('[data-act=edit]').addEventListener('click', ()=>openStudyEditor(s.id));
-    div.querySelector('[data-act=del]').addEventListener('click', ()=>deleteStudy(s.id));
+    const bEdit=div.querySelector('[data-act=edit]'); if(bEdit) bEdit.addEventListener('click', ()=>openStudyEditor(s.id));
+    const bDel=div.querySelector('[data-act=del]'); if(bDel) bDel.addEventListener('click', ()=>deleteStudy(s.id));
     box.appendChild(div);
   }
 }
 
 function openStudyEditor(id){
+  if(!id && !can('estudiosCrear')){ toast(T('Solo un administrador puede crear protocolos.')); return; }
+  if(id && !can('estudiosEditar')){ toast(T('Tu rol no permite modificar protocolos.')); return; }
   const s = id ? getStudy(id) : null;
   $('studyEditTitle').textContent = s ? 'Editar estudio: '+s.codigo : 'Nuevo estudio';
   $('stId').value = s ? s.id : '';
@@ -2762,11 +3052,13 @@ function openStudyEditor(id){
   $('stExcl').value = s ? (s.criteriosExclusion||[]).join('\n') : '';
   EDIT_MEDS_PROHIBIDOS = s ? JSON.parse(JSON.stringify(s.medicamentosProhibidos||[])) : [];
   EDIT_VISITAS = s ? JSON.parse(JSON.stringify(s.visitas||[])) : [];
+  EDIT_IMPORTACIONES_PROTOCOLO = s ? JSON.parse(JSON.stringify(s.importacionesProtocolo||[])) : [];
   if(!EDIT_VISITAS.length && !s){
     EDIT_VISITAS = [{ id:uid(), nombre:'Screening', dia:-14, venAntes:14, venDesp:0, tareas:[] },
                     { id:uid(), nombre:'Visita 1 (Basal)', dia:1, venAntes:0, venDesp:0, tareas:[] }];
   }
   renderStMedsProhib();
+  renderFlowHistory();
   renderStVisitas();
   renderDocsList();
   renderCiPanel();
@@ -2834,7 +3126,8 @@ function collectStVisitas(){
       venAntes: Math.abs(parseInt(c.querySelector('.v-antes').value,10)||0),
       venDesp: Math.abs(parseInt(c.querySelector('.v-desp').value,10)||0),
       tareas: c.querySelector('.v-tareas').value.split('\n').map(t=>t.trim()).filter(Boolean),
-      tablet: (v.tablet||[]).filter(t=>c.querySelector('.v-tareas').value.split('\n').map(x=>x.trim()).includes(t))
+      tablet: (v.tablet||[]).filter(t=>c.querySelector('.v-tareas').value.split('\n').map(x=>x.trim()).includes(t)),
+      trazabilidad: v.trazabilidad ? JSON.parse(JSON.stringify(v.trazabilidad)) : undefined
     });
   }
   return out;
@@ -2860,12 +3153,33 @@ function renderStVisitas(){
       '</div>'+
       '<label>Procedimientos (uno por línea)</label>'+
       '<textarea class="v-tareas" rows="4" placeholder="Signos vitales&#10;Laboratorio&#10;Registro de EAs y medicación concomitante">'+esc((v.tareas||[]).join('\n'))+'</textarea>'+
-      '<div class="muted small">Al registrar la visita, marcá con la casilla “Tablet” los procedimientos que el paciente completa allí.</div>';
+      '<div class="muted small">Al registrar la visita, marcá con la casilla “Tablet” los procedimientos que el paciente completa allí.</div>'+
+      (v.trazabilidad&&v.trazabilidad.fuente ? '<div class="small" style="margin-top:7px;padding:6px 9px;border-radius:7px;background:var(--gray-soft)">🔎 <b>Origen:</b> '+
+        esc(v.trazabilidad.fuente.filename||'documento')+
+        (v.trazabilidad.fuente.version?' · versión '+esc(v.trazabilidad.fuente.version):'')+
+        ((v.trazabilidad.fuente.pages||[]).length?' · pág. '+esc(v.trazabilidad.fuente.pages.join(', ')):'')+
+        ' · '+esc(v.trazabilidad.fuente.methodLabel||v.trazabilidad.fuente.method||'')+'</div>' : '');
     d.querySelector('.v-del').addEventListener('click', ()=>{ EDIT_VISITAS = collectStVisitas(); EDIT_VISITAS.splice(idx,1); renderStVisitas(); });
     d.querySelector('.v-up').addEventListener('click', ()=>{ if(idx===0) return; EDIT_VISITAS = collectStVisitas(); const t=EDIT_VISITAS[idx-1]; EDIT_VISITAS[idx-1]=EDIT_VISITAS[idx]; EDIT_VISITAS[idx]=t; renderStVisitas(); });
     d.querySelector('.v-down').addEventListener('click', ()=>{ EDIT_VISITAS = collectStVisitas(); if(idx>=EDIT_VISITAS.length-1) return; const t=EDIT_VISITAS[idx+1]; EDIT_VISITAS[idx+1]=EDIT_VISITAS[idx]; EDIT_VISITAS[idx]=t; renderStVisitas(); });
     box.appendChild(d);
   });
+}
+
+function renderFlowHistory(){
+  const box=$('stFlowHistory'); if(!box) return;
+  if(!EDIT_IMPORTACIONES_PROTOCOLO.length){ box.innerHTML=''; return; }
+  const rows=EDIT_IMPORTACIONES_PROTOCOLO.slice(-5).reverse().map(x=>{
+    const manual=ZondaFlowTrace.diff(x.extraido,x.revisado);
+    const applied=x.comparacion||{added:[],removed:[],changed:[],hasChanges:false};
+    const nManual=(manual.added||[]).length+(manual.removed||[]).length+(manual.changed||[]).length;
+    const nApplied=(applied.added||[]).length+(applied.removed||[]).length+(applied.changed||[]).length;
+    const f=x.fuente||{};
+    return '<li><b>'+esc(f.filename||'Fuente sin nombre')+'</b>'+(f.version?' · v. '+esc(f.version):'')+
+      ' · '+esc((x.fecha||'').slice(0,16).replace('T',' '))+
+      ' · '+nManual+' ajuste(s) de revisión · '+nApplied+' visita(s) afectadas</li>';
+  }).join('');
+  box.innerHTML='<details class="banner gray small"><summary><b>Trazabilidad de importaciones ('+EDIT_IMPORTACIONES_PROTOCOLO.length+')</b></summary><ul style="margin:7px 0 0;padding-left:20px">'+rows+'</ul></details>';
 }
 
 $('btnAddVisita').addEventListener('click', ()=>{
@@ -2876,6 +3190,8 @@ $('btnAddVisita').addEventListener('click', ()=>{
 });
 
 $('btnSaveStudy').addEventListener('click', async ()=>{
+  if(!$('stId').value && !can('estudiosCrear')){ toast(T('Solo un administrador puede crear protocolos.')); return; }
+  if($('stId').value && !can('estudiosEditar')){ toast(T('Tu rol no permite modificar protocolos.')); return; }
   const codigo = $('stCodigo').value.trim(), nombre = $('stNombre').value.trim();
   if(!codigo || !nombre){ toast('Completá código y nombre del estudio.'); return; }
   const visitas = collectStVisitas();
@@ -2909,13 +3225,14 @@ $('btnSaveStudy').addEventListener('click', async ()=>{
     criteriosInclusion: $('stIncl').value.split('\n').map(t=>t.trim()).filter(Boolean),
     criteriosExclusion: $('stExcl').value.split('\n').map(t=>t.trim()).filter(Boolean),
     medicamentosProhibidos: collectStMedsProhib(),
+    importacionesProtocolo: EDIT_IMPORTACIONES_PROTOCOLO.slice(-20),
     visitas
   };
   const hadPatients = DB.patients.some(p=>p.estudioId===id && !p.anulado);
   /* ¿cambiaron los criterios respecto de lo que estaba guardado? */
   const critCambio = !!prev && critFirma(prev) !== critFirma(s);
   s.critFirma = critFirma(s);
-  await persist('studies', s, 'Estudio guardado.');
+  if(!await persist('studies', s, 'Estudio guardado.')) return;
   if(critCambio && hadPatients){
     /* las respuestas de los pacientes se reasignan por el TEXTO del criterio,
        nunca por su posición: si no, quedarían apuntando a otro criterio */
@@ -3254,19 +3571,23 @@ $('btnSavePatient').addEventListener('click', async ()=>{
     criterios: Object.assign({}, PA_CRIT),
     critFirma: (getStudy($('paEstudio').value) ? critFirma(getStudy($('paEstudio').value)) : '')
   };
-  await persist('patients', p, 'Paciente guardado.');
+  if(!await persist('patients', p, 'Paciente guardado.')) return;
   /* Una sola fuente de verdad: la ficha del paciente y Herramientas → Medicación concomitante usan estos mismos registros. */
   const bajas=new Set(PA_CONMED_BAJAS);
   if(bajas.size){
-    for(const r of (LOGS.conmed||[])) if(bajas.has(r.id) && !r.fin) r.fin=todayISO();
+    for(const r of (LOGS.conmed||[])){
+      if(!bajas.has(r.id) || r.fin) continue;
+      const cerrado=Object.assign({},r,{fin:todayISO()});
+      if(!await guardarLog('conmed',cerrado,'modificación','',p.codigo+' · finalización desde ficha del paciente')) return;
+    }
   }
   const medsValidos=PA_CONMED.filter(m=>String(m.farmaco||'').trim());
   for(const m of medsValidos){
     const hits = coincidenciasMedProhibida(p.estudioId, m.farmaco);
     const registro=Object.assign({},m,{id:m.id||uid(),pacienteId:p.id,estudioId:p.estudioId,farmaco:String(m.farmaco).trim(),dosis:String(m.dosis||'').trim(),via:String(m.via||'').trim(),indicacion:String(m.indicacion||'').trim(),inicio:m.inicio||'',fin:'',creado:m.creado||new Date().toISOString(),prohibida:hits.length?'Sí':(m.prohibida||'No'),alertaProtocolo:hits.map(x=>x.medicamento).join('; ')});
-    LOGS.conmed=(LOGS.conmed||[]).filter(x=>x.id!==registro.id).concat([registro]);
+    const existe=(DB.records||[]).some(x=>x.id===registro.id);
+    if(!await guardarLog('conmed',registro,existe?'modificación':'alta','',p.codigo+' · actualización desde ficha del paciente')) return;
   }
-  if(bajas.size||medsValidos.length){ logsSave(); auditar('log:conmed','actualización desde ficha del paciente',p.id,p.codigo); }
   if(!p.fechaBasal && (p.estado==='activo'||p.estado==='screening'))
     toast('Paciente guardado. Cargá la fecha basal para calcular las próximas visitas.');
   showView('view-patients');
@@ -3283,6 +3604,39 @@ async function deletePatient(id){
 }
 
 /* ================= DASHBOARD ================= */
+function todayPriorities(studyId){
+  const core=(window.ZondaToday?ZondaToday.priorities({
+    today:todayISO(), logs:LOGS, pendingAudit:AUDIT.filter(e=>!e.sincronizado).length
+  }):[]).filter(a=>studyId==='all'||!a.studyId||a.studyId===studyId);
+  const covered=new Set(['ea','queries','desvios','tareas']);
+  const generic=logAlerts().filter(a=>!covered.has(a.tipo))
+    .filter(a=>studyId==='all'||!a.r.estudioId||a.r.estudioId===studyId)
+    .map(a=>({level:a.nivel==='bad'?'bad':'warn',kind:a.tipo,title:logRowTitle(a.tipo,a.r),detail:a.txt,
+      recordType:a.tipo,recordId:a.r.id,patientId:a.r.pacienteId||'',studyId:a.r.estudioId||''}));
+  return core.concat(generic).sort((a,b)=>(a.level==='bad'?0:1)-(b.level==='bad'?0:1)||a.title.localeCompare(b.title));
+}
+function openTodayPriority(a){
+  if(a.kind==='audit'){ showView('view-config'); return; }
+  if(a.recordType&&LOG_DEFS[a.recordType]) openLogRecord(a.recordType,a.recordId,a.patientId,a.studyId);
+}
+function renderTodayPriorities(studyId){
+  const rows=todayPriorities(studyId), box=$('dashPriorities');
+  if(!rows.length){
+    box.innerHTML='<div class="banner ok">✓ '+T('No hay alertas operativas pendientes para este filtro.')+'</div>';
+    return rows;
+  }
+  box.innerHTML='<div class="card"><div class="toolbar" style="margin-bottom:8px"><h3 style="margin:0">Prioridades del día</h3><span class="spacer"></span><span class="chip '+(rows.some(x=>x.level==='bad')?'bad':'warn')+'">'+rows.length+' '+T('pendiente(s)')+'</span></div><div id="dashPriorityRows"></div></div>';
+  const list=$('dashPriorityRows');
+  rows.slice(0,30).forEach(a=>{
+    const p=a.patientId?getPatient(a.patientId):null, st=a.studyId?getStudy(a.studyId):null;
+    const d=document.createElement('div'); d.className='taskline';
+    d.innerHTML='<span class="chip '+a.level+'">'+(a.level==='bad'?T('URGENTE'):T('REVISAR'))+'</span><div class="tname"><b>'+esc(a.title)+'</b>'+
+      (p||st?'<div class="muted small">'+esc([p&&p.codigo,st&&st.codigo].filter(Boolean).join(' · '))+'</div>':'')+
+      '<div class="small">'+esc(a.detail)+'</div></div>'+(a.kind==='audit'?'<button class="ghost">'+T('Ver estado')+' ›</button>':'<button class="ghost">'+T('Abrir')+' ›</button>');
+    d.querySelector('button').addEventListener('click',()=>openTodayPriority(a)); list.appendChild(d);
+  });
+  return rows;
+}
 function renderDashboard(){
   const fStudy = $('dashFilterStudy').value || 'all';
   const fDays = $('dashFilterDays').value || 'all';
@@ -3304,11 +3658,13 @@ function renderDashboard(){
   }
   rows.sort((a,b)=> a.nv.target.localeCompare(b.nv.target));
 
+  const prioridades=renderTodayPriorities(fStudy), urgentes=prioridades.filter(x=>x.level==='bad').length;
   $('dashCards').innerHTML =
     '<div class="stat acc"><div class="num">'+activos.length+'</div><div class="lbl">Pacientes en seguimiento</div></div>'+
     '<div class="stat bad"><div class="num">'+nVencidas+'</div><div class="lbl">Visitas vencidas</div></div>'+
     '<div class="stat ok"><div class="num">'+nVentana+'</div><div class="lbl">En ventana / hoy</div></div>'+
-    '<div class="stat warn"><div class="num">'+n7+'</div><div class="lbl">Próximos 7 días</div></div>';
+    '<div class="stat warn"><div class="num">'+n7+'</div><div class="lbl">Próximos 7 días</div></div>'+
+    '<div class="stat '+(urgentes?'bad':'ok')+'"><div class="num">'+urgentes+'</div><div class="lbl">Prioridades urgentes</div></div>';
 
   const tb = $('dashTable'); tb.innerHTML='';
   $('dashEmpty').classList.toggle('hidden', rows.length>0);
@@ -3380,14 +3736,66 @@ $('btnNewVisit').addEventListener('click', ()=>openVisitForm(null));
 
 /* ================= FORMULARIO DE VISITA ================= */
 let VI_TASKS = [];
+let VI_RETURN_DRAFT = null;
+function captureVisitDraft(){
+  const ids=['viId','viPaciente','viVisita','viFecha','viTA','viFC','viFR','viTemp','viPeso','viSat','viEA','viMedCon','viObs','viNombreLibre','viFum','viEmb','viAnti','viAntiM','viAntiComo','viTraslado','viProxima'];
+  const values={}; ids.forEach(id=>{const el=$(id); if(el) values[id]=el.value;});
+  return {logId:values.viId||'',patientId:values.viPaciente||'',visitId:values.viVisita||'',values,tasks:JSON.parse(JSON.stringify(VI_TASKS||[]))};
+}
+function restoreVisitDraft(draft){
+  if(!draft) return;
+  openVisitForm(draft.logId||null,draft.patientId,draft.visitId==='unsched'?null:draft.visitId);
+  Object.entries(draft.values||{}).forEach(([id,value])=>{const el=$(id);if(el)el.value=value;});
+  $('viNombreLibreBox').classList.toggle('hidden',(draft.values||{}).viVisita!=='unsched');
+  VI_TASKS=JSON.parse(JSON.stringify(draft.tasks||[])); renderViTareas(); refreshViClinico(); updateViWindowInfo();
+}
+function finishLinkedVisitLog(){
+  if(!VI_RETURN_DRAFT) return false;
+  const draft=VI_RETURN_DRAFT; VI_RETURN_DRAFT=null; restoreVisitDraft(draft); return true;
+}
+function openLinkedVisitLog(tipo,id){
+  const p=getPatient($('viPaciente').value); if(!p) return;
+  VI_RETURN_DRAFT=captureVisitDraft();
+  openLog(tipo); $('toolsStudy').value=p.estudioId; fillLogPatients(); $('logPatient').value=p.id; renderLog();
+  logForm(id||null,{estudioId:p.estudioId,pacienteId:p.id,fecha:$('viFecha').value||todayISO(),inicio:$('viFecha').value||todayISO(),estado:tipo==='desvios'?'Abierta':''});
+}
 /* Clasificación por estudio: al marcar una tarea como tablet, se propone igual en las próximas visitas. */
-let TABLET_CLASIF = loadJSON('ecx_tabletclasif') || {};
+let TABLET_CLASIF = {};
+function settingId(tipo, clave){ return tipo+'|'+clave; }
+function settingById(id){ return (DB.settings||[]).find(x=>x.id===id); }
+async function guardarSetting(tipo, clave, valor, estudioId, detalle){
+  const id=settingId(tipo,clave);
+  const obj={id,settingType:tipo,settingKey:clave,value:valor,estudioId:estudioId||''};
+  try{
+    await Store.upsert('settings',obj,{accion:settingById(id)?'modificación':'alta',detalle:detalle||tipo});
+    hidratarConfiguracionCompartida();
+    return true;
+  }catch(e){
+    hidratarConfiguracionCompartida();
+    toast('⚠ '+e.message);
+    return false;
+  }
+}
+async function borrarSetting(tipo, clave, detalle){
+  const id=settingId(tipo,clave), previo=settingById(id);
+  if(!previo) return true;
+  try{
+    await Store.remove('settings',id,{detalle:detalle||tipo});
+    hidratarConfiguracionCompartida();
+    return true;
+  }catch(e){
+    hidratarConfiguracionCompartida();
+    toast('⚠ '+e.message);
+    return false;
+  }
+}
 function tabletKey(studyId, nombre){ return String(studyId||'')+'|'+normKey(nombre); }
 function tabletTipoDe(studyId, nombre){ return TABLET_CLASIF[tabletKey(studyId,nombre)] || ''; }
-function tabletTipoFijar(studyId, nombre, tipo){
+async function tabletTipoFijar(studyId, nombre, tipo){
   const k = tabletKey(studyId,nombre); if(!k || !normKey(nombre)) return;
-  if(tipo==='paciente' || tipo==='medico') TABLET_CLASIF[k]=tipo; else delete TABLET_CLASIF[k];
-  saveJSON('ecx_tabletclasif', TABLET_CLASIF);
+  if(tipo==='paciente' || tipo==='medico')
+    return guardarSetting('tablet',k,tipo,studyId,'Tablet: '+nombre);
+  return borrarSetting('tablet',k,'Tablet: '+nombre);
 }
 
 function openVisitForm(logId, presetPatientId, presetVisitId){
@@ -3425,9 +3833,9 @@ function openVisitForm(logId, presetPatientId, presetVisitId){
     VI_TASKS = JSON.parse(JSON.stringify(log.tareas||[]));
     renderViTareas();
     $('viProxima').value = log.proxima||'';
-    updateViWindowInfo();
   }
   refreshViClinico(g.anticoncepcion||'', g.como||'');
+  updateViWindowInfo();
   showView('view-visit-form');
 }
 
@@ -3463,7 +3871,7 @@ function refreshViClinico(antiSel, comoSel){
   const cerrados = eaCerradosAntes(p.id, fecha, $('viId').value);
   const total = logRows('ea').filter(r=>r.pacienteId===p.id).length;
   const chip = (r, cls, txt) => esc(r.evento||'—')+(r.serio==='Sí'?' <span class="chip bad">EAS</span>':'')+
-    ' <span class="chip '+cls+'">'+txt+'</span>';
+    ' <span class="chip '+cls+'">'+txt+'</span> <button type="button" class="ghost" data-vi-ea="'+esc(r.id)+'" style="padding:2px 6px">'+T('Revisar')+'</button>';
   $('viEaAuto').innerHTML = g.total
     ? '<div class="banner gray" style="padding:6px 10px"><b>'+T('Eventos adversos de esta visita')+' ('+g.total+'):</b> '+
       g.nuevos.map(r=>chip(r,'warn',T('nuevo'))).concat(
@@ -3486,11 +3894,17 @@ function refreshViClinico(antiSel, comoSel){
     ? '<div class="banner '+(prohib.length?'warn':'gray')+'" style="padding:6px 10px"><b>'+T('Concomitantes activos a la fecha')+' ('+meds.length+'):</b> '+
       meds.map(m=>esc(m.farmaco||'—')+(m.dosis?' '+esc(m.dosis):'')+
         (estaProhibida(m)?' <span class="chip bad">'+T('prohibida / restringida')+'</span>':
-         m.prohibida==='A verificar'?' <span class="chip warn">'+T('a verificar')+'</span>':'')).join(' · ')+
+         m.prohibida==='A verificar'?' <span class="chip warn">'+T('a verificar')+'</span>':'')+
+        ' <button type="button" class="ghost" data-vi-conmed="'+esc(m.id)+'" style="padding:2px 6px">'+T('Editar')+'</button>').join(' · ')+
       '<div class="muted small" style="margin-top:3px">'+T('Se listan solos en la evolución. Cargá altas y bajas en Herramientas → Medicación concomitante.')+'</div></div>'
     : '<div class="muted small">'+T('Sin medicación concomitante registrada a esta fecha.')+'</div>';
+  $('viEaAuto').querySelectorAll('[data-vi-ea]').forEach(b=>b.addEventListener('click',()=>openLinkedVisitLog('ea',b.dataset.viEa)));
+  $('viMedAuto').querySelectorAll('[data-vi-conmed]').forEach(b=>b.addEventListener('click',()=>openLinkedVisitLog('conmed',b.dataset.viConmed)));
 }
 ['viPaciente','viFecha'].forEach(id=>$(id).addEventListener('change', ()=>refreshViClinico()));
+$('btnViNewEa').addEventListener('click',()=>openLinkedVisitLog('ea',null));
+$('btnViNewConmed').addEventListener('click',()=>openLinkedVisitLog('conmed',null));
+$('btnViOpenDesv').addEventListener('click',()=>openLinkedVisitLog('desvios',null));
 
 function rebuildViVisitas(log, presetVisitId){
   const p = getPatient($('viPaciente').value);
@@ -3537,6 +3951,7 @@ function onViVisitaChange(keepTasks){
 $('viPaciente').addEventListener('change', ()=>rebuildViVisitas(null));
 $('viVisita').addEventListener('change', ()=>onViVisitaChange(false));
 $('viFecha').addEventListener('change', updateViWindowInfo);
+$('viNombreLibre').addEventListener('input', renderViQuality);
 
 function currentViTarget(){
   const p = getPatient($('viPaciente').value);
@@ -3547,10 +3962,36 @@ function currentViTarget(){
   return v ? visitTarget(p, st, v) : null;
 }
 
+function currentVisitDraftForQuality(){
+  const p=getPatient(($('viPaciente')||{}).value); if(!p) return null;
+  const st=getStudy(p.estudioId), vid=($('viVisita')||{}).value;
+  const pv=st&&(st.visitas||[]).find(v=>v.id===vid);
+  return {
+    id:($('viId')||{}).value||'', pacienteId:p.id, estudioId:p.estudioId,
+    visitaId:vid==='unsched'?null:vid,
+    nombreVisita:vid==='unsched'?(($('viNombreLibre')||{}).value||T('Visita no programada')):(pv&&pv.nombre||''),
+    fecha:($('viFecha')||{}).value||'', tareas:JSON.parse(JSON.stringify(VI_TASKS||[]))
+  };
+}
+function renderViQuality(){
+  const box=$('viQualityInfo'); if(!box) return;
+  const draft=currentVisitDraftForQuality();
+  const issues=draft?qualityForVisit(draft):[];
+  box.innerHTML=draft?qualityBannerHtml(issues):'';
+  renderViDeviationProposal(issues,draft);
+}
+function renderViDeviationProposal(issues,draft){
+  const card=$('viDeviationCard'), relevant=(issues||[]).filter(i=>['VISIT_OUTSIDE_WINDOW','PROCEDURES_NOT_DONE'].includes(i.code));
+  const wasHidden=card.classList.contains('hidden'); card.classList.toggle('hidden',!relevant.length);
+  if(!relevant.length) return;
+  $('viDeviationInfo').innerHTML=relevant.map(i=>'• '+esc(i.message)).join('<br>');
+  if(wasHidden) $('viCreateDeviation').checked=true;
+}
+
 function updateViWindowInfo(){
   const box = $('viWindowInfo');
   const t = currentViTarget();
-  if(!t){ box.innerHTML=''; return; }
+  if(!t){ box.innerHTML=''; renderViQuality(); return; }
   const f = $('viFecha').value;
   let extra='', cls='gray';
   if(f){
@@ -3559,6 +4000,7 @@ function updateViWindowInfo(){
     else { cls='bad'; extra=' — ⚠ la fecha elegida está FUERA DE VENTANA ('+diffDays(t.to,f)+' día/s después)'; }
   }
   box.innerHTML = '<div class="banner '+cls+'">'+T('Fecha objetivo:')+' '+fmtDate(t.target)+' · '+T('Ventana:')+' '+fmtDate(t.from)+' – '+fmtDate(t.to)+extra+'</div>';
+  renderViQuality();
 }
 
 function renderViTareas(){
@@ -3572,22 +4014,30 @@ function renderViTareas(){
       '<label class="small" style="margin:2px 0 0;text-transform:none;letter-spacing:0;white-space:nowrap"><input type="checkbox" class="ttablet" '+(t.tablet?'checked':'')+'> Tablet</label>'+
       '<select class="ttabletTipo" '+(t.tablet?'':'disabled')+' style="width:auto;padding:4px 7px;font-size:12px"><option value="paciente" '+((t.tabletTipo||'paciente')==='paciente'?'selected':'')+'>Paciente</option><option value="medico" '+(t.tabletTipo==='medico'?'selected':'')+'>Médico</option></select>'+
       '<input type="text" class="tcom" placeholder="Comentario / motivo si no se realizó" value="'+esc(t.comentario||'')+'">';
-    d.querySelector('input[type=checkbox]').addEventListener('change', e=>{ VI_TASKS[idx].hecha = e.target.checked; });
+    d.querySelector('input[type=checkbox]').addEventListener('change', e=>{ VI_TASKS[idx].hecha = e.target.checked; renderViQuality(); });
     const tabCheck = d.querySelector('.ttablet'), tabTipo = d.querySelector('.ttabletTipo');
-    tabCheck.addEventListener('change', e=>{
+    tabCheck.addEventListener('change', async e=>{
       const p = getPatient($('viPaciente').value);
+      const previo={tablet:VI_TASKS[idx].tablet,tabletTipo:VI_TASKS[idx].tabletTipo};
       VI_TASKS[idx].tablet = e.target.checked;
       VI_TASKS[idx].tabletTipo = e.target.checked ? (tabTipo.value||'paciente') : '';
       tabTipo.disabled = !e.target.checked;
-      if(p) tabletTipoFijar(p.estudioId, VI_TASKS[idx].nombre, VI_TASKS[idx].tabletTipo);
+      if(p && !await tabletTipoFijar(p.estudioId, VI_TASKS[idx].nombre, VI_TASKS[idx].tabletTipo)){
+        VI_TASKS[idx].tablet=previo.tablet; VI_TASKS[idx].tabletTipo=previo.tabletTipo;
+        e.target.checked=previo.tablet; tabTipo.value=previo.tabletTipo||'paciente'; tabTipo.disabled=!previo.tablet;
+      }
     });
-    tabTipo.addEventListener('change', e=>{
+    tabTipo.addEventListener('change', async e=>{
       const p = getPatient($('viPaciente').value);
+      const previo={tablet:VI_TASKS[idx].tablet,tabletTipo:VI_TASKS[idx].tabletTipo};
       VI_TASKS[idx].tablet = true; VI_TASKS[idx].tabletTipo = e.target.value;
       tabCheck.checked = true;
-      if(p) tabletTipoFijar(p.estudioId, VI_TASKS[idx].nombre, e.target.value);
+      if(p && !await tabletTipoFijar(p.estudioId, VI_TASKS[idx].nombre, e.target.value)){
+        VI_TASKS[idx].tablet=previo.tablet; VI_TASKS[idx].tabletTipo=previo.tabletTipo;
+        tabCheck.checked=previo.tablet; e.target.value=previo.tabletTipo||'paciente'; e.target.disabled=!previo.tablet;
+      }
     });
-    d.querySelector('.tcom').addEventListener('input', e=>{ VI_TASKS[idx].comentario = e.target.value; });
+    d.querySelector('.tcom').addEventListener('input', e=>{ VI_TASKS[idx].comentario = e.target.value; renderViQuality(); });
     box.appendChild(d);
   });
   const add = document.createElement('div');
@@ -3599,6 +4049,7 @@ function renderViTareas(){
     renderViTareas();
   });
   box.appendChild(add);
+  renderViQuality();
 }
 
 function suggestProxima(){
@@ -3634,13 +4085,6 @@ $('btnSaveVisit').addEventListener('click', async ()=>{
     if(!v){ toast('Elegí la visita del protocolo.'); return; }
     nombreVisita = v.nombre; dia = v.dia; visitaId = v.id;
   }
-  /* editar una visita ya guardada exige el motivo del cambio (queda en la auditoría) */
-  let motivoCambio = '';
-  if($('viId').value){
-    const prev = getVisitLog($('viId').value);
-    motivoCambio = prompt(T('Motivo del cambio (obligatorio para modificar una visita ya guardada):'),'') || '';
-    if(!motivoCambio.trim()){ toast(T('El cambio requiere un motivo.')); return; }
-  }
   const log = {
     id: $('viId').value || uid(),
     pacienteId: p.id, estudioId: p.estudioId,
@@ -3661,8 +4105,32 @@ $('btnSaveVisit').addEventListener('click', async ()=>{
     creado: (getVisitLog($('viId').value)||{}).creado || new Date().toISOString(),
     editadoManual: false
   };
+  const qualityIssues=qualityForVisit(log);
+  if(!qualityGate(qualityIssues,'guardar la visita')) return;
+  log.controlCalidad=qualityStamp(qualityIssues);
+  const deviationIssues=qualityIssues.filter(i=>['VISIT_OUTSIDE_WINDOW','PROCEDURES_NOT_DONE'].includes(i.code));
+  const createDeviation=deviationIssues.length&&!$('viDeviationCard').classList.contains('hidden')&&$('viCreateDeviation').checked;
+  if(deviationIssues.length) log.desviacionPropuesta={crear:createDeviation,hallazgos:deviationIssues.map(i=>i.code)};
+  /* editar una visita ya guardada exige el motivo del cambio (queda en la auditoría) */
+  let motivoCambio = '';
+  if($('viId').value){
+    motivoCambio = prompt(T('Motivo del cambio (obligatorio para modificar una visita ya guardada):'),'') || '';
+    if(!motivoCambio.trim()){ toast(T('El cambio requiere un motivo.')); return; }
+  }
   log.evolucionTexto = buildEvolution(log);
-  await persist('visits', log, 'Visita guardada.', motivoCambio.trim());
+  if(!await persist('visits', log, 'Visita guardada.', motivoCambio.trim())) return;
+  if(createDeviation){
+    const id='desvio-visita-'+log.id, previo=logRowsTodos('desvios').find(r=>r.id===id);
+    const descripcion=deviationIssues.map(i=>i.message).join(' ');
+    const desvio=Object.assign({},previo||{}, {
+      id, creado:(previo&&previo.creado)||new Date().toISOString(), estudioId:log.estudioId,
+      pacienteId:log.pacienteId, visitaId:log.id, fecha:log.fecha, descripcion,
+      clase:(previo&&previo.clase)||'Menor', causa:(previo&&previo.causa)||'',
+      accion:(previo&&previo.accion)||'', reportada:(previo&&previo.reportada)||'', estado:(previo&&previo.estado)||'Abierta'
+    });
+    if(!await guardarLog('desvios',desvio,previo?'modificación':'alta','',log.nombreVisita+' · propuesta automática'))
+      toast('⚠ La visita quedó guardada, pero la desviación propuesta sigue pendiente de creación.');
+  }
   openEvolution(log.id);
 });
 $('btnCancelVisit').addEventListener('click', ()=>showView('view-visits'));
@@ -3670,24 +4138,7 @@ $('btnCancelVisit').addEventListener('click', ()=>showView('view-visits'));
 /* ================= EVOLUCIÓN ================= */
 function evoChecks(log){
   const warns = [];
-  const noHechas = (log.tareas||[]).filter(t=>!t.hecha);
-  const sinMotivo = noHechas.filter(t=>!(t.comentario||'').trim());
-  if(noHechas.length) warns.push({ cls:'warn', txt:'Hay '+noHechas.length+' tarea(s) del protocolo NO realizadas en esta visita.' });
-  if(sinMotivo.length) warns.push({ cls:'bad', txt:sinMotivo.length+' tarea(s) no realizadas SIN motivo registrado: '+sinMotivo.map(t=>t.nombre).join(', ')+'.' });
-  const p = getPatient(log.pacienteId), st = getStudy(log.estudioId);
-  if(p && st && log.visitaId && p.fechaBasal){
-    const v = (st.visitas||[]).find(x=>x.id===log.visitaId);
-    if(v){
-      const t = visitTarget(p, st, v);
-      if(log.fecha < t.from || log.fecha > t.to)
-        warns.push({ cls:'bad', txt:'La visita se realizó FUERA DE VENTANA (ventana: '+fmtDate(t.from)+' a '+fmtDate(t.to)+'). Documentá el desvío si corresponde.' });
-    }
-  }
-  if(p){
-    const el = eligibility(p);
-    if(el==='noelegible') warns.push({ cls:'bad', txt:'Atención: este paciente figura como NO ELEGIBLE.' });
-    if(el==='pendiente' && log.visitaId) warns.push({ cls:'warn', txt:'La elegibilidad del paciente todavía figura PENDIENTE de evaluación completa.' });
-  }
+  for(const i of qualityForVisit(log)) warns.push({cls:i.level==='block'?'bad':'warn',txt:i.message});
   if(!(log.obs||'').trim()) warns.push({ cls:'warn', txt:'No escribiste la evolución clínica / observaciones. Completala antes de pegar en la historia.' });
   const svVals = Object.values(log.sv||{}).filter(x=>x);
   if(!svVals.length && (log.tareas||[]).some(t=>/signos vitales/i.test(t.nombre) && t.hecha))
@@ -4237,7 +4688,7 @@ $('btnUploadDoc').addEventListener('click', async ()=>{
   };
   const btn = $('btnUploadDoc'); btn.disabled = true; btn.textContent = 'Subiendo...';
   try{
-    if(Store.online()){ doc.path = doc.id+'/'+f.name.replace(/[^\w.\-]+/g,'_'); await storagePut(doc.path, f); }
+    if(Store.online()){ doc.path = stId+'/'+doc.id+'/'+f.name.replace(/[^\w.\-]+/g,'_'); await storagePut(doc.path, f); }
     else{ await idbPut(doc.id, f); }
     await Store.upsert('docs', doc);
     $('docFile').value=''; $('docVersion').value='';
@@ -4587,103 +5038,63 @@ function parseAiObjectLoose(txt){
   try{ return JSON.parse(cand); }catch(e){ return null; }
 }
 
-/* ============ CAPA COMÚN DE IA (Anthropic / Google Gemini / OpenAI) ============
-   Todas las funciones de IA de la app pasan por aiChat(): reciben el mismo
-   contenido (texto y/o imágenes) y devuelven { text, cut } sea cual sea el
-   proveedor configurado. Las tres API aceptan llamadas directas desde el
-   navegador con la clave del usuario. */
-const AI_PROVIDERS = {
-  anthropic:{ nombre:'Anthropic (Claude)', modelo:'claude-sonnet-5', keyPh:'sk-ant-...', consola:'console.anthropic.com' },
-  gemini:   { nombre:'Google (Gemini)',    modelo:'gemini-2.5-flash', keyPh:'AIza...',    consola:'aistudio.google.com/apikey' },
-  openai:   { nombre:'OpenAI (ChatGPT)',   modelo:'gpt-5.1',          keyPh:'sk-...',     consola:'platform.openai.com/api-keys' }
-};
-function aiProvider(){ return AI_PROVIDERS[CFG.aiProvider] ? CFG.aiProvider : 'anthropic'; }
+/* ============ CAPA COMÚN DE IA DEL SERVIDOR ============
+   Todas las funciones pasan por la Edge Function «ia». La clave, el proveedor
+   y el modelo se configuran como secretos de Supabase y nunca se entregan al
+   navegador. La función valida al usuario, anonimiza texto y audita cada salida. */
+const AI_SERVICE = { nombre:'servicio seguro del sitio', modelo:'configurado en Supabase' };
+let AI_STATUS = null;
 
 /* Cuánto texto acepta de una sola vez cada proveedor, en caracteres, dejando
    margen para el prompt y la respuesta. Los modelos actuales admiten un
    protocolo entero: no hace falta trocearlo ni recortarlo, y recortarlo es
    justamente lo que hacía que las respuestas fueran inservibles. */
-const AI_CTX = { gemini: 2000000, openai: 1000000, anthropic: 600000 };
-function aiCtxMax(){ return AI_CTX[aiProvider()] || 500000; }
-function aiModelName(){ return (CFG.aiModel||'').trim() || AI_PROVIDERS[aiProvider()].modelo; }
+function aiCtxMax(){ return 600000; }
+function aiModelName(){ return (AI_STATUS&&AI_STATUS.model)||AI_SERVICE.modelo; }
 
-function aiHttpError(status, j){
-  const raw = (j && j.error && (j.error.message || j.error.status)) || '';
-  const p = AI_PROVIDERS[aiProvider()];
-  if(status===401 || status===403 || /api.?key.*(not )?valid|invalid.*api.?key|API_KEY_INVALID|PERMISSION_DENIED|incorrect api key/i.test(raw))
-    return T('Clave de API rechazada. Revisá en Configuración que la clave corresponda al proveedor elegido')+' ('+p.nombre+').';
-  if(status===404 || /model.*(not.*found|does not exist)|NOT_FOUND/i.test(raw))
-    return T('Modelo no encontrado. Revisá el nombre del modelo en Configuración')+' ('+T('ej.')+': '+p.modelo+').';
-  if(status===429 || /insufficient_quota|RESOURCE_EXHAUSTED|credit balance|quota|rate.?limit/i.test(raw))
-    return T('Sin saldo o límite de uso alcanzado en la cuenta de API. Revisalo en')+' '+p.consola+'.';
-  if(/image|media.?type|too large/i.test(raw))
-    return T('El modelo configurado no pudo procesar las imágenes del PDF.')+' '+raw;
+function aiServerError(status, j){
+  const raw=String((j&&j.error)||'');
+  if(raw==='AI_NOT_CONFIGURED') return 'El servicio de IA todavía no tiene una clave configurada en Supabase.';
+  if(raw==='IMAGE_DEIDENTIFICATION_CONFIRMATION_REQUIRED') return 'Antes de enviar imágenes, confirmá que no contienen nombres, DNI ni otros identificadores.';
+  if(raw==='AI_AUDIT_FAILED') return 'La salida no se entregó porque no pudo registrarse en la auditoría.';
+  if(status===401) return 'La sesión no está autorizada para usar el servicio de IA.';
   return raw || (T('Error de la API de IA')+' ('+status+').');
+}
+
+function aiIdentifiers(){
+  const out=[];
+  (DB.patients||[]).forEach(p=>{
+    /* El código del participante se conserva porque es el identificador
+       autorizado del estudio; las iniciales se omiten si aparecen en texto. */
+    if(p&&p.iniciales) out.push(String(p.iniciales));
+  });
+  return Array.from(new Set(out)).slice(0,50);
+}
+
+let AI_IMAGES_CONFIRMED=false;
+function aiConfirmImages(blocks){
+  if(!blocks.some(b=>b&&b.t==='img')) return true;
+  if(AI_IMAGES_CONFIRMED) return true;
+  AI_IMAGES_CONFIRMED=confirm('Las imágenes no pueden anonimizarse automáticamente. Confirmá que no contienen nombre, DNI, teléfono, correo ni otros identificadores directos del paciente.');
+  return AI_IMAGES_CONFIRMED;
 }
 
 /* opt = { system, content, maxTokens }
    content: string, o lista de bloques {t:'text',text} / {t:'img',mime,data(base64)} */
 async function aiChat(opt){
-  const prov = aiProvider(), key = (CFG.aiKey||'').trim(), model = aiModelName();
-  /* regla común a todas las funciones de IA de la app: nada de conocimiento externo */
-  const sys = (opt.system||'') +
-    ' Basá todo exclusivamente en el material provisto en el mensaje (documentos, textos e imágenes). No uses conocimiento médico general ni información externa; si un dato no figura en el material, indicá que no está en lugar de completarlo.';
-  opt = Object.assign({}, opt, { system:sys });
   const blocks = (typeof opt.content==='string') ? [{t:'text',text:opt.content}] : opt.content;
-  const soloTexto = blocks.length===1 && blocks[0].t==='text';
-  let url, headers, body;
-  if(prov==='gemini'){
-    url = 'https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(model)+':generateContent';
-    headers = { 'content-type':'application/json', 'x-goog-api-key':key };
-    body = {
-      systemInstruction:{ parts:[{ text:opt.system||'' }] },
-      contents:[{ role:'user',
-        parts: blocks.map(b => b.t==='img' ? { inlineData:{ mimeType:b.mime, data:b.data } } : { text:b.text }) }],
-      generationConfig:{ maxOutputTokens: opt.maxTokens||8000 }
-    };
-  } else if(prov==='openai'){
-    url = 'https://api.openai.com/v1/chat/completions';
-    headers = { 'content-type':'application/json', 'Authorization':'Bearer '+key };
-    body = {
-      model, max_completion_tokens: opt.maxTokens||8000,
-      messages:[
-        { role:'system', content: opt.system||'' },
-        { role:'user', content: soloTexto ? blocks[0].text
-            : blocks.map(b => b.t==='img'
-                ? { type:'image_url', image_url:{ url:'data:'+b.mime+';base64,'+b.data } }
-                : { type:'text', text:b.text }) } ]
-    };
-  } else {
-    url = 'https://api.anthropic.com/v1/messages';
-    headers = { 'x-api-key':key, 'anthropic-version':'2023-06-01',
-                'content-type':'application/json', 'anthropic-dangerous-direct-browser-access':'true' };
-    body = {
-      model, max_tokens: opt.maxTokens||8000, system: opt.system||'',
-      messages:[{ role:'user', content: soloTexto ? blocks[0].text
-          : blocks.map(b => b.t==='img'
-              ? { type:'image', source:{ type:'base64', media_type:b.mime, data:b.data } }
-              : { type:'text', text:b.text }) }]
-    };
-  }
+  if(!aiConfirmImages(blocks)) throw new Error('No se enviaron las imágenes porque falta confirmar su anonimización.');
   let r;
-  try{ r = await fetch(url, { method:'POST', headers, body: JSON.stringify(body) }); }
+  try{ r = await supaFetch('/functions/v1/ia', { method:'POST', body:JSON.stringify({
+    purpose:opt.purpose||'consulta_general', system:opt.system||'', content:blocks,
+    max_tokens:opt.maxTokens||8000, identifiers:aiIdentifiers(),
+    images_confirmed_deidentified:blocks.some(b=>b&&b.t==='img')
+  }) }); }
   catch(e){ throw new Error(T('No se pudo conectar con la API de IA. Revisá tu conexión a internet.')); }
   const j = await r.json().catch(()=>({}));
-  if(!r.ok) throw new Error(aiHttpError(r.status, j));
-  let text='', cut=false;
-  if(prov==='gemini'){
-    const cand = (j.candidates||[])[0] || {};
-    text = ((cand.content||{}).parts||[]).map(p=>p.text||'').join('\n');
-    cut = cand.finishReason==='MAX_TOKENS';
-  } else if(prov==='openai'){
-    const ch = (j.choices||[])[0] || {};
-    text = (ch.message && ch.message.content) || '';
-    cut = ch.finish_reason==='length';
-  } else {
-    text = (j.content||[]).filter(c=>c.type==='text').map(c=>c.text||'').join('\n');
-    cut = j.stop_reason==='max_tokens';
-  }
-  return { text, cut };
+  if(!r.ok || j.error) throw new Error(aiServerError(r.status,j));
+  AI_STATUS={ configured:true, provider:j.meta&&j.meta.provider, model:j.meta&&j.meta.model };
+  return { text:String(j.text||''), cut:!!j.cut, meta:j.meta||{} };
 }
 /* ================= CAPA ÚNICA DE CONSULTA A DOCUMENTOS =================
    Todo lo que en la app se responde a partir de documentos pasa por acá.
@@ -4728,7 +5139,7 @@ async function viaDocumental(conRag, conIA, etiqueta){
   if(ragEstricto())
     throw new Error(T('El modo estricto exige búsqueda documental, pero no está activada.'));
   if(!aiConfigured())
-    throw new Error(T('Activá la búsqueda documental o cargá una clave de IA en Configuración.'));
+    throw new Error(T('Activá la búsqueda documental o verificá el servicio de IA del sitio.'));
   const r = await conIA();
   return Object.assign({ via:'ia' }, r);
 }
@@ -4988,6 +5399,7 @@ async function aiCriteriosSeccion(texto, tipo, imagenes){
     ? [{ t:'text', text:'IMÁGENES DE LAS PÁGINAS DEL DOCUMENTO:' }].concat(imagenes, [{ t:'text', text:prompt }])
     : prompt;
   const res = await aiChat({
+    purpose:'protocolo_criterios',
     system: 'Respondés exclusivamente con un objeto JSON válido, sin texto antes ni después y sin bloques de código.',
     content: contenido, maxTokens: 12000
   });
@@ -5022,6 +5434,7 @@ async function aiVisitasProtocolo(texto, imagenes){
     ? [{ t:'text', text:'IMÁGENES DE LAS PÁGINAS DEL DOCUMENTO:' }].concat(imagenes, [{ t:'text', text:prompt }])
     : prompt;
   const res = await aiChat({
+    purpose:'protocolo_visitas',
     system: 'Respondés exclusivamente con un objeto JSON válido, sin texto antes ni después y sin bloques de código.',
     content: contenido, maxTokens: 30000
   });
@@ -5078,8 +5491,8 @@ function openImportModal(){
     : '<option value="">(este estudio no tiene documentos adjuntos)</option>';
   $('impSource').value = docs.length ? 'doc' : 'file';
   $('impIntro').innerHTML = aiConfigured()
-    ? '<b>Análisis con IA activado:</b> el texto del protocolo se envía a la API de '+AI_PROVIDERS[aiProvider()].nombre+', que extrae los criterios de inclusión/exclusión y el calendario de visitas. Es mucho más confiable con PDF que tienen tablas e índices. Revisá y corregí lo detectado antes de aplicarlo.'
-    : 'Analiza el texto del protocolo con reglas simples para detectar criterios y visitas (patrones tipo «Día 29 ± 3»). Se hace en tu computadora, sin enviar nada. <b>Con protocolos que tienen tablas o índices suele fallar:</b> configurá una clave de IA en Configuración para un análisis mucho más confiable. Revisá siempre lo detectado antes de aplicarlo.';
+    ? '<b>Análisis asistido por IA:</b> el protocolo pasa por el servicio seguro del sitio. El resultado es un borrador, queda auditado y debe revisarse antes de aplicarlo.'
+    : 'Analiza el texto con reglas simples. El servicio de IA requiere una sesión online activa.';
   onImpSource();
   $('impStatus').textContent='';
   $('impResults').classList.add('hidden');
@@ -5117,6 +5530,7 @@ async function traducirListaCriterios(lineas, tipo){
   const salida=[];
   for(const grupo of grupos){
     const r = await aiChat({
+      purpose:'traduccion_criterios',
       system:'Sos traductor médico para investigación clínica. Respondés exclusivamente JSON válido, sin comentarios ni bloques de código.',
       content:'Traducí al español rioplatense los siguientes criterios de '+tipo+'. '+
         'Conservá cada id y el orden. No resumas ni agregues información. Conservá exactamente números, unidades, símbolos, rangos, plazos, negaciones, nombres propios, siglas y nombres de medicamentos. '+
@@ -5141,7 +5555,7 @@ $('btnTranslateCrit').addEventListener('click', async ()=>{
   const incl = $('stIncl').value.split('\n').map(x=>x.trim()).filter(Boolean);
   const excl = $('stExcl').value.split('\n').map(x=>x.trim()).filter(Boolean);
   if(!incl.length && !excl.length){ toast('No hay criterios para traducir.'); return; }
-  if(!aiConfigured()){ toast('Configurá una clave de IA para traducir los criterios ya cargados.'); return; }
+  if(!aiConfigured()){ toast('Ingresá con una sesión online para usar la traducción asistida.'); return; }
   b.disabled=true; b.textContent='Traduciendo...';
   try{
     const [ti,te] = await Promise.all([
@@ -5256,24 +5670,13 @@ async function ragPreguntar(pregunta, filtros){
    dejarla sin persistir confundía */
 /* deja claro en la tarjeta de IA si ese motor se está usando o no */
 function pintarAvisoIA(){
-  const cont = $('cfgAiKey') ? $('cfgAiKey').closest('.card') : null;
-  if(!cont) return;
-  let av = cont.querySelector('#aiEstadoUso');
-  if(!av){
-    av = document.createElement('div');
-    av.id = 'aiEstadoUso'; av.className = 'banner';
-    cont.insertBefore(av, cont.children[1] || null);
-  }
-  if(CFG.ragSolo){
-    av.className = 'banner gray';
-    av.innerHTML = '🔎 <b>'+T('Modo estricto activo')+'</b> — '+
-      T('este motor no se usa: todo se responde con búsqueda documental. La clave queda guardada por si desactivás el modo estricto.');
-  } else if(CFG.ragOn){
-    av.className = 'banner acc';
-    av.innerHTML = '🔎 '+T('La búsqueda documental responde primero. Este motor queda como respaldo si el índice falla.');
-  } else {
-    av.className = 'banner gray';
-    av.innerHTML = T('Este motor responde todas las consultas sobre documentos. Para usar búsqueda documental, activala más abajo.');
+  const m=$('aiMsg'); if(!m) return;
+  if(AI_STATUS&&AI_STATUS.configured){
+    m.style.color='var(--ok)';
+    m.textContent='✔ Servicio disponible ('+(AI_STATUS.provider||'proveedor del sitio')+' · '+(AI_STATUS.model||'modelo configurado')+').';
+  }else{
+    m.style.color='var(--muted)';
+    m.textContent='El proveedor y la clave se configuran como secretos de la Edge Function «ia».';
   }
 }
 
@@ -5492,17 +5895,13 @@ $('btnAnalyze').addEventListener('click', async ()=>{
     }
     if((text||'').trim().length<50 && !($('impVisual').checked && IMP_BLOB))
       throw new Error('El documento no tiene texto legible (puede ser un PDF escaneado). Tildá «Leer las páginas como imagen» o pegá el texto.');
-    /* Para importar criterios, Gemini con la sección delimitada del protocolo es
-       más fiable que una respuesta libre del índice: evita mezclar 5.1 con 5.2
-       o tomar una coincidencia del índice/tabla de contenidos. El RAG sigue
-       siendo el respaldo cuando Gemini no está configurado. */
-    const extraerConGeminiPorSeccion = src === 'doc' && aiConfigured() && aiProvider() === 'gemini';
-    if(extraerConGeminiPorSeccion){
-      st.textContent = 'Verificando las secciones de inclusión y exclusión del protocolo con Gemini...';
+    /* La sección delimitada evita mezclar inclusión y exclusión o tomar el
+       índice. El proveedor concreto queda encapsulado en el servidor. */
+    const extraerConIaPorSeccion = src === 'doc' && aiConfigured();
+    if(extraerConIaPorSeccion){
+      st.textContent = 'Verificando las secciones de inclusión y exclusión con el servicio de IA...';
     }
-    /* con búsqueda documental se le pregunta al índice cuando no hay Gemini
-       configurado para analizar las secciones delimitadas */
-    if(ragActivo() && src === 'doc' && !extraerConGeminiPorSeccion){
+    if(ragActivo() && src === 'doc' && !extraerConIaPorSeccion){
       const stIdRag = $('stId').value;
       try{
         st.textContent = T('Consultando el índice de búsqueda documental...');
@@ -5584,7 +5983,7 @@ $('btnAnalyze').addEventListener('click', async ()=>{
       st.textContent = 'No se detectaron criterios ni visitas'+via+'. Probá pegando directamente el texto de las secciones de criterios y del calendario de visitas.';
     } else if(sospechoso && !usoIA){
       st.style.color='var(--warn)';
-      st.textContent = '⚠ Detectado: '+crit.incl.length+' criterios de inclusión, '+crit.excl.length+' de exclusión y '+IMP_VISITS.length+' visitas'+via+'. El resultado parece dudoso (puede haber tomado el índice o una tabla en vez de la sección real). Revisalo: si no son criterios reales, borralos y pegá a mano la sección del protocolo, o configurá la clave de IA para un análisis mucho más confiable.';
+      st.textContent = '⚠ Detectado: '+crit.incl.length+' criterios de inclusión, '+crit.excl.length+' de exclusión y '+IMP_VISITS.length+' visitas'+via+'. El resultado parece dudoso. Revisalo; si no son criterios reales, borralos y pegá a mano la sección correcta del protocolo.';
     } else {
       /* con la extracción por secciones, que falte una entera es señal de que
          el documento no la trae o que la respuesta se cortó */
@@ -5820,10 +6219,10 @@ const DOCS_SUGERIDAS = [
 /* abre el modal en cualquiera de los dos modos y arma las preguntas sugeridas */
 function ciModalShow(sugeridas){
   $('ciModalNotice').innerHTML = aiConfigured()
-    ? ''
+    ? '<div class="banner gray">🤖 '+T('Borrador asistido por IA: verificá cada respuesta contra las citas del documento.')+'</div>'
     : '<div class="banner warn">'+T(CI_MODE==='ci'
-        ? 'Sin clave de IA, las preguntas se responden buscando los párrafos del consentimiento que coinciden con lo que preguntás.'
-        : 'Sin clave de IA, las preguntas se responden buscando los párrafos de los documentos que coinciden con lo que preguntás.')+'</div>';
+        ? 'Sin servicio de IA, las preguntas se responden buscando los párrafos del consentimiento que coinciden con lo que preguntás.'
+        : 'Sin servicio de IA, las preguntas se responden buscando los párrafos de los documentos que coinciden con lo que preguntás.')+'</div>';
   $('ciChat').innerHTML = '';
   $('ciStatus').textContent = '';
   $('ciQuestion').value = '';
@@ -5892,8 +6291,7 @@ function renderCiFuentes(medidas){
       (m ? ' <span class="muted">('+Math.round(m.chars/1000)+' mil caracteres)</span> ' : ' ')+marca+'</label>';
   }).join('') +
   (total ? '<div class="muted" style="margin-top:6px">'+T('Total enviado')+': '+
-    Math.round(total/1000)+' '+T('mil caracteres, de un máximo de')+' '+Math.round(tope/1000)+' '+T('mil con')+' '+
-    AI_PROVIDERS[aiProvider()].nombre+'.</div>' : '');
+    Math.round(total/1000)+' '+T('mil caracteres, de un máximo de')+' '+Math.round(tope/1000)+' '+T('mil con el servicio seguro del sitio.')+'</div>' : '');
   box.querySelectorAll('input.ciFu').forEach(cb=>cb.addEventListener('change', e=>{
     const d = (CI_DOCS||[]).find(x=>x.id===e.target.value);
     if(d) d._off = !e.target.checked;
@@ -5905,6 +6303,7 @@ function renderCiChat(){
     const citas = m.citas || (m.cita ? [{documento:'', cita:m.cita}] : []);
     return '<div style="margin-bottom:10px">'+
       '<div style="font-weight:600;color:var(--acc-dark)">❓ '+esc(m.q)+'</div>'+
+      (m.asistida?'<div class="small" style="color:var(--warn);margin-top:3px">🤖 Borrador generado con asistencia de IA — requiere revisión humana</div>':'')+
       '<div style="white-space:pre-wrap;padding:6px 0 0 4px">'+esc(m.a)+'</div>'+
       citas.filter(c=>c && (c.cita||'').trim()).map(c=>
         '<div class="small muted" style="border-left:3px solid var(--line);padding-left:8px;margin-top:5px">« '+esc(c.cita)+' »'+
@@ -5955,6 +6354,7 @@ async function aiAskDocs(fuentes, pregunta){
     '- Si dos documentos se contradicen, señalalo y citá los dos.\n'+
     '- Escribí la respuesta en '+AI_LANG_NAME()+', de forma clara y breve.';
   const res = await aiChat({
+    purpose:'consulta_documentos',
     system:'Respondés exclusivamente con un objeto JSON válido, sin texto antes ni después y sin bloques de código.',
     content: prompt, maxTokens: 8000
   });
@@ -5965,7 +6365,7 @@ async function aiAskDocs(fuentes, pregunta){
   if(!citas.length && o.cita) citas = [{ documento: fuentes.length===1 ? fuentes[0].nombre : '', cita:o.cita }];
   citas = citas.map(c=>({ documento:String((c&&c.documento)||'').slice(0,120), cita:String((c&&c.cita)||'').slice(0,600) }))
                .filter(c=>c.cita.trim()).slice(0,8);
-  return { a:String(o.respuesta), citas };
+  return { a:String(o.respuesta), citas, asistida:true, aiMeta:res.meta };
 }
 
 /* búsqueda sin IA en varios documentos, indicando el origen de cada hallazgo */
@@ -6014,12 +6414,12 @@ async function askCi(){
         if(!aiConfigured()) throw eRag;
         st.textContent = T('Sin índice disponible; se consulta con el texto completo...');
         const res = await aiAskDocs(fuentes, q);
-        CI_HIST.push({ q, a:res.a+nota+'\n\n⚠ '+T('Búsqueda documental no disponible')+': '+eRag.message, citas:res.citas });
+        CI_HIST.push({ q, a:res.a+nota+'\n\n⚠ '+T('Búsqueda documental no disponible')+': '+eRag.message, citas:res.citas, asistida:true, aiMeta:res.aiMeta });
       }
     } else if(aiConfigured()){
       st.textContent = T('Consultando a la IA (puede tardar unos segundos)...');
       const res = await aiAskDocs(fuentes, q);
-      CI_HIST.push({ q, a:res.a+nota, citas:res.citas });
+      CI_HIST.push({ q, a:res.a+nota, citas:res.citas, asistida:true, aiMeta:res.aiMeta });
     } else {
       const hits = docsSearchHits(fuentes, q);
       CI_HIST.push({ q,
@@ -6037,7 +6437,7 @@ async function askCi(){
 }
 
 /* ============ IMPORTAR LA TABLA DE PROCEDIMIENTOS (FLOWCHART) ============ */
-let FLOW = { procs:[], visitas:[], matriz:{} };   /* matriz['idxProc|idxVisita'] = true */
+let FLOW = { procs:[], visitas:[], matriz:{}, evidencia:{}, fuente:null, original:null };   /* matriz['idxProc|idxVisita'] = true */
 
 /* texto del PDF conservando la separación por página (las tablas anchas se parten en varias) */
 async function pdfToPages(blob){
@@ -6135,6 +6535,7 @@ async function aiFlowchartChunk(texto){
     '- No agregues comentarios, saltos de línea decorativos ni espacios innecesarios: el JSON tiene que ser lo más corto posible.\n'+
     '- Si un tramo del texto no contiene la tabla, devolvé {"visitas":[],"procedimientos":[]}.';
   const res = await aiChat({
+    purpose:'tabla_procedimientos_texto',
     system:'Respondés exclusivamente con un objeto JSON válido, sin texto antes ni después y sin bloques de código.',
     content: prompt, maxTokens: 24000
   });
@@ -6289,6 +6690,7 @@ async function aiFlowchartVisual(lote, visitasPrevias){
     '- Si en estas páginas no hay tabla de procedimientos, devolvé {"visitas":[],"procedimientos":[]}.' });
 
   const res = await aiChat({
+    purpose:'tabla_procedimientos_visual',
     system:'Respondés exclusivamente con un objeto JSON válido, sin texto antes ni después y sin bloques de código.',
     content, maxTokens: 24000
   });
@@ -6551,13 +6953,15 @@ function openFlowModal(){
   $('flowMethod').value = 'geom';
   onFlowSource();
   $('flowStatus').textContent = '';
+  $('flowTrace').innerHTML = '';
+  $('flowDiff').innerHTML = '';
   $('flowResults').classList.add('hidden');
   $('flowIntro').innerHTML = (prot
         ? T('La tabla de procedimientos se toma del protocolo adjunto; la IA busca sola las páginas de la tabla, las lee como imagen y arma la matriz de procedimientos por visita para que la revises antes de aplicarla.')+
           ' <b>'+esc(prot.filename)+'</b>'+(prot.version?' ('+esc(prot.version)+')':'')+'. '+
           T('Apretá «Leer la tabla». También podés elegir otro documento o subir un PDF.')
         : T('Este estudio no tiene el protocolo adjunto. Subí el PDF de la tabla acá, o mejor: adjuntá el protocolo en «Documentos del estudio» y la próxima vez la tabla se toma de ahí automáticamente.'))+
-    (aiConfigured() ? '' : ' <span class="chip warn">'+T('Sin clave de IA: se usa la lectura por geometría, que no la necesita.')+'</span>');
+    (aiConfigured() ? '' : ' <span class="chip warn">'+T('Sin sesión online: se usa la lectura por geometría, que no requiere IA.')+'</span>');
   $('btnFlowAnalyze').disabled = false;
   $('flowModal').classList.remove('hidden');
 }
@@ -6591,7 +6995,7 @@ $('btnFlowAnalyze').addEventListener('click', async ()=>{
   try{
     st.style.color='var(--muted)'; st.textContent = T('Leyendo el documento...');
     const src = $('flowSource').value;
-    let blob=null, filename='', pasteTxt='';
+    let blob=null, filename='', pasteTxt='', sourceDoc=null;
     if(src==='paste'){
       pasteTxt = $('flowPaste').value;
       if(pasteTxt.trim().length<40) throw new Error(T('Pegá el texto de la tabla primero.'));
@@ -6602,7 +7006,7 @@ $('btnFlowAnalyze').addEventListener('click', async ()=>{
     } else {
       const doc = (DB.docs||[]).find(d=>d.id===$('flowDoc').value);
       if(!doc) throw new Error(T('No hay documento adjunto para analizar. Adjuntá uno o usá otra fuente.'));
-      blob = await docBlob(doc);
+      sourceDoc=doc; blob = await docBlob(doc);
       if(!blob) throw new Error(T('El archivo no está disponible en este navegador.'));
       filename = doc.filename;
     }
@@ -6611,13 +7015,13 @@ $('btnFlowAnalyze').addEventListener('click', async ()=>{
     const usarGeom   = esPdf && modo === 'geom';
     const usarVisual = esPdf && modo !== 'texto' && aiConfigured();
 
-    let listas=[], errores=[], nPartes=0, texto='', metodo='', extra='';
+    let listas=[], errores=[], nPartes=0, texto='', metodo='', methodKey='', paginas=[], totalPaginas=0, extra='';
     /* 1) geometría del PDF: exacto, determinista y sin costo */
     if(usarGeom){
       try{
         const r = await flowRunGeometrico(blob, st);
         listas=r.listas; nPartes=r.nPartes; texto=r.texto;
-        metodo = T('geometría del PDF');
+        metodo = T('geometría del PDF'); methodKey='geom'; paginas=r.paginas||[]; totalPaginas=r.total||0;
         extra = ' '+T('Páginas con tabla')+': '+r.paginas.join(', ')+'/'+r.total+'.';
       }catch(e){ errores.push(e.message); }
     }
@@ -6626,7 +7030,7 @@ $('btnFlowAnalyze').addEventListener('click', async ()=>{
       try{
         const r = await flowRunVisual(blob, st);
         listas=r.listas; errores=errores.concat(r.errores); nPartes=r.nPartes; texto=r.texto;
-        metodo = usarGeom ? T('lectura visual (respaldo)') : T('lectura visual del PDF');
+        metodo = usarGeom ? T('lectura visual (respaldo)') : T('lectura visual del PDF'); methodKey='visual'; paginas=r.paginas||[]; totalPaginas=r.total||0;
         extra = ' '+T('Páginas leídas')+': '+r.paginas.join(', ')+'/'+r.total+'.'+
                 (r.recortado ? ' ⚠ '+T('Se leyeron solo las primeras páginas con tabla; si falta alguna, subila aparte.') : '');
       }catch(e){ errores.push(e.message); }
@@ -6638,6 +7042,7 @@ $('btnFlowAnalyze').addEventListener('click', async ()=>{
         const r = await flowRunTexto(blob, filename, pasteTxt, st);
         listas=r.listas; errores=previos.concat(r.errores); nPartes=r.nPartes; texto=r.texto;
         metodo = (usarGeom||usarVisual) ? T('lectura del texto (respaldo)') : T('lectura del texto');
+        methodKey = src==='paste' ? 'paste' : 'texto';
       }catch(e){
         /* si falló el respaldo, el error que importa es el del método principal */
         throw new Error(previos.length ? previos[0] : e.message);
@@ -6645,6 +7050,14 @@ $('btnFlowAnalyze').addEventListener('click', async ()=>{
     }
 
     FLOW = mergeFlowChunks(listas);
+    FLOW.fuente = {
+      documentId:sourceDoc&&sourceDoc.id||'', documentType:sourceDoc&&sourceDoc.tipo||src,
+      filename:sourceDoc&&sourceDoc.filename||filename||(src==='paste'?'Texto pegado':''),
+      version:sourceDoc&&sourceDoc.version||'', method:methodKey||'texto', methodLabel:metodo,
+      pages:paginas, totalPages:totalPaginas, extractedAt:new Date().toISOString()
+    };
+    FLOW.original = ZondaFlowTrace.snapshot(FLOW);
+    FLOW.evidencia = ZondaFlowTrace.evidence(FLOW,FLOW.fuente);
     /* si al menos se armaron las visitas, mostramos la matriz igual: los
        procedimientos que falten se pueden agregar a mano, en vez de perder todo */
     if(!FLOW.visitas.length)
@@ -6677,7 +7090,11 @@ function renderFlowMatrix(){
   FLOW.procs.forEach((p,i)=>{
     h += '<tr><td style="position:sticky;left:0;background:#fff;border-right:1px solid var(--line)">'+esc(p)+'</td>';
     for(let j=0;j<nv;j++){
-      h += '<td style="text-align:center"><input type="checkbox" data-i="'+i+'" data-j="'+j+'"'+
+      const ev=FLOW.evidencia&&FLOW.evidencia[i+'|'+j];
+      const doubtful=ev&&ev.selected&&ev.status==='doubtful';
+      const reviewed=ev&&ev.selected&&ev.status==='reviewed';
+      const title=ev ? ((ev.selected?'Marcada':'No marcada')+' · confianza '+Math.round(ev.confidence*100)+'% · '+(ev.pages.length?'pág. '+ev.pages.join(', '):'sin página')+' · '+ev.fragment) : 'Sin evidencia de extracción';
+      h += '<td title="'+esc(title)+'" style="text-align:center;'+(doubtful?'background:var(--warn-soft);':reviewed?'background:var(--ok-soft);':'')+'"><input type="checkbox" data-i="'+i+'" data-j="'+j+'"'+
            (FLOW.matriz[i+'|'+j]?' checked':'')+' style="width:16px;height:16px"></td>';
     }
     h += '</tr>';
@@ -6688,11 +7105,63 @@ function renderFlowMatrix(){
     cb.addEventListener('change', e=>{
       const k = e.target.dataset.i+'|'+e.target.dataset.j;
       if(e.target.checked) FLOW.matriz[k]=true; else delete FLOW.matriz[k];
+      FLOW.evidencia[k]={confidence:1,status:'reviewed',selected:e.target.checked,pages:(FLOW.fuente&&FLOW.fuente.pages||[]).slice(),fragment:FLOW.procs[+e.target.dataset.i]+' × '+FLOW.visitas[+e.target.dataset.j].nombre};
+      renderFlowTrace();
       updateFlowSummary();
     });
   });
   updateFlowSummary();
+  renderFlowTrace();
 }
+function renderFlowTrace(){
+  const f=FLOW.fuente||{}, ev=Object.values(FLOW.evidencia||{});
+  const doubtful=ev.filter(x=>x.selected&&x.status==='doubtful').length;
+  const reviewed=ev.filter(x=>x.status==='reviewed').length;
+  const pages=(f.pages||[]).length ? ' · '+T('páginas')+' '+f.pages.join(', ')+(f.totalPages?'/'+f.totalPages:'') : '';
+  $('flowTrace').innerHTML='<div class="banner '+(doubtful?'warn':'gray')+' small"><b>Fuente:</b> '+esc(f.filename||'—')+
+    (f.version?' · versión '+esc(f.version):'')+' · '+esc(f.methodLabel||f.method||'')+pages+'. '+
+    (doubtful?'⚠ '+doubtful+' celda(s) con confianza menor al 80%; revisalas contra el original. ':'')+
+    (reviewed?'✔ '+reviewed+' corrección(es) revisadas manualmente.':'')+'</div>';
+  const currentVisits=collectStVisitas();
+  const current=ZondaFlowTrace.currentSnapshot(currentVisits);
+  const delta=ZondaFlowTrace.diff(current,ZondaFlowTrace.currentSnapshot(flowEffectiveVisits(currentVisits)));
+  let detail='Sin cambios respecto del cronograma vigente.';
+  if(delta.hasChanges){
+    const parts=[];
+    if(delta.added.length) parts.push('Visitas nuevas: '+delta.added.join(', '));
+    if(delta.removed.length) parts.push('Visitas retiradas: '+delta.removed.join(', '));
+    if(delta.changed.length) parts.push('Visitas modificadas: '+delta.changed.map(x=>x.visit+' ('+x.details.join('; ')+')').join(' · '));
+    detail=parts.join('. ')+'.';
+  }
+  const amendment=f.documentType==='enmienda';
+  $('flowDiff').innerHTML='<details class="banner '+(delta.hasChanges?'acc':'gray')+' small" '+(amendment?'open':'')+'><summary><b>'+
+    (amendment?'Comparación de la enmienda con el cronograma vigente':'Comparación con el cronograma vigente')+
+    '</b></summary><div style="margin-top:6px">'+esc(detail)+'</div></details>';
+}
+
+function flowImportedVisits(){
+  return FLOW.visitas.map((v,j)=>({
+    id:uid(), nombre:v.nombre, dia:(v.dia===null||isNaN(v.dia))?0:v.dia,
+    venAntes:v.venAntes||0, venDesp:v.venDesp||0,
+    tareas:FLOW.procs.filter((p,i)=>FLOW.matriz[i+'|'+j]),
+    trazabilidad:{fuente:JSON.parse(JSON.stringify(FLOW.fuente||{})),
+      procedimientos:FLOW.procs.map((p,i)=>FLOW.matriz[i+'|'+j]?{nombre:p,evidencia:FLOW.evidencia[i+'|'+j]||null}:null).filter(Boolean)}
+  }));
+}
+function flowEffectiveVisits(current){
+  const imported=flowImportedVisits();
+  if($('flowMode').value!=='merge'||!current.length) return imported;
+  const result=JSON.parse(JSON.stringify(current));
+  for(const nv of imported){
+    const i=result.findIndex(a=>(!isNaN(a.dia)&&a.dia===nv.dia)||(normKey(a.nombre)&&normKey(a.nombre)===normKey(nv.nombre)));
+    if(i>=0){
+      if(nv.tareas.length){ result[i].tareas=nv.tareas.slice(); result[i].trazabilidad=nv.trazabilidad; }
+      if(!result[i].venAntes&&!result[i].venDesp){ result[i].venAntes=nv.venAntes; result[i].venDesp=nv.venDesp; }
+    }else result.push(nv);
+  }
+  return result;
+}
+$('flowMode').addEventListener('change',renderFlowTrace);
 function updateFlowSummary(){
   const porVisita = FLOW.visitas.map((v,j)=>FLOW.procs.filter((p,i)=>FLOW.matriz[i+'|'+j]).length);
   const sinNada = porVisita.filter(n=>n===0).length;
@@ -6713,6 +7182,8 @@ $('btnFlowAddProc').addEventListener('click', ()=>{
   if(n.length<3){ toast(T('Escribí el nombre del procedimiento.')); return; }
   if(FLOW.procs.some(p=>normKey(p)===normKey(n))){ toast(T('Ese procedimiento ya está en la lista.')); return; }
   FLOW.procs.push(n);
+  const i=FLOW.procs.length-1;
+  FLOW.visitas.forEach((v,j)=>{ FLOW.evidencia[i+'|'+j]={confidence:1,status:'reviewed',selected:false,pages:[],fragment:n+' × '+v.nombre}; });
   $('flowNewProc').value='';
   renderFlowMatrix();
   $('flowMatrixWrap').scrollTop = $('flowMatrixWrap').scrollHeight;
@@ -6720,20 +7191,15 @@ $('btnFlowAddProc').addEventListener('click', ()=>{
 
 $('btnFlowApply').addEventListener('click', ()=>{
   const mode = $('flowMode').value;
-  const nuevas = FLOW.visitas.map((v,j)=>({
-    id: uid(),
-    nombre: v.nombre,
-    dia: (v.dia===null||isNaN(v.dia)) ? 0 : v.dia,
-    venAntes: v.venAntes||0, venDesp: v.venDesp||0,
-    tareas: FLOW.procs.filter((p,i)=>FLOW.matriz[i+'|'+j])
-  }));
+  const nuevas = flowImportedVisits();
   const actuales = collectStVisitas();
+  const vigenteAntes=ZondaFlowTrace.currentSnapshot(actuales);
   let conTareas=0, agregadas=0;
   if(mode==='merge' && actuales.length){
     for(const nv of nuevas){
       const i = actuales.findIndex(a => (!isNaN(a.dia) && a.dia===nv.dia) || (normKey(a.nombre) && normKey(a.nombre)===normKey(nv.nombre)));
       if(i>=0){
-        if(nv.tareas.length){ actuales[i].tareas = nv.tareas.slice(); conTareas++; }
+        if(nv.tareas.length){ actuales[i].tareas = nv.tareas.slice(); actuales[i].trazabilidad=nv.trazabilidad; conTareas++; }
         if(!actuales[i].venAntes && !actuales[i].venDesp){ actuales[i].venAntes=nv.venAntes; actuales[i].venDesp=nv.venDesp; }
       } else { actuales.push(nv); agregadas++; }
     }
@@ -6743,6 +7209,13 @@ $('btnFlowApply').addEventListener('click', ()=>{
     conTareas = nuevas.filter(v=>v.tareas.length).length;
   }
   EDIT_VISITAS.sort((a,b)=>a.dia-b.dia);
+  const revisado=ZondaFlowTrace.snapshot(FLOW);
+  EDIT_IMPORTACIONES_PROTOCOLO.push({
+    id:uid(), fecha:new Date().toISOString(), fuente:JSON.parse(JSON.stringify(FLOW.fuente||{})),
+    extraido:FLOW.original, revisado,
+    comparacion:ZondaFlowTrace.diff(vigenteAntes,ZondaFlowTrace.currentSnapshot(EDIT_VISITAS))
+  });
+  renderFlowHistory();
   renderStVisitas();
   $('flowModal').classList.add('hidden');
   toast(T('Tareas cargadas en')+' '+conTareas+' '+T('visitas')+(agregadas?', '+agregadas+' '+T('visitas nuevas agregadas'):'')+'. '+T('Revisá y guardá el estudio.'));
@@ -6753,18 +7226,19 @@ function docsOfPatient(pid){ return (DB.docs||[]).filter(d=>d.pacienteId===pid).
 
 $('btnUploadPdoc').addEventListener('click', async ()=>{
   const pid = $('paId').value;
-  if(!pid || !getPatient(pid)){ toast('Guardá el paciente antes de adjuntar documentos.'); return; }
+  const paciente=getPatient(pid);
+  if(!pid || !paciente){ toast('Guardá el paciente antes de adjuntar documentos.'); return; }
   const f = $('pdocFile').files[0];
   if(!f){ toast('Elegí un archivo primero.'); return; }
   if(f.size > 50*1048576){ toast('El archivo supera 50 MB.'); return; }
   const doc = {
-    id: uid(), pacienteId: pid, tipo: $('pdocTipo').value, version: $('pdocVersion').value.trim(),
+    id: uid(), pacienteId: pid, estudioId:paciente.estudioId, tipo: $('pdocTipo').value, version: $('pdocVersion').value.trim(),
     filename: f.name, mime: f.type, size: f.size, subido: new Date().toISOString(),
     storage: Store.online() ? 'supabase' : 'idb', path: ''
   };
   const btn = $('btnUploadPdoc'); btn.disabled = true; btn.textContent = 'Subiendo...';
   try{
-    if(Store.online()){ doc.path = doc.id+'/'+f.name.replace(/[^\w.\-]+/g,'_'); await storagePut(doc.path, f); }
+    if(Store.online()){ doc.path = paciente.estudioId+'/'+doc.id+'/'+f.name.replace(/[^\w.\-]+/g,'_'); await storagePut(doc.path, f); }
     else{ await idbPut(doc.id, f); }
     await Store.upsert('docs', doc);
     $('pdocFile').value=''; $('pdocVersion').value='';
@@ -6813,7 +7287,7 @@ function renderPaDocs(){
 
 /* ================= EVALUACIÓN AUTOMÁTICA DE CRITERIOS ================= */
 let PA_JUST = {};
-function aiConfigured(){ return !!((CFG.aiKey||'').trim()); }
+function aiConfigured(){ return !!(Store.online() && SESSION && SESSION.access_token); }
 /* idioma en el que la IA debe redactar sus textos */
 function AI_LANG_NAME(){
   return 'español';
@@ -6839,8 +7313,8 @@ function openEvalModal(){
   $('evalStatus').textContent='';
   if($('evalRagBox')) $('evalRagBox').classList.toggle('hidden', !ragActivo());
   $('evalModeInfo').innerHTML = aiConfigured()
-    ? '<b>Modo IA activado:</b> el texto de los documentos seleccionados se envía a la API de '+AI_PROVIDERS[aiProvider()].nombre+' para sugerir la respuesta de cada criterio con su justificación. Las sugerencias siempre las confirma el investigador.'
-    : '<b>Modo evidencia (sin clave de IA):</b> se busca en los documentos el texto relacionado con cada criterio y se muestra como ayuda, sin marcar respuestas. Para respuestas automáticas, cargá una clave de API en Configuración.';
+    ? '<b>Modo IA activado:</b> los documentos pasan por el servicio seguro del sitio. Las sugerencias quedan auditadas y siempre las confirma el investigador.'
+    : '<b>Modo evidencia:</b> se busca en los documentos el texto relacionado con cada criterio y se muestra como ayuda, sin marcar respuestas.';
   /* si los criterios del estudio están mal importados, evaluar no tiene sentido */
   const prev = $('evalBadCrit'); if(prev) prev.remove();
   const todos = (st.criteriosInclusion||[]).concat(st.criteriosExclusion||[]);
@@ -6885,6 +7359,7 @@ async function aiEvalCriteria(st, text, imagenes){
         .concat(imagenes, [{ t:'text', text:prompt }])
     : prompt;
   const resp = await aiChat({
+    purpose:'elegibilidad_criterios',
     system: 'Respondés exclusivamente con un array JSON válido, sin texto antes ni después, sin explicaciones y sin bloques de código. Empezá la respuesta con "[" y terminala con "]".',
     content: contenido, maxTokens: maxTok
   });
@@ -7018,7 +7493,7 @@ $('btnRunEval').addEventListener('click', async ()=>{
       buildEvidence(study, text);
       renderPaCriterios();
       const nEv = Object.keys(PA_JUST).length;
-      $('paAiNotice').innerHTML = '<div class="banner gray">🔎 Evidencia encontrada para '+nEv+' criterio(s), mostrada debajo de cada uno. Marcá las respuestas manualmente. Para respuestas automáticas, configurá una clave de IA.</div>';
+      $('paAiNotice').innerHTML = '<div class="banner gray">🔎 Evidencia encontrada para '+nEv+' criterio(s), mostrada debajo de cada uno. Marcá las respuestas manualmente.</div>';
       $('evalModal').classList.add('hidden');
       toast('Evidencia agregada debajo de cada criterio.');
     }
@@ -7330,7 +7805,7 @@ function openNarrModal(){
   $('narrIntro').innerHTML = (aiConfigured() || ragActivo())
     ? T('Para cada criterio se redacta un párrafo con el dato concreto de este paciente y la cita del documento que lo respalda. Sirve como documento fuente del screening. Lo que no esté documentado queda declarado como pendiente: revisá y editá antes de firmar.')+
       (ragActivo() ? ' <span class="chip acc">'+T('búsqueda documental activa')+'</span>' : '')
-    : '<b>'+T('Necesitás activar la búsqueda documental o cargar una clave de IA en Configuración.')+'</b>';
+    : '<b>'+T('Necesitás activar la búsqueda documental o iniciar una sesión online para usar IA.')+'</b>';
   if($('narrRagBox')) $('narrRagBox').classList.toggle('hidden', !ragActivo());
   $('btnNarrRun').disabled = (!aiConfigured() && !ragActivo()) || !docs.length;
   $('narrStatus').textContent = '';
@@ -7391,6 +7866,7 @@ async function aiNarrarLote(items, st, texto, p, imagenes){
         .concat(imagenes, [{ t:'text', text:prompt }])
     : prompt;
   const r = await aiChat({
+    purpose:'elegibilidad_narrativa',
     system: 'Respondés exclusivamente con un array JSON válido, sin texto antes ni después, sin explicaciones y sin bloques de código. Empezá con "[" y terminá con "]".',
     content: contenido, maxTokens: Math.max(3000, items.length*320)
   });
@@ -7915,11 +8391,21 @@ const CLASIF_OPC = {
 };
 
 /* decisiones del usuario: { claveDelProcedimiento: 'lab'|'cardio'|'imagen'|'otros'|'no' } */
-let PROC_CLASIF = loadJSON('ecx_procclasif') || {};
+let PROC_CLASIF = {};
 /* compatibilidad: lo que se había marcado antes como análisis suelto */
-let LAB_EXTRA = loadJSON('ecx_labextra') || {};
+let LAB_EXTRA = {};
 function labKey(v,t){ return (v.id||v.nombre)+'|'+t; }
 function procKey(t){ return normKey(t); }
+
+function hidratarConfiguracionCompartida(){
+  PROC_CLASIF={}; LAB_EXTRA={}; TABLET_CLASIF={};
+  for(const s of (DB.settings||[])){
+    if(!s || !s.settingKey) continue;
+    if(s.settingType==='procedure') PROC_CLASIF[s.settingKey]=s.value;
+    else if(s.settingType==='lab_extra' && s.value===true) LAB_EXTRA[s.settingKey]=true;
+    else if(s.settingType==='tablet') TABLET_CLASIF[s.settingKey]=s.value;
+  }
+}
 
 /* los complementarios van a servicios distintos: cada uno lleva su propia orden */
 const CARDIO_RE = /(ecg|electrocardiograma|holter|ecocardiograma|ergometr[ií]a|presurometr[ií]a|mapa\b|prueba de esfuerzo)/i;
@@ -7946,23 +8432,12 @@ function clasifDe(t){
   return clasifAuto(t);
 }
 function clasifEsManual(t){ return !!PROC_CLASIF[procKey(t)]; }
-function clasifFijar(t, valor){
+async function clasifFijar(t, valor){
   const k = procKey(t);
   if(!k) return;
-  if(valor) PROC_CLASIF[k] = valor; else delete PROC_CLASIF[k];
-  saveJSON('ecx_procclasif', PROC_CLASIF);
+  if(valor) return guardarSetting('procedure',k,valor,'','Procedimiento: '+t);
+  return borrarSetting('procedure',k,'Procedimiento: '+t);
 }
-/* se importa una sola vez lo que estaba marcado con el mecanismo anterior */
-(function migrarLabExtra(){
-  if(loadJSON('ecx_procclasif_mig')) return;
-  let n = 0;
-  for(const k of Object.keys(LAB_EXTRA||{})){
-    const t = k.slice(k.indexOf('|')+1);
-    if(t && !PROC_CLASIF[procKey(t)]){ PROC_CLASIF[procKey(t)] = 'lab'; n++; }
-  }
-  if(n) saveJSON('ecx_procclasif', PROC_CLASIF);
-  saveJSON('ecx_procclasif_mig', true);
-})();
 
 /* todos los procedimientos distintos de un estudio, con su clasificación */
 function procsDeEstudio(st){
@@ -7986,7 +8461,7 @@ function labsOfVisit(v){
   const lab = [], comp = [], otras = [];
   const grupos = { lab:[], cardio:[], imagen:[], otros:[] };
   for(const t of (v.tareas||[])){
-    const c = clasifDe(t);
+    const c = LAB_EXTRA[labKey(v,t)] ? 'lab' : clasifDe(t);
     if(c === 'no'){ otras.push(t); continue; }
     if(c === 'lab'){ lab.push(t); grupos.lab.push(t); }
     else { comp.push(t); grupos[c].push(t); }
@@ -8083,29 +8558,41 @@ $('btnClasifClose').addEventListener('click', ()=>$('clasifModal').classList.add
 $('clasifBuscar').addEventListener('input', renderClasif);
 $('clasifFiltro').addEventListener('change', renderClasif);
 
-$('btnClasifAplicar').addEventListener('click', ()=>{
+$('btnClasifAplicar').addEventListener('click', async ()=>{
   const st = getStudy($('labStudy').value);
   let n = 0;
+  const btn=$('btnClasifAplicar'); btn.disabled=true;
   /* se guarda la decisión de TODOS los procedimientos mostrados, no solo los
      tocados: así el usuario confirma también lo que el automático propuso bien
      y deja de aparecer como «sin revisar» */
-  for(const x of procsDeEstudio(st)){
-    const k = procKey(x.nombre);
-    const valor = (k in CLASIF_TMP) ? CLASIF_TMP[k] : clasifDe(x.nombre);
-    if(!clasifEsManual(x.nombre) || (k in CLASIF_TMP)){ clasifFijar(x.nombre, valor); n++; }
+  try{
+    for(const x of procsDeEstudio(st)){
+      const k = procKey(x.nombre);
+      const valor = (k in CLASIF_TMP) ? CLASIF_TMP[k] : clasifDe(x.nombre);
+      if(!clasifEsManual(x.nombre) || (k in CLASIF_TMP)){
+        if(!await clasifFijar(x.nombre, valor)) return;
+        n++;
+      }
+    }
+  }finally{
+    btn.disabled=false;
   }
-  auditar('estudio','clasificacion_procedimientos', st?st.id:'', (st?st.codigo+': ':'')+n+' procedimientos');
   CLASIF_TMP = {};
   $('clasifModal').classList.add('hidden');
   renderLabs();
   toast(T('Clasificación guardada.')+' '+n+' '+T('procedimientos.'));
 });
 
-$('btnClasifReset').addEventListener('click', ()=>{
+$('btnClasifReset').addEventListener('click', async ()=>{
   const st = getStudy($('labStudy').value);
   if(!st) return;
   if(!confirm(T('Se borran tus decisiones para los procedimientos de este protocolo y vuelve la propuesta automática. ¿Continuar?'))) return;
-  for(const x of procsDeEstudio(st)) clasifFijar(x.nombre, null);
+  const btn=$('btnClasifReset'); btn.disabled=true;
+  try{
+    for(const x of procsDeEstudio(st)) if(!await clasifFijar(x.nombre, null)) return;
+  }finally{
+    btn.disabled=false;
+  }
   CLASIF_TMP = {};
   renderClasif();
   toast(T('Se restauró la clasificación automática.'));
@@ -8157,10 +8644,12 @@ function renderLabs(){
     const bl = d.querySelector('[data-a=lst]');
     if(bl) bl.addEventListener('click', ()=>visitLabsReport(st, v));
     d.querySelectorAll('input[type=checkbox][data-t]').forEach(cb=>{
-      cb.addEventListener('change', e=>{
+      cb.addEventListener('change', async e=>{
         const k = labKey(v, e.target.dataset.t);
-        if(e.target.checked) LAB_EXTRA[k] = true; else delete LAB_EXTRA[k];
-        saveJSON('ecx_labextra', LAB_EXTRA);
+        const ok=e.target.checked
+          ? await guardarSetting('lab_extra',k,true,st.id,'Análisis adicional: '+e.target.dataset.t)
+          : await borrarSetting('lab_extra',k,'Análisis adicional: '+e.target.dataset.t);
+        if(!ok){ e.target.checked=!e.target.checked; return; }
         renderLabs();
       });
     });
@@ -8290,7 +8779,7 @@ function visitLabsReport(st, v){
 $('btnLabsFromProt').addEventListener('click', ()=>{
   const st = getStudy($('labStudy').value);
   if(!st){ toast(T('Cargá un estudio para ver sus análisis por visita.')); return; }
-  if(!aiConfigured()){ toast(T('Necesitás configurar una clave de API en Configuración para leer la tabla de procedimientos.')); return; }
+  if(!aiConfigured()){ toast(T('Necesitás una sesión online para leer la tabla con IA.')); return; }
   openStudyEditor(st.id);
   setTimeout(openFlowModal, 60);
 });
@@ -8553,8 +9042,176 @@ function applyFeatures(){
    obtiene gratis alta/edición/borrado, filtros, alertas de vencimiento,
    impresión (PDF), envío por email y exportación CSV. */
 
-let LOGS = loadJSON('ecx_logs') || {};           /* LOGS[tipo] = [ {id, estudioId, pacienteId, ...campos} ] */
-function logsSave(){ saveJSON('ecx_logs', LOGS); }
+let LOGS = {};                                   /* Vista en memoria de DB.records, agrupada por tipo. */
+function hidratarDatosCompartidos(){
+  const agrupados = {};
+  for(const r of (DB.records||[])){
+    const tipo = r && r.recordType;
+    if(!tipo || !r.id) continue;
+    (agrupados[tipo] = agrupados[tipo] || []).push(r);
+  }
+  LOGS = agrupados;
+  const checklists = {};
+  for(const c of (DB.checklists||[])){
+    if(!c || !c.id) continue;
+    checklists[c.checklistKey||c.id] = { e:c.estado||'Pendiente', n:c.nota||'' };
+  }
+  CHK = checklists;
+}
+function logServidor(tipo, obj){ return Object.assign({}, obj, { recordType:tipo }); }
+function datosIguales(a,b){
+  const keys=Array.from(new Set(Object.keys(a||{}).concat(Object.keys(b||{})))).sort();
+  return keys.every(k=>JSON.stringify((a||{})[k])===JSON.stringify((b||{})[k]));
+}
+async function guardarLog(tipo, obj, accion, motivo, detalle){
+  const srv = logServidor(tipo, obj);
+  const confirmado=(DB.records||[]).find(x=>x.id===srv.id);
+  if(confirmado && datosIguales(confirmado,srv)) return true;
+  try{
+    await Store.upsert('records', srv, {
+      accion:accion||((Store.revisions.records||new Map()).has(srv.id)?'modificación':'alta'),
+      detalle:detalle||((typeof logRowTitle==='function')?logRowTitle(tipo,obj):tipo),
+      motivo:motivo||''
+    });
+    hidratarDatosCompartidos();
+    return true;
+  }catch(e){
+    hidratarDatosCompartidos();
+    toast('⚠ '+e.message);
+    return false;
+  }
+}
+async function borrarLog(tipo, obj, motivo){
+  try{
+    await Store.remove('records', obj.id, {
+      detalle:(typeof logRowTitle==='function')?logRowTitle(tipo,obj):tipo,
+      motivo:motivo||''
+    });
+    hidratarDatosCompartidos();
+    return true;
+  }catch(e){
+    hidratarDatosCompartidos();
+    toast('⚠ '+e.message);
+    return false;
+  }
+}
+async function sincronizarTipoLogs(tipo, deseados, detalle, borrarAusentes){
+  const confirmados = (DB.records||[]).filter(r=>r.recordType===tipo);
+  const porId = new Map(confirmados.map(r=>[r.id,r]));
+  const idsDeseados = new Set(deseados.map(r=>r.id));
+  for(const obj of deseados){
+    const srv=logServidor(tipo,obj), previo=porId.get(obj.id);
+    if(previo && JSON.stringify(previo)===JSON.stringify(srv)) continue;
+    if(!await guardarLog(tipo,obj,previo?'modificación':'alta','',detalle)) return false;
+  }
+  if(borrarAusentes){
+    for(const previo of confirmados){
+      if(!idsDeseados.has(previo.id) && !await borrarLog(tipo,previo,'')) return false;
+    }
+  }
+  hidratarDatosCompartidos();
+  return true;
+}
+async function migrarDatosCompartidosLegacy(){
+  if(!Store.online() || !MEMBRESIA || !MEMBRESIA.org_id) return;
+  const legacyLogs=loadJSON('ecx_logs')||{}, legacyChk=loadJSON('ecx_chk')||{};
+  const logs=[];
+  for(const [tipo,arr] of Object.entries(legacyLogs))
+    if(Array.isArray(arr)) for(const r of arr) if(r&&r.id) logs.push(logServidor(tipo,r));
+  const chks=Object.entries(legacyChk).filter(([,v])=>v&&typeof v==='object');
+  if(!logs.length && !chks.length) return;
+  const claim=loadJSON('ecx_legacy_shared_claim');
+  if(claim && claim.orgId && claim.orgId!==MEMBRESIA.org_id) return;
+  const marker='ecx_legacy_shared_migrated_'+MEMBRESIA.org_id;
+  if(loadJSON(marker)) return;
+  const serverLogs=new Map((DB.records||[]).map(x=>[x.id,x]));
+  const serverChk=new Map((DB.checklists||[]).map(x=>[x.checklistKey||x.id,x]));
+  const faltanLogs=logs.filter(r=>!serverLogs.has(r.id));
+  const faltanChk=chks.filter(([k])=>!serverChk.has(k));
+  const conflictosLogs=logs.filter(r=>serverLogs.has(r.id)&&!datosIguales(r,serverLogs.get(r.id)));
+  const conflictosChk=chks.filter(([k,v])=>{
+    const srv=serverChk.get(k); if(!srv) return false;
+    return (srv.estado||'Pendiente')!==(v.e||'Pendiente') || (srv.nota||'')!==(v.n||'');
+  });
+  if(!faltanLogs.length && !faltanChk.length && !conflictosLogs.length && !conflictosChk.length){
+    saveJSON(marker,{fecha:new Date().toISOString(),registros:0,checklists:0,conflictos:0});
+    saveJSON('ecx_legacy_shared_claim',{orgId:MEMBRESIA.org_id,fecha:new Date().toISOString()});
+    return;
+  }
+  if(!loadJSON('ecx_logs_respaldo_pre_migracion')) saveJSON('ecx_logs_respaldo_pre_migracion',legacyLogs);
+  if(!loadJSON('ecx_chk_respaldo_pre_migracion')) saveJSON('ecx_chk_respaldo_pre_migracion',legacyChk);
+  const sitio=miOrgNombre()||MEMBRESIA.org_id;
+  const nConflictos=conflictosLogs.length+conflictosChk.length;
+  if(!confirm('Se encontraron '+faltanLogs.length+' registros y '+faltanChk.length+' ítems de checklist guardados anteriormente en este navegador.'+
+    (nConflictos?'\n\nAdemás, '+nConflictos+' elemento(s) tienen el mismo identificador pero contenido diferente: se conservará la versión de la nube y el original quedará en el respaldo local.':'')+
+    '\n\n¿Importarlos una sola vez al sitio «'+sitio+'»? Revisá que correspondan a este centro antes de continuar.')) return;
+  syncStatus('storage','saving','Migrando registros locales a la nube…');
+  try{
+    for(const r of faltanLogs)
+      await Store.upsert('records',r,{accion:'migración',detalle:'Importado desde almacenamiento local',motivo:'Migración inicial'});
+    for(const [k,v] of faltanChk){
+      const partes=k.split('|');
+      const c={id:k,checklistKey:k,estudioId:partes[0]||'',plantilla:partes[1]||'',itemIndex:Number(partes[2]||0),estado:v.e||'Pendiente',nota:v.n||''};
+      await Store.upsert('checklists',c,{accion:'migración',detalle:'Checklist importado desde almacenamiento local',motivo:'Migración inicial'});
+    }
+    const hecho={fecha:new Date().toISOString(),registros:faltanLogs.length,checklists:faltanChk.length,conflictos:nConflictos};
+    saveJSON(marker,hecho); saveJSON('ecx_legacy_shared_claim',{orgId:MEMBRESIA.org_id,fecha:hecho.fecha});
+    hidratarDatosCompartidos();
+    syncStatus('storage','ok','✓ Datos locales migrados a la nube.');
+    if(nConflictos) alert('La migración terminó sin sobrescribir '+nConflictos+' elemento(s) diferentes que ya estaban en la nube. Los datos originales del navegador quedaron conservados en el respaldo previo a la migración.');
+    else toast('Datos anteriores migrados correctamente.');
+  }catch(e){
+    hidratarDatosCompartidos();
+    syncStatus('storage','error','⚠ La migración quedó incompleta: '+e.message);
+  }
+}
+
+async function migrarConfiguracionCompartidaLegacy(){
+  if(!Store.online() || !MEMBRESIA || !MEMBRESIA.org_id) return;
+  const legacyProc=loadJSON('ecx_procclasif')||{};
+  const legacyLab=loadJSON('ecx_labextra')||{};
+  const legacyTablet=loadJSON('ecx_tabletclasif')||{};
+  const candidatos=[];
+  for(const [k,v] of Object.entries(legacyProc))
+    if(k && ['lab','cardio','imagen','otros','no'].includes(v))
+      candidatos.push({id:settingId('procedure',k),settingType:'procedure',settingKey:k,value:v,estudioId:''});
+  for(const [k,v] of Object.entries(legacyLab))
+    if(k && v===true)
+      candidatos.push({id:settingId('lab_extra',k),settingType:'lab_extra',settingKey:k,value:true,estudioId:''});
+  for(const [k,v] of Object.entries(legacyTablet)){
+    const studyId=String(k).split('|')[0]||'';
+    if(k && studyId && (v==='paciente'||v==='medico'))
+      candidatos.push({id:settingId('tablet',k),settingType:'tablet',settingKey:k,value:v,estudioId:studyId});
+  }
+  if(!candidatos.length) return;
+  const marker='ecx_legacy_settings_migrated_'+MEMBRESIA.org_id;
+  if(loadJSON(marker)) return;
+  const servidor=new Map((DB.settings||[]).map(x=>[x.id,x]));
+  const faltan=candidatos.filter(x=>!servidor.has(x.id));
+  const conflictos=candidatos.filter(x=>servidor.has(x.id) && !datosIguales(x,servidor.get(x.id)));
+  if(!faltan.length && !conflictos.length){
+    saveJSON(marker,{fecha:new Date().toISOString(),configuraciones:0,conflictos:0});
+    return;
+  }
+  if(!loadJSON('ecx_settings_respaldo_pre_migracion')){
+    saveJSON('ecx_settings_respaldo_pre_migracion',{procClasif:legacyProc,labExtra:legacyLab,tabletClasif:legacyTablet});
+  }
+  if(!confirm('Se encontraron '+faltan.length+' configuraciones de procedimientos guardadas anteriormente en este navegador.'+
+    (conflictos.length?'\n\nHay '+conflictos.length+' configuración(es) diferentes con el mismo identificador: se conservará la versión de la nube.':'')+
+    '\n\n¿Importarlas una sola vez al sitio «'+(miOrgNombre()||MEMBRESIA.org_id)+'»?')) return;
+  try{
+    for(const s of faltan)
+      await Store.upsert('settings',s,{accion:'migración',detalle:'Configuración importada desde almacenamiento local',motivo:'Migración inicial'});
+    const hecho={fecha:new Date().toISOString(),configuraciones:faltan.length,conflictos:conflictos.length};
+    saveJSON(marker,hecho);
+    hidratarConfiguracionCompartida();
+    if(conflictos.length) alert('La migración conservó la versión de la nube en '+conflictos.length+' conflicto(s). El original quedó en el respaldo local.');
+    else toast('Configuraciones anteriores migradas correctamente.');
+  }catch(e){
+    hidratarConfiguracionCompartida();
+    syncStatus('storage','error','⚠ La migración de configuraciones quedó incompleta: '+e.message);
+  }
+}
 function logRows(tipo){ return (LOGS[tipo] || []).filter(r=>!r.anulado); }
 function logRowsTodos(tipo){ return (LOGS[tipo] || []); }
 /* registros clínicos: se anulan con motivo; los operativos se borran */
@@ -8937,6 +9594,14 @@ function openLog(tipo){
   renderLog();
   showView('view-log');
 }
+function openLogRecord(tipo,id,pacienteId,estudioId){
+  openLog(tipo);
+  if(estudioId&&Array.from($('toolsStudy').options).some(o=>o.value===estudioId)) $('toolsStudy').value=estudioId;
+  fillLogPatients();
+  if(pacienteId&&$('logPatient')&&Array.from($('logPatient').options).some(o=>o.value===pacienteId)) $('logPatient').value=pacienteId;
+  renderLog();
+  if(id) logForm(id);
+}
 function fillLogPatients(){
   if(!LOG_TIPO || !LOG_DEFS[LOG_TIPO].paciente) return;
   const sid = $('toolsStudy').value;
@@ -9005,19 +9670,18 @@ function renderLog(){
       const motivo = prompt(T('Este registro es clínico: se anula con motivo y queda en la auditoría. Motivo:'),'');
       if(motivo===null) return;
       if(!motivo.trim()){ toast(T('La anulación requiere un motivo.')); return; }
-      r.anulado = true; r.motivoAnulacion = motivo.trim();
-      r.anuladoPor = (ME&&(ME.email||ME.nombre))||CURRENT_USER||'';
-      r.anuladoEn = new Date().toISOString();
-      logsSave();
-      if((LOG_TIPO==='ea' || LOG_TIPO==='conmed') && r.pacienteId) await sincronizarEvolucionesClinicas(r.pacienteId);
-      auditar('log:'+LOG_TIPO, 'anulación', r.id, logRowTitle(LOG_TIPO, r), motivo.trim());
+      const anulado = Object.assign({}, r, {
+        anulado:true, motivoAnulacion:motivo.trim(),
+        anuladoPor:(ME&&(ME.email||ME.nombre))||CURRENT_USER||'',
+        anuladoEn:new Date().toISOString()
+      });
+      if(!await guardarLog(LOG_TIPO, anulado, 'anulación', motivo.trim())) return;
+      if((LOG_TIPO==='ea' || LOG_TIPO==='conmed') && anulado.pacienteId) await sincronizarEvolucionesClinicas(anulado.pacienteId);
       renderLog(); renderTools(); toast(T('Registro anulado.'));
       return;
     }
     if(!confirm(T('¿Borrar este registro?'))) return;
-    LOGS[LOG_TIPO] = logRowsTodos(LOG_TIPO).filter(x=>x.id!==b.dataset.del);
-    logsSave();
-    auditar('log:'+LOG_TIPO, 'baja', b.dataset.del, r?logRowTitle(LOG_TIPO,r):'');
+    if(!await borrarLog(LOG_TIPO, r, '')) return;
     renderLog(); toast(T('Registro borrado.'));
   }));
 }
@@ -9042,9 +9706,10 @@ const CTCAE_GUIA_ES={
 };
 function ctcaeGuiaVisible(hit){ return CTCAE_GUIA_ES[hit[2]] || ctcaeAyudaGrado(hit[3]); }
 async function sugerirCtcaeConIA(version, evento){
-  if(!aiConfigured()) throw new Error('Configurá una clave de IA en Configuración para usar esta ayuda.');
+  if(!aiConfigured()) throw new Error('Necesitás una sesión online para usar esta ayuda.');
   const catalogo=ctcaeLista(version).map(x=>({codigo:x[0],categoria:x[1],termino:x[2]}));
   const r=await aiChat({
+    purpose:'ctcae_sugerencia',
     system:'Sos un asistente de codificación CTCAE. Usá únicamente el catálogo CTCAE suministrado. Para el evento escrito por el usuario, elegí el término más apropiado. Respondé solo JSON válido con los campos codigo, termino_es y explicacion. La explicación debe estar en '+AI_LANG_NAME()+'. No elijas un código si no hay equivalencia clara.',
     content:'Evento informado: '+String(evento||'')+'\\n\\nCatálogo CTCAE v'+version+':\\n'+JSON.stringify(catalogo),
     maxTokens:500
@@ -9110,10 +9775,10 @@ function eaCampoFechaHora(k, etiqueta, r, requerido){
     '<label style="margin:8px 0 0;text-transform:none;letter-spacing:0"><input type="checkbox" id="lf_'+nd+'"'+(r[nd]?' checked':'')+'> Hora no disponible</label>'+
   '</div>';
 }
-function logForm(id){
+function logForm(id,preset){
   const def = LOG_DEFS[LOG_TIPO];
   LOG_EDIT = id || null;
-  const r = id ? logRows(LOG_TIPO).find(x=>x.id===id) : {};
+  const r = id ? logRows(LOG_TIPO).find(x=>x.id===id) : (preset||{});
   const sid = $('toolsStudy').value;
   let h = '<h3 style="margin:0 0 10px">'+(id?T('Editar registro'):T('Nuevo registro'))+'</h3><div class="row">';
   h += '<div class="grow"><label>'+T('Estudio')+'</label><select id="lf_estudio">'+
@@ -9170,9 +9835,9 @@ function logForm(id){
   }
   const configurarHora=s=>{const h=$('lf_hora'+s),n=$('lf_hora'+s+'NoDisponible');if(!h||!n)return;const f=()=>{h.disabled=n.checked;if(n.checked)h.value='';};n.addEventListener('change',f);f();};
   ['Inicio','Fin','Conocido','Reportado'].forEach(configurarHora);
-  const actualizarSAE=()=>{ const esSAE=($('lf_serio')||{}).value==='Sí'; $('lf_reportadoWrap').classList.toggle('hidden',!esSAE); if(!esSAE){['conocido','reportado'].forEach(k=>{$('lf_'+k).value='';});['Conocido','Reportado'].forEach(s=>{$('lf_hora'+s).value='';$('lf_hora'+s+'NoDisponible').checked=false;});} };
-  if($('lf_serio')) $('lf_serio').addEventListener('change',actualizarSAE); actualizarSAE();
-  $('lf_cancel').addEventListener('click', ()=>{ box.classList.add('hidden'); LOG_EDIT=null; });
+  const actualizarSAE=()=>{ const wrap=$('lf_reportadoWrap'); if(!wrap) return; const esSAE=($('lf_serio')||{}).value==='Sí'; wrap.classList.toggle('hidden',!esSAE); if(!esSAE){['conocido','reportado'].forEach(k=>{const el=$('lf_'+k);if(el)el.value='';});['Conocido','Reportado'].forEach(s=>{const h=$('lf_hora'+s),n=$('lf_hora'+s+'NoDisponible');if(h)h.value='';if(n)n.checked=false;});} };
+  if($('lf_serio')){ $('lf_serio').addEventListener('change',actualizarSAE); actualizarSAE(); }
+  $('lf_cancel').addEventListener('click', ()=>{ box.classList.add('hidden'); LOG_EDIT=null; if(!finishLinkedVisitLog()) renderLog(); });
   /* consentimiento: traer la plantilla del protocolo con los datos ya cargados */
   const bTpl = $('lf_ciTpl');
   if(bTpl) bTpl.addEventListener('click', ()=>{
@@ -9206,18 +9871,20 @@ function logForm(id){
       if(hits.length){ obj.prohibida='Sí'; obj.alertaProtocolo=hits.map(x=>x.medicamento).join('; '); }
       else obj.alertaProtocolo='';
     }
+    const qualityIssues=qualityForLog(LOG_TIPO,obj);
+    if(!qualityGate(qualityIssues,'guardar el registro')) return;
+    if(qualityIssues.length || ['ea','ciproceso','random'].includes(LOG_TIPO)) obj.controlCalidad=qualityStamp(qualityIssues);
     let motivoCambio = '';
     if(LOG_EDIT && LOG_CLINICOS.includes(LOG_TIPO)){
       motivoCambio = prompt(T('Motivo del cambio (obligatorio para registros clínicos ya guardados):'),'') || '';
       if(!motivoCambio.trim()){ toast(T('El cambio requiere un motivo.')); return; }
     }
-    LOGS[LOG_TIPO] = logRowsTodos(LOG_TIPO).filter(x=>x.id!==obj.id).concat([obj]);
-    logsSave();
+    if(!await guardarLog(LOG_TIPO, obj, LOG_EDIT?'modificación':'alta', motivoCambio.trim())) return;
     if((LOG_TIPO==='ea' || LOG_TIPO==='conmed') && obj.pacienteId) await sincronizarEvolucionesClinicas(obj.pacienteId);
-    auditar('log:'+LOG_TIPO, LOG_EDIT?'modificación':'alta', obj.id, logRowTitle(LOG_TIPO, obj), motivoCambio.trim());
     box.classList.add('hidden'); LOG_EDIT=null;
     renderLog(); renderTools();
     toast(T('Registro guardado.'));
+    finishLinkedVisitLog();
   });
   box.scrollIntoView({ behavior:'smooth', block:'nearest' });
 }
@@ -9680,7 +10347,7 @@ function renderFact(){
       T('La IA lo lee y propone el valor de cada visita; después lo revisás antes de guardarlo.')
     : '<span style="color:var(--bad)">⚠ '+T('Este estudio no tiene contrato adjunto. Subilo en el editor del estudio, en «Documentos del estudio», con el tipo «Contrato / presupuesto».')+'</span>';
   $('btnFactLeer').disabled = !ctr || !aiConfigured();
-  if(ctr && !aiConfigured()) $('factLeerStatus').innerHTML = '<b>'+T('Necesitás configurar una clave de API en Configuración.')+'</b>';
+  if(ctr && !aiConfigured()) $('factLeerStatus').innerHTML = '<b>'+T('Necesitás una sesión online para leer el contrato con IA.')+'</b>';
 
   /* período por defecto: el mes en curso */
   if(!$('factDesde').value && !$('factHasta').value){
@@ -9794,6 +10461,7 @@ $('btnFactLeer').addEventListener('click', async ()=>{
     }
     stt.textContent = T('Consultando a la IA (puede tardar unos segundos)...');
     const res = await aiChat({
+      purpose:'contrato_tarifario',
       system:'Respondés exclusivamente con un objeto JSON válido, sin texto antes ni después y sin bloques de código.',
       content: (typeof content==='string') ? pide+'\n\n'+content : content.concat([{ t:'text', text:pide }]),
       maxTokens: 6000
@@ -9801,6 +10469,8 @@ $('btnFactLeer').addEventListener('click', async ()=>{
     const o = parseAiObjectLoose(res.text);
     if(!o) throw new Error(T('La IA no devolvió un resultado interpretable.'));
     FACT_PROP = {
+      asistida:true,
+      aiMeta:res.meta,
       moneda: String(o.moneda||''),
       visitas: (Array.isArray(o.visitas)?o.visitas:[]).map(v=>({
         nombre:String((v&&v.nombre)||'').trim(), valor:(v&&v.valor!==undefined&&v.valor!==null&&!isNaN(parseFloat(v.valor)))?parseFloat(v.valor):null,
@@ -9830,6 +10500,7 @@ function renderFactRevision(){
     '<td class="small muted" style="padding:3px 6px">'+(v.cita?'« '+esc(v.cita)+' »':'<span style="color:var(--bad)">'+T('sin cita')+'</span>')+'</td>'+
     '<td style="padding:3px 6px;width:30px"><input type="checkbox" data-fon="'+i+'" checked style="width:auto"></td></tr>';
   $('factRevision').innerHTML =
+    '<div class="banner warn">🤖 <b>Borrador generado con asistencia de IA — requiere revisión humana.</b></div>'+
     '<div class="banner gray"><b>'+T('Tarifario propuesto a partir de')+' «'+esc(FACT_PROP.archivo)+'»</b> — '+
       T('corregí lo que haga falta y destildá lo que no quieras aplicar.')+'</div>'+
     '<datalist id="factVisitas">'+nombres.map(n=>'<option value="'+esc(n)+'">').join('')+'</datalist>'+
@@ -9851,10 +10522,10 @@ function renderFactRevision(){
       '<button id="btnFactDescartar">'+T('Descartar')+'</button></div>';
   $('factRevision').classList.remove('hidden');
   $('btnFactDescartar').addEventListener('click', ()=>{ FACT_PROP=null; $('factRevision').classList.add('hidden'); });
-  $('btnFactAplicar').addEventListener('click', ()=>{
+  $('btnFactAplicar').addEventListener('click', async ()=>{
     const stId = $('factStudy').value, moneda = $('factMoneda').value.trim();
     const extras = FACT_PROP.extras.map(x=>x.concepto+(x.valor!==null?': '+x.valor:'')).join('\n');
-    let n = 0;
+    const guardar = [];
     FACT_PROP.visitas.forEach((v,i)=>{
       if(!document.querySelector('[data-fon="'+i+'"]').checked) return;
       const nombre = document.querySelector('[data-fv="'+i+'"]').value.trim();
@@ -9863,19 +10534,20 @@ function renderFactRevision(){
       const ya = logRows('tarifas').find(t=>t.estudioId===stId && normKey(t.visita)===normKey(nombre));
       const obj = Object.assign({ id: ya?ya.id:uid(), creado:(ya&&ya.creado)||new Date().toISOString() },
         ya||{}, { estudioId:stId, visita:nombre, valor, moneda, extra:(ya&&ya.extra)||'' });
-      LOGS.tarifas = logRows('tarifas').filter(t=>t.id!==obj.id).concat([obj]);
-      n++;
+      guardar.push(obj);
     });
     /* los conceptos extra quedan como nota en la primera tarifa, para no inventar visitas */
-    if(extras && LOGS.tarifas && LOGS.tarifas.length){
-      const primera = LOGS.tarifas.find(t=>t.estudioId===stId);
+    if(extras && guardar.length){
+      const primera = guardar[0];
       if(primera && !(primera.extra||'').trim()) primera.extra = extras;
     }
-    logsSave();
-    auditar('log:tarifas','importación desde contrato','', n+' '+T('tarifas'));
+    for(const obj of guardar){
+      const existe=(DB.records||[]).some(x=>x.id===obj.id);
+      if(!await guardarLog('tarifas',obj,existe?'modificación':'alta','',T('Importación desde contrato'))) return;
+    }
     FACT_PROP=null; $('factRevision').classList.add('hidden');
     renderFact(); renderTools();
-    toast(n+' '+T('tarifas guardadas.'));
+    toast(guardar.length+' '+T('tarifas guardadas.'));
   });
 }
 
@@ -10023,7 +10695,7 @@ function airRefresh(){
     ? '<b>'+T('Se va a leer')+':</b> '+docs.map(d=>esc(DOC_TIPOS[d.tipo]||d.tipo)+' («'+esc(d.filename)+'»)').join(' · ')
     : '<span style="color:var(--bad)">⚠ '+T('Este estudio no tiene documentos adjuntos aparte del CI. Adjuntá el protocolo en «Documentos del estudio».')+'</span>';
   $('btnAirGen').disabled = !docs.length || !aiConfigured();
-  if(!aiConfigured()) $('airStatus').innerHTML = '<b>'+T('Necesitás configurar una clave de API en Configuración.')+'</b>';
+  if(!aiConfigured()) $('airStatus').innerHTML = '<b>'+T('Necesitás una sesión online para generar esta ficha con IA.')+'</b>';
 }
 $('airStudy').addEventListener('change', airRefresh);
 $('btnBackTools4').addEventListener('click', ()=>{ renderTools(); showView('view-tools'); });
@@ -10090,6 +10762,7 @@ async function airGenerate(){
       throw new Error(T('El modo estricto exige búsqueda documental, pero no está activada.'));
     }
     const res = await aiChat({
+      purpose:'ficha_resumen',
       system:'Respondés exclusivamente con un objeto JSON válido, sin texto antes ni después y sin bloques de código.',
       content: prompt, maxTokens: 8000
     });
@@ -10099,6 +10772,8 @@ async function airGenerate(){
         ? T('La respuesta de la IA se cortó por ser demasiado larga. Probá con menos documentos adjuntos.')
         : T('La IA no devolvió un resultado interpretable.'));
     AIR_RES = {
+      asistida:true,
+      aiMeta:res.meta,
       titulo: String(o.titulo||T(def.nombre)),
       estudio: def.todos ? T('Todos los estudios') : (st.codigo||''),
       cortada: res.cut,
@@ -10123,6 +10798,7 @@ $('btnAirGen').addEventListener('click', airGenerate);
 function renderAirep(){
   if(!AIR_RES){ $('airOut').innerHTML=''; return; }
   $('airOut').innerHTML = '<div class="card"><h3 style="margin:0 0 4px">'+esc(AIR_RES.titulo)+'</h3>'+
+    '<div class="banner warn">🤖 <b>Borrador generado con asistencia de IA — requiere revisión humana.</b></div>'+
     '<div class="muted small" style="margin-bottom:10px">'+esc(AIR_RES.estudio)+' — '+fmtDate(todayISO())+'</div>'+
     AIR_RES.secciones.map(s=>'<div style="margin-bottom:12px">'+
       '<div style="font-weight:600;color:var(--acc-dark)">'+esc(s.titulo)+'</div>'+
@@ -10133,7 +10809,7 @@ function renderAirep(){
 }
 function airReportHtml(){
   if(!AIR_RES) return '';
-  return '<h1>'+esc(AIR_RES.titulo)+'</h1><div class="meta"><b>'+T('Protocolo:')+'</b> '+esc(AIR_RES.estudio)+'<br>'+
+  return '<h1>'+esc(AIR_RES.titulo)+'</h1><div class="box"><b>Borrador generado con asistencia de IA — requiere revisión humana.</b></div><div class="meta"><b>'+T('Protocolo:')+'</b> '+esc(AIR_RES.estudio)+'<br>'+
     '<b>'+T('Fecha del informe:')+'</b> '+fmtDate(todayISO())+'</div>'+
     AIR_RES.secciones.map(s=>'<h2>'+esc(s.titulo)+'</h2><div style="white-space:pre-wrap">'+esc(s.texto)+'</div>'+
       s.citas.map(c=>'<div style="font-size:11px;color:#4d5c6b;border-left:2px solid #ccc;padding-left:6px;margin:4px 0">'+
@@ -10142,7 +10818,7 @@ function airReportHtml(){
 }
 function airReportText(){
   if(!AIR_RES) return '';
-  const L = [AIR_RES.titulo.toUpperCase(), AIR_RES.estudio+' — '+fmtDate(todayISO()), ''];
+  const L = [AIR_RES.titulo.toUpperCase(), 'BORRADOR GENERADO CON ASISTENCIA DE IA — REQUIERE REVISIÓN HUMANA', AIR_RES.estudio+' — '+fmtDate(todayISO()), ''];
   for(const s of AIR_RES.secciones){
     L.push('== '+s.titulo+' ==', s.texto);
     s.citas.forEach(c=>L.push('   « '+c.cita+' » — '+c.documento));
@@ -10168,7 +10844,7 @@ $('btnAirMail').addEventListener('click', ()=>{
 });
 
 /* ================= CHECKLISTS DE CALIDAD ================= */
-let CHK = loadJSON('ecx_chk') || {};     /* CHK[estudioId|plantilla|idx] = {e:estado, n:nota} */
+let CHK = {};                            /* Vista en memoria de DB.checklists. */
 const CHK_ESTADOS = ['Pendiente','En orden','No aplica','Falta'];
 const CHK_DEFS = {
   isf:{ icon:'🗂️', feat:'cal.isf', nombre:'Checklist del ISF (archivo del investigador)',
@@ -10253,6 +10929,27 @@ const CHK_DEFS = {
 };
 let CHK_TIPO = null;
 function chkKey(stId, tipo, i){ return stId+'|'+tipo+'|'+i; }
+async function guardarChecklist(k, valor){
+  const partes=k.split('|');
+  const obj={
+    id:k, checklistKey:k, estudioId:partes[0]||'', plantilla:partes[1]||'',
+    itemIndex:Number(partes[2]||0), estado:valor.e||'Pendiente', nota:valor.n||''
+  };
+  const confirmado=(DB.checklists||[]).find(x=>x.id===obj.id);
+  if(confirmado && datosIguales(confirmado,obj)) return true;
+  try{
+    const existe=(Store.revisions.checklists||new Map()).has(obj.id);
+    await Store.upsert('checklists',obj,{
+      accion:existe?'modificación':'alta', detalle:'Checklist '+obj.plantilla+' · ítem '+obj.itemIndex
+    });
+    hidratarDatosCompartidos();
+    return true;
+  }catch(e){
+    hidratarDatosCompartidos();
+    toast('⚠ '+e.message);
+    return false;
+  }
+}
 function openChk(tipo){
   CHK_TIPO = tipo;
   const def = CHK_DEFS[tipo];
@@ -10291,15 +10988,15 @@ function renderChk(){
       }).join('')+'</div>';
   }
   $('chkBox').innerHTML = h;
-  $('chkBox').querySelectorAll('[data-chk]').forEach(s=>s.addEventListener('change', e=>{
+  $('chkBox').querySelectorAll('[data-chk]').forEach(s=>s.addEventListener('change', async e=>{
     const i = e.target.dataset.chk, k = chkKey(stId,CHK_TIPO,i);
-    CHK[k] = Object.assign({}, CHK[k], { e:e.target.value });
-    saveJSON('ecx_chk', CHK); renderChk();
+    const nuevo=Object.assign({}, CHK[k], { e:e.target.value });
+    await guardarChecklist(k,nuevo); renderChk();
   }));
-  $('chkBox').querySelectorAll('[data-nota]').forEach(s=>s.addEventListener('change', e=>{
+  $('chkBox').querySelectorAll('[data-nota]').forEach(s=>s.addEventListener('change', async e=>{
     const i = e.target.dataset.nota, k = chkKey(stId,CHK_TIPO,i);
-    CHK[k] = Object.assign({}, CHK[k], { n:e.target.value.trim() });
-    saveJSON('ecx_chk', CHK);
+    await guardarChecklist(k,Object.assign({}, CHK[k], { n:e.target.value.trim() }));
+    renderChk();
   }));
 }
 $('chkStudy').addEventListener('change', renderChk);
@@ -10850,7 +11547,8 @@ function refreshUserUi(){
   if(cfgTab) cfgTab.classList.toggle('hidden', !can('config'));
   const uc = $('usersCard'); if(uc) uc.classList.toggle('hidden', !can('usuarios'));
   const sc = $('sitiosCard'); if(sc){ sc.classList.toggle('hidden', !(Store.online() && esSuper())); if(Store.online() && esSuper()) renderSitios(); }
-  const ec = $('btnNewStudy'); if(ec) ec.classList.toggle('hidden', !can('estudiosEditar'));
+  const ec = $('btnNewStudy'); if(ec) ec.classList.toggle('hidden', !can('estudiosCrear'));
+  const de = $('btnDemoStudy'); if(de) de.classList.toggle('hidden', !can('estudiosCrear'));
   /* la solapa de facturación solo para quien la tenga habilitada */
   const ft = Array.from(document.querySelectorAll('#tabs button')).find(x=>x.dataset.tab==='fact');
   if(ft) ft.classList.toggle('hidden', !canFact() || !featOn('nav.fact'));
@@ -11436,11 +12134,9 @@ function initConfigUI(){
   $('cfgModeOnline').checked = true;
   $('cfgSupaUrl').value = CFG.supaUrl||'';
   $('cfgSupaKey').value = CFG.supaKey||'';
-  $('cfgAiProvider').value = aiProvider();
+  $('cfgSupaUrl').readOnly = true;
+  $('cfgSupaKey').readOnly = true;
   pintarAvisoIA();
-  $('cfgAiKey').value = CFG.aiKey||'';
-  $('cfgAiModel').value = CFG.aiModel || AI_PROVIDERS[aiProvider()].modelo;
-  renderAiProviderUi(false);
   if($('cfgRagOn')) $('cfgRagOn').checked = CFG.ragOn === true;
   if($('cfgRagSolo')) $('cfgRagSolo').checked = CFG.ragSolo === true;
   $('cfgCiIni').value = CFG.ciPlantilla || CI_PLANTILLA_INI;
@@ -11540,47 +12236,33 @@ $('btnResetCi').addEventListener('click', ()=>{
   $('ciTplMsg').textContent = T('Plantillas restauradas.');
 });
 
-/* ayuda contextual del proveedor elegido; si cambió, propone el modelo por defecto */
-function renderAiProviderUi(cambio){
-  const v = $('cfgAiProvider').value, p = AI_PROVIDERS[v];
-  if(cambio){ $('cfgAiModel').value = p.modelo; $('cfgAiKey').value = (v===aiProvider() ? (CFG.aiKey||'') : ''); }
-  $('cfgAiKey').placeholder = p.keyPh;
-  $('cfgAiModel').placeholder = p.modelo;
-  let h = T('La clave se crea en')+' <b>'+p.consola+'</b>. ';
-  if(v==='gemini') h += T('Gemini tiene un nivel gratuito, pero en ese nivel Google puede usar los datos enviados para mejorar sus productos: para documentos clínicos usá una cuenta con facturación activada.');
-  else if(v==='openai') h += T('Requiere crédito de API (es independiente de la suscripción a ChatGPT). OpenAI no entrena con datos de la API por defecto.');
-  else h += T('Requiere crédito de API (es independiente de la suscripción a Claude). Anthropic no entrena con datos de la API por defecto.');
-  $('aiProviderHelp').innerHTML = h;
-}
-$('cfgAiProvider').addEventListener('change', ()=>renderAiProviderUi(true));
-
-$('btnSaveAi').addEventListener('click', ()=>{
-  CFG.aiProvider = $('cfgAiProvider').value;
-  CFG.aiKey = $('cfgAiKey').value.trim();
-  CFG.aiModel = $('cfgAiModel').value.trim() || AI_PROVIDERS[aiProvider()].modelo;
-  CFG.ragOn = !!($('cfgRagOn') && $('cfgRagOn').checked);
-  saveJSON(LS.CFG, CFG);
+async function verificarServicioIA(){
   const m = $('aiMsg');
-  if(CFG.aiKey){ m.textContent='✔ '+T('Clave guardada en este navegador. Las funciones de IA usarán')+' '+AI_PROVIDERS[aiProvider()].nombre+' ('+aiModelName()+').'; m.style.color='var(--ok)'; }
-  else { m.textContent=T('Sin clave: la evaluación automática solo mostrará evidencia encontrada.'); m.style.color='var(--muted)'; }
-});
+  m.style.color='var(--muted)'; m.textContent='Verificando…';
+  try{
+    const r=await supaFetch('/functions/v1/ia',{method:'POST',body:JSON.stringify({action:'status'})});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok||j.error) throw new Error(aiServerError(r.status,j));
+    AI_STATUS=j; pintarAvisoIA();
+  }catch(e){ m.style.color='var(--bad)'; m.textContent='⚠ '+e.message; }
+}
+$('btnCheckAi').addEventListener('click', verificarServicioIA);
 
 $('btnSaveCfg').addEventListener('click', ()=>{
   const url = $('cfgSupaUrl').value.trim(), key = $('cfgSupaKey').value.trim();
   if(!/^https:\/\/.+\.supabase\.co$/.test(url.replace(/\/+$/,''))){ $('cfgMsg').textContent='La URL debe tener el formato https://xxxxx.supabase.co'; $('cfgMsg').style.color='var(--bad)'; return; }
   if(!key){ $('cfgMsg').textContent='Falta la clave pública (anon key).'; $('cfgMsg').style.color='var(--bad)'; return; }
-  const changed = CFG.supaUrl !== url || CFG.supaKey !== key;
+  const changed = WEB_DEFAULTS.supaUrl !== url || WEB_DEFAULTS.supaKey !== key;
+  if(changed){
+    $('cfgMsg').textContent='La conexión se define por entorno en runtime-config.js y no puede cambiarse desde el navegador.';
+    $('cfgMsg').style.color='var(--bad)'; return;
+  }
   CFG.mode = 'supabase';
   CFG.supaUrl = url; CFG.supaKey = key;
   CFG.firma = $('cfgFirma').value.trim();
   saveJSON(LS.CFG, CFG);
   $('cfgMsg').textContent='Conexión web guardada.'; $('cfgMsg').style.color='var(--ok)';
-  if(changed){
-    alert('Cambiaste la conexión web. Vas a tener que ingresar de nuevo.');
-    doLogout();
-  } else {
-    initConfigUI();
-  }
+  initConfigUI();
 });
 
 $('btnTestSupa').addEventListener('click', async ()=>{
@@ -11603,17 +12285,41 @@ $('btnCopySql').addEventListener('click', async ()=>{
   catch(e){ toast('No se pudo copiar automáticamente. Seleccioná el texto y copialo.'); }
 });
 
-/* ---- respaldo ---- */
-$('btnExport').addEventListener('click', ()=>{
-  const data = { app:'evoluciones-ec', version:4, exportado:new Date().toISOString(),
-                 studies:DB.studies, patients:DB.patients, visits:DB.visits, docs:DB.docs||[],
-                 logs:LOGS, labExtra:LAB_EXTRA, procClasif:PROC_CLASIF, checklists:CHK, features:FEAT, auditoria:AUDIT };
+/* ---- respaldo operativo y restauración validada ---- */
+function backupPayload(){
+  return cloneData({ studies:DB.studies, patients:DB.patients, visits:DB.visits, docs:DB.docs||[],
+           logs:LOGS, settings:DB.settings||[], labExtra:LAB_EXTRA, procClasif:PROC_CLASIF,
+           tabletClasif:TABLET_CLASIF, checklists:CHK, features:FEAT, auditoria:AUDIT });
+}
+async function backupEnvelope(){
+  if(!crypto.subtle) throw new Error('Este navegador no permite calcular el checksum SHA-256 del respaldo.');
+  const payload=backupPayload();
+  const runtime=window.ZONDA_RUNTIME_CONFIG||{};
+  const checksum=await sha256hex(ZondaRelease.canonicalStringify(payload));
+  return {
+    manifest:{
+      app:'zonda', schemaVersion:ZondaRelease.BACKUP_SCHEMA_VERSION,
+      appVersion:runtime.appVersion||'', releaseId:runtime.releaseId||'',
+      environment:runtime.environment||'unconfigured', exportedAt:new Date().toISOString(),
+      orgId:(MEMBRESIA&&MEMBRESIA.org_id)||'', orgName:miOrgNombre(),
+      checksum:{algorithm:'SHA-256',value:checksum},
+      note:'Copia operativa: no incluye binarios de Storage ni reemplaza el backup de PostgreSQL.'
+    },
+    payload
+  };
+}
+async function downloadOperationalBackup(prefix){
+  const data=await backupEnvelope();
   const blob = new Blob([JSON.stringify(data,null,2)], { type:'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = 'respaldo_zonda_'+todayISO()+'.json';
+  a.download = (prefix||'respaldo_zonda')+'_'+todayISO()+'.json';
   a.click();
   URL.revokeObjectURL(a.href);
+  return data;
+}
+$('btnExport').addEventListener('click', async ()=>{
+  await downloadOperationalBackup('respaldo_zonda');
   toast('Respaldo exportado.');
 });
 $('btnImportClick').addEventListener('click', ()=>$('importFile').click());
@@ -11621,43 +12327,74 @@ $('importFile').addEventListener('change', async e=>{
   const file = e.target.files[0]; if(!file) return;
   e.target.value='';
   try{
-    const data = JSON.parse(await file.text());
-    if(!data || !Array.isArray(data.studies) || !Array.isArray(data.patients) || !Array.isArray(data.visits))
-      throw new Error('El archivo no parece un respaldo válido.');
-    const n = data.studies.length+' estudios, '+data.patients.length+' pacientes, '+data.visits.length+' visitas';
-    if(!confirm('El respaldo contiene: '+n+'.\n\n¿Importarlo? Los elementos con el mismo ID se sobrescriben; el resto se agrega.')) return;
-    for(const s of data.studies) await Store.upsert('studies', s);
-    for(const p of data.patients) await Store.upsert('patients', p);
-    for(const v of data.visits) await Store.upsert('visits', v);
-    for(const d of (data.docs||[])) await Store.upsert('docs', d);
+    const parsed=JSON.parse(await file.text());
+    const normalized=ZondaRelease.validateBackup(parsed);
+    const data=normalized.payload, manifest=normalized.manifest||{};
+    if(manifest.checksum&&manifest.checksum.value){
+      const actual=await sha256hex(ZondaRelease.canonicalStringify(data));
+      if(actual!==manifest.checksum.value) throw new Error('El checksum no coincide: el archivo pudo haberse alterado o dañado.');
+    }
+    const plan=ZondaRelease.restorePlan(data,DB);
+    const source=manifest.environment?('Origen: '+manifest.environment+' · v'+(manifest.appVersion||'—')+'.\n'):'';
+    const summary=source+'Simulación: '+plan.creates+' registros nuevos, '+plan.updates+' reemplazos y '+plan.unchanged+' sin cambios.\n'+
+      plan.logRecords+' registros operativos y '+plan.checklists+' checklists serán revisados durante la importación.\n\n'+
+      'Se descargará primero un respaldo del estado actual. Los archivos binarios adjuntos no están incluidos.\n\nEscribí IMPORTAR para continuar:';
+    if(prompt(summary)!=='IMPORTAR') return;
+    await downloadOperationalBackup('respaldo_pre_restauracion');
+    const restoreCollection=async(kind,items)=>{
+      for(const obj of (items||[])){
+        const current=(DB[kind]||[]).find(x=>x.id===obj.id);
+        if(current && JSON.stringify(current)===JSON.stringify(obj)) continue;
+        await Store.upsert(kind,obj,{accion:current?'restauración':'alta por restauración',detalle:'Importación de respaldo validado'});
+      }
+    };
+    await restoreCollection('studies',data.studies);
+    await restoreCollection('patients',data.patients);
+    await restoreCollection('visits',data.visits);
+    await restoreCollection('docs',data.docs||[]);
     if(data.logs && typeof data.logs==='object'){
       for(const [tipo, arr] of Object.entries(data.logs)){
         if(!Array.isArray(arr)) continue;
-        const actuales = (LOGS[tipo]||[]).filter(x=>!arr.some(y=>y.id===x.id));
-        LOGS[tipo] = actuales.concat(arr);
+        for(const obj of arr){
+          if(!obj || !obj.id) continue;
+          const existe=(DB.records||[]).some(x=>x.id===obj.id);
+          if(!await guardarLog(tipo,obj,existe?'modificación':'alta','',T('Importación de respaldo')))
+            throw new Error('No se pudo importar un registro de '+tipo+'.');
+        }
       }
-      logsSave();
     }
-    if(data.labExtra && typeof data.labExtra==='object'){
-      LAB_EXTRA = Object.assign(LAB_EXTRA, data.labExtra);
-      saveJSON('ecx_labextra', LAB_EXTRA);
-      if(data.procClasif){ PROC_CLASIF = Object.assign(PROC_CLASIF, data.procClasif); saveJSON('ecx_procclasif', PROC_CLASIF); }
+    if(Array.isArray(data.settings)){
+      for(const s of data.settings){
+        if(!s || !s.id || !s.settingType || !s.settingKey) continue;
+        const current=settingById(s.id);
+        if(current && JSON.stringify(current)===JSON.stringify(s)) continue;
+        await Store.upsert('settings',s,{accion:settingById(s.id)?'modificación':'alta',detalle:T('Importación de respaldo')});
+      }
+      hidratarConfiguracionCompartida();
+    } else {
+      for(const [k,v] of Object.entries(data.procClasif||{}))
+        if(!await guardarSetting('procedure',k,v,'',T('Importación de respaldo'))) throw new Error('No se pudo importar una clasificación de procedimiento.');
+      for(const [k,v] of Object.entries(data.labExtra||{}))
+        if(v && !await guardarSetting('lab_extra',k,true,'',T('Importación de respaldo'))) throw new Error('No se pudo importar un análisis adicional.');
+      for(const [k,v] of Object.entries(data.tabletClasif||{})){
+        const studyId=String(k).split('|')[0]||'';
+        if(!await guardarSetting('tablet',k,v,studyId,T('Importación de respaldo'))) throw new Error('No se pudo importar una configuración de tablet.');
+      }
     }
     if(data.checklists && typeof data.checklists==='object'){
-      CHK = Object.assign(CHK, data.checklists); saveJSON('ecx_chk', CHK);
+      for(const [k,v] of Object.entries(data.checklists)){
+        if(!v || typeof v!=='object') continue;
+        if(!await guardarChecklist(k,v)) throw new Error('No se pudo importar un ítem de checklist.');
+      }
     }
     if(data.features && typeof data.features==='object'){
       FEAT = Object.assign(FEAT, data.features); saveJSON('ecx_feat', FEAT);
     }
-    if(Array.isArray(data.auditoria)){
-      const ids = new Set(AUDIT.map(e=>e.id));
-      AUDIT = AUDIT.concat(data.auditoria.filter(e=>e && !ids.has(e.id)))
-                   .sort((a,b)=>String(a.ts).localeCompare(String(b.ts)));
-      saveJSON(LS_AUDIT, AUDIT);
-    }
+    /* La auditoría exportada es evidencia de consulta. No se reinyecta: la
+       pista oficial es append-only y cada restauración genera eventos nuevos. */
     auditar('config','importación de respaldo','', (data.studies||[]).length+' estudios · '+(data.patients||[]).length+' pacientes');
     renderAll();
-    toast('Respaldo importado. (Los archivos adjuntos no viajan en el JSON: si faltan, volvé a adjuntarlos.)');
+    toast('Restauración terminada y auditada. Verificá las cantidades antes de continuar.');
   }catch(err){ alert('No se pudo importar: '+err.message); }
 });
 
