@@ -202,7 +202,7 @@ create or replace function ec_save_record(
 language plpgsql security invoker set search_path = public
 as $$
 declare
-  v_table text; v_rev bigint; v_updated_at timestamptz;
+  v_table text; v_rev bigint; v_updated_at timestamptz; v_rows bigint;
   v_created boolean := p_expected_rev is null;
 begin
   v_table := case p_kind
@@ -225,7 +225,8 @@ begin
   else
     execute format('update %I set data=$1,rev=rev+1,updated_at=now() where id=$2 and org_id=current_org() and rev=$3 returning rev,updated_at',v_table)
       using p_data,p_id,p_expected_rev into v_rev,v_updated_at;
-    if not found then raise exception using errcode='P0001',message='VERSION_CONFLICT'; end if;
+    get diagnostics v_rows = row_count;
+    if v_rows = 0 then raise exception using errcode='P0001',message='VERSION_CONFLICT'; end if;
   end if;
   insert into ec_audit(event_id,usuario,rol,entidad,accion,ref_id,detalle,motivo)
   values(p_event_id,coalesce(auth.jwt()->>'email',auth.uid()::text,'usuario'),coalesce(current_rol(),''),p_kind,
@@ -240,7 +241,7 @@ create or replace function ec_remove_record(
 ) returns jsonb
 language plpgsql security invoker set search_path = public
 as $$
-declare v_table text;
+declare v_table text; v_rows bigint;
 begin
   v_table := case p_kind
     when 'studies' then 'ec_studies' when 'patients' then 'ec_patients'
@@ -253,7 +254,8 @@ begin
     return jsonb_build_object('deleted',true,'event_id',p_event_id,'replayed',true);
   end if;
   execute format('delete from %I where id=$1 and org_id=current_org() and rev=$2',v_table) using p_id,p_expected_rev;
-  if not found then raise exception using errcode='P0001',message='VERSION_CONFLICT'; end if;
+  get diagnostics v_rows = row_count;
+  if v_rows = 0 then raise exception using errcode='P0001',message='VERSION_CONFLICT'; end if;
   insert into ec_audit(event_id,usuario,rol,entidad,accion,ref_id,detalle,motivo)
   values(p_event_id,coalesce(auth.jwt()->>'email',auth.uid()::text,'usuario'),coalesce(current_rol(),''),p_kind,'baja',p_id,
     left(coalesce(p_detail,''),600),left(coalesce(p_motivo,''),300));

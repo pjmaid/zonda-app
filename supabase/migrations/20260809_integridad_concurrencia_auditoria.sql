@@ -35,6 +35,7 @@ declare
   v_table text;
   v_rev bigint;
   v_updated_at timestamptz;
+  v_rows bigint;
   v_created boolean := p_expected_rev is null;
 begin
   v_table := case p_kind
@@ -85,7 +86,8 @@ begin
       'returning rev, updated_at',
       v_table
     ) using p_data, p_id, p_expected_rev into v_rev, v_updated_at;
-    if not found then
+    get diagnostics v_rows = row_count;
+    if v_rows = 0 then
       raise exception using errcode = 'P0001', message = 'VERSION_CONFLICT';
     end if;
   end if;
@@ -124,6 +126,7 @@ set search_path = public
 as $$
 declare
   v_table text;
+  v_rows bigint;
 begin
   v_table := case p_kind
     when 'studies' then 'ec_studies'
@@ -148,7 +151,8 @@ begin
     'delete from %I where id = $1 and org_id = current_org() and rev = $2',
     v_table
   ) using p_id, p_expected_rev;
-  if not found then
+  get diagnostics v_rows = row_count;
+  if v_rows = 0 then
     raise exception using errcode = 'P0001', message = 'VERSION_CONFLICT';
   end if;
 
