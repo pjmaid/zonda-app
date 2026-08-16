@@ -43,6 +43,9 @@ El segundo comando debe ejecutarse después de asignar entorno, versión y SHA d
 - Los documentos nuevos incluyen el protocolo en la ruta de Storage; los objetos anteriores se autorizan mediante su ficha en `ec_docs`.
 - Crear protocolos queda reservado al administrador; el médico puede editar solamente los asignados y la coordinadora no puede modificar su definición.
 - Las consultas de IA pasan por `supabase/functions/ia`; las claves de los proveedores dejan de existir en el navegador.
+- Los contratos se cargan y administran exclusivamente en **Facturación**; sus metadatos y archivos quedan ocultos para usuarios sin ese permiso.
+- Facturación permite elegir una copia del contrato y hacer preguntas con IA basadas únicamente en ese documento.
+- Los gastos de remís y medicamentos se registran por estudio en Facturación, con importe, moneda y comprobante protegido.
 - La Edge Function valida usuario y membresía, anonimiza identificadores textuales detectables y registra cada generación en `ec_audit`.
 - La administración de usuarios pasa por `supabase/functions/crear-usuario`: solo un administrador del mismo sitio puede dar altas, eliminar cuentas o asignar una clave temporal.
 - Eliminar un usuario revoca su cuenta y asignaciones, pero conserva los registros clínicos y la pista de auditoría.
@@ -71,6 +74,8 @@ supabase functions deploy ia
 Para Anthropic usar `AI_PROVIDER=anthropic`, `AI_MODEL=claude-sonnet-5` y `ANTHROPIC_API_KEY`. Para Gemini usar `AI_PROVIDER=gemini`, `AI_MODEL=gemini-2.5-flash` y `GEMINI_API_KEY`.
 
 Después del despliegue, ingresar a Zonda como usuario autenticado y usar **Configuración → Verificar servicio de IA**. La comprobación no envía documentos al proveedor.
+
+Para habilitar la protección de contratos, aplicar también `supabase/migrations/20260816_contratos_solo_facturacion.sql` y volver a desplegar `supabase/functions/ia`.
 
 ## Administración de usuarios
 
