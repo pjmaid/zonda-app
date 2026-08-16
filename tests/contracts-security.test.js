@@ -33,6 +33,10 @@ test('Facturación permite elegir, abrir, descargar y eliminar copias', () => {
   assert.match(html, /id="btnFactContratoVer"/);
   assert.match(html, /id="btnFactContratoDescargar"/);
   assert.match(html, /id="btnFactContratoEliminar"/);
+  assert.match(html, /data-contrato-ver/);
+  assert.match(html, /data-contrato-dl/);
+  assert.match(html, /data-contrato-del/);
+  assert.match(html, /function factEliminarContrato\(doc\)/);
   assert.match(html, /function factContratoSeleccionado\(/);
 });
 
@@ -45,6 +49,16 @@ test('el chat consulta todos los contratos y adendas y declara su finalidad', ()
   assert.match(html, /exclusivamente con lo que figura en el conjunto de contratos/);
   assert.match(html, /No surge de los contratos cargados/);
   assert.match(html, /nombre del archivo y su versión/);
+});
+
+test('el tarifario analiza el conjunto completo y admite OCR visual de PDF escaneado', () => {
+  assert.match(html, /Analizar todos y armar el tarifario/);
+  assert.match(html, /const contratos = factContratos\(stId\)/);
+  assert.match(html, /CONJUNTO COMPLETO DE CONTRATOS, PRESUPUESTOS Y ADENDAS DEL ESTUDIO/);
+  assert.match(html, /Compará el contrato original con todas las adendas/);
+  assert.match(html, /DOCUMENTO ESCANEADO/);
+  assert.match(html, /pdfPageImage\(pg,1100\)/);
+  assert.match(html, /purpose:'contrato_tarifario'/);
 });
 
 test('RLS protege metadatos y archivos de contrato con el permiso de facturación', () => {
