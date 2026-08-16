@@ -58,7 +58,12 @@ test('el tarifario analiza el conjunto completo y admite OCR visual de PDF escan
   assert.match(html, /Compará el contrato original con todas las adendas/);
   assert.match(html, /DOCUMENTO ESCANEADO/);
   assert.match(html, /pdfPageImage\(pg,1100\)/);
+  assert.match(html, /Localizando visualmente las páginas del tarifario/);
+  assert.match(html, /total\\s\+cost\\s\+per/);
   assert.match(html, /purpose:'contrato_tarifario'/);
+  assert.match(html, /purpose:'contrato_tarifario_completar'/);
+  assert.match(html, /Tarifario incompleto/);
+  assert.match(html, /factVisitaClave/);
 });
 
 test('RLS protege metadatos y archivos de contrato con el permiso de facturación', () => {

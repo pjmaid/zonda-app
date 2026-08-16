@@ -10324,6 +10324,15 @@ function factContratoSeleccionado(){
   const id = $('factContratoSelect').value;
   return factContratos($('factStudy').value).find(d=>d.id===id) || null;
 }
+function factVisitaClave(nombre){
+  const k=normKey(nombre);
+  const n=k.match(/^(?:v|visita|visit)(\d{1,2})/);
+  if(n) return 'v'+String(+n[1]);
+  if(/^(?:seleccion|selection|screening|scr)$/.test(k)) return 'seleccion';
+  if(/^(?:ed|discontinuaciontemprana|earlydiscontinuation|earlytermination)$/.test(k)) return 'ed';
+  if(/^(?:fu|followup|seguimiento)$/.test(k)) return 'followup';
+  return k;
+}
 async function factEliminarContrato(doc){
   if(!doc || !canFact()) return;
   if(!confirm('¿Eliminar el contrato o adenda «'+(doc.filename||'')+'»?')) return;
@@ -10666,9 +10675,9 @@ $('btnFactLeer').addEventListener('click', async ()=>{
     for(const doc of contratos){
       let texto='';
       try{ texto=await ciDocText(doc); }catch(e){ texto=''; }
-      if(texto && texto.length>=80) legibles.push({doc,texto});
+      const esPdf=/pdf/i.test(doc.mime||'') || /\.pdf$/i.test(doc.filename||'');
+      if(texto && texto.length>=80) legibles.push({doc,texto,esPdf});
       else {
-        const esPdf=/pdf/i.test(doc.mime||'') || /\.pdf$/i.test(doc.filename||'');
         const blob=esPdf ? await docBlob(doc) : null;
         if(blob) escaneados.push({doc,blob});
         else incompatibles.push(doc.filename+(doc.version?' — '+doc.version:''));
@@ -10683,23 +10692,52 @@ $('btnFactLeer').addEventListener('click', async ()=>{
     ).join('\n\n');
     let content=[{t:'text',text:'CONJUNTO COMPLETO DE CONTRATOS, PRESUPUESTOS Y ADENDAS DEL ESTUDIO:\n\n'+
       (corpusTexto||'Los documentos se aportan como imágenes escaneadas a continuación.')}];
+    const pdfsEscaneados=[];
+    let paginasEscaneadas=0;
     if(escaneados.length){
-      stt.textContent=T('Preparando OCR visual de los contratos escaneados...');
       await ensurePdfJs();
-      const pdfs=[];
-      let paginasTotales=0;
       for(const item of escaneados){
         const pdf=await pdfjsLib.getDocument({data:await item.blob.arrayBuffer()}).promise;
-        paginasTotales+=pdf.numPages; pdfs.push({doc:item.doc,pdf});
+        paginasEscaneadas+=pdf.numPages; pdfsEscaneados.push({doc:item.doc,pdf});
       }
-      if(paginasTotales>18) throw new Error(T('Los PDF escaneados suman')+' '+paginasTotales+' '+T('páginas. Para analizar todos los documentos completos sin omitir páginas, aplicales OCR o subí versiones con texto.'));
-      for(const item of pdfs){
+      if(paginasEscaneadas>18) throw new Error(T('Los PDF escaneados suman')+' '+paginasEscaneadas+' '+T('páginas. Para analizar todos los documentos completos sin omitir páginas, aplicales OCR o subí versiones con texto.'));
+    }
+    const visuales=[];
+    const maxVisuales=18-paginasEscaneadas;
+    if(maxVisuales>0 && legibles.some(x=>x.esPdf)){
+      stt.textContent=T('Localizando visualmente las páginas del tarifario...');
+      await ensurePdfJs();
+      for(const item of legibles.filter(x=>x.esPdf)){
+        const blob=await docBlob(item.doc); if(!blob) continue;
+        const pdf=await pdfjsLib.getDocument({data:await blob.arrayBuffer()}).promise;
+        const candidatas=new Set();
+        for(let i=1;i<=pdf.numPages;i++){
+          const txt=await pdfPageText(await pdf.getPage(i));
+          if(/total\s+cost\s+per\s+(?:patient|visit)|per\s+patient\s+visit\s+total|site\s+cost|payment\s+schedule|budget\s+table|tarifario|presupuesto\s+por\s+visita/i.test(txt)){
+            candidatas.add(i); if(i<pdf.numPages)candidatas.add(i+1);
+          }
+        }
+        for(const n of candidatas){
+          if(visuales.length>=maxVisuales) break;
+          visuales.push({doc:item.doc,pdf,n});
+        }
+        if(visuales.length>=maxVisuales) break;
+      }
+    }
+    if(pdfsEscaneados.length || visuales.length){
+      stt.textContent=T('Preparando lectura visual de las tablas del tarifario...');
+      for(const item of pdfsEscaneados){
         content.push({t:'text',text:'DOCUMENTO ESCANEADO: '+item.doc.filename+(item.doc.version?' — '+item.doc.version:'')});
         for(let i=1;i<=item.pdf.numPages;i++){
           const pg=await item.pdf.getPage(i);
           content.push({t:'text',text:'--- '+item.doc.filename+' · '+T('Página')+' '+i+' ---'});
           content.push({t:'img',mime:'image/png',data:await pdfPageImage(pg,1100)});
         }
+      }
+      for(const item of visuales){
+        const pg=await item.pdf.getPage(item.n);
+        content.push({t:'text',text:'--- TABLA DEL TARIFARIO · '+item.doc.filename+' · '+T('Página')+' '+item.n+' ---'});
+        content.push({t:'img',mime:'image/png',data:await pdfPageImage(pg,1400)});
       }
     }
     const visitasSt = (st.visitas||[]).map(v=>v.nombre).join(' | ');
@@ -10730,20 +10768,65 @@ $('btnFactLeer').addEventListener('click', async ()=>{
     });
     const o = parseAiObjectLoose(res.text);
     if(!o) throw new Error(T('La IA no devolvió un resultado interpretable.'));
+    const filasVisita=obj=>(Array.isArray(obj&&obj.visitas)?obj.visitas:[]).map(v=>({
+      nombre:String((v&&v.nombre)||'').trim(),
+      valor:(v&&v.valor!==undefined&&v.valor!==null&&!isNaN(parseFloat(v.valor)))?parseFloat(v.valor):null,
+      cita:String((v&&v.cita)||'').slice(0,300)
+    })).filter(v=>v.nombre);
+    let visitasIa=filasVisita(o);
+    const esperadas=[];
+    const agregarEsperada=n=>{ if(n && !esperadas.some(x=>factVisitaClave(x)===factVisitaClave(n))) esperadas.push(n); };
+    (st.visitas||[]).forEach(v=>agregarEsperada(v.nombre));
+    const textoCompleto=legibles.map(x=>x.texto).join('\n');
+    let maxVisita=0, vm;
+    const reVisita=/\b(?:V|VISITA\s*)(\d{1,2})\b/gi;
+    while((vm=reVisita.exec(textoCompleto))) maxVisita=Math.max(maxVisita,+vm[1]);
+    for(let i=1;i<=maxVisita;i++) agregarEsperada('V'+i);
+    if(/\bSCR\b|screening|selecci[oó]n/i.test(textoCompleto)) agregarEsperada('Selección');
+    if(/\bED\b|early\s+(?:discontinuation|termination)|discontinuaci[oó]n\s+temprana/i.test(textoCompleto)) agregarEsperada('ED');
+    if(/follow[\s-]*up|seguimiento/i.test(textoCompleto)) agregarEsperada('Follow-up');
+    const faltan=()=>esperadas.filter(n=>!visitasIa.some(v=>factVisitaClave(v.nombre)===factVisitaClave(n)));
+    const faltantesIniciales=faltan();
+    if(faltantesIniciales.length){
+      stt.textContent=T('Completando visitas faltantes')+': '+faltantesIniciales.join(', ')+'...';
+      const pideFaltantes=
+        'Revisá nuevamente TODOS los documentos y tablas visuales. En la primera extracción faltaron estas visitas: '+faltantesIniciales.join(' | ')+'.\n'+
+        'Buscá específicamente la fila "Total Cost per Visit", "Total Cost per Patient Single Cohort" o equivalente en todos los períodos/páginas.\n'+
+        'Devolvé ÚNICAMENTE {"visitas":[{"nombre":"V4","valor":123.45,"cita":"archivo y versión: fragmento"}]}. '+
+        'Incluí cada visita solicitada; si un valor realmente no figura, devolvelo con valor null y explicalo en cita.';
+      try{
+        const res2=await aiChat({
+          purpose:'contrato_tarifario_completar',
+          system:'Respondés exclusivamente con un objeto JSON válido, sin texto antes ni después y sin bloques de código.',
+          content:[{t:'text',text:pideFaltantes}].concat(content), maxTokens:5000
+        });
+        const o2=parseAiObjectLoose(res2.text);
+        for(const v of filasVisita(o2)){
+          const i=visitasIa.findIndex(x=>factVisitaClave(x.nombre)===factVisitaClave(v.nombre));
+          if(i<0) visitasIa.push(v); else if(visitasIa[i].valor===null && v.valor!==null) visitasIa[i]=v;
+        }
+      }catch(e){ /* se muestran las faltantes para carga manual */ }
+    }
+    const faltantesFinales=faltan();
+    faltantesFinales.forEach(nombre=>visitasIa.push({nombre,valor:null,cita:T('No encontrado automáticamente en los documentos cargados.')}));
+    visitasIa.sort((a,b)=>{
+      const ia=esperadas.findIndex(n=>factVisitaClave(n)===factVisitaClave(a.nombre));
+      const ib=esperadas.findIndex(n=>factVisitaClave(n)===factVisitaClave(b.nombre));
+      return (ia<0?999:ia)-(ib<0?999:ib);
+    });
     FACT_PROP = {
       asistida:true,
       aiMeta:res.meta,
       moneda: String(o.moneda||''),
-      visitas: (Array.isArray(o.visitas)?o.visitas:[]).map(v=>({
-        nombre:String((v&&v.nombre)||'').trim(), valor:(v&&v.valor!==undefined&&v.valor!==null&&!isNaN(parseFloat(v.valor)))?parseFloat(v.valor):null,
-        cita:String((v&&v.cita)||'').slice(0,300) })).filter(v=>v.nombre),
+      visitas:visitasIa,
+      faltantes:faltantesFinales,
       extras: (Array.isArray(o.extras)?o.extras:[]).map(x=>({
         concepto:String((x&&x.concepto)||'').trim(), valor:(x&&!isNaN(parseFloat(x.valor)))?parseFloat(x.valor):null,
         cita:String((x&&x.cita)||'').slice(0,300) })).filter(x=>x.concepto),
       condiciones: o.condiciones && typeof o.condiciones==='object' ? o.condiciones : null,
       archivo: contratos.map(d=>d.filename+(d.version?' — '+d.version:'')).join(' · ')
     };
-    if(!FACT_PROP.visitas.length && !FACT_PROP.extras.length)
+    if(!FACT_PROP.visitas.some(v=>v.valor!==null) && !FACT_PROP.extras.length)
       throw new Error(T('No se encontró el tarifario en los contratos cargados. Revisá que alguno incluya el anexo de pagos.'));
     renderFactRevision();
     stt.style.color='var(--ok)';
@@ -10760,11 +10843,13 @@ function renderFactRevision(){
     '<td style="padding:3px 6px"><input type="text" data-fv="'+i+'" value="'+esc(v.nombre)+'" list="factVisitas"></td>'+
     '<td style="padding:3px 6px;width:110px"><input type="number" step="any" data-fval="'+i+'" value="'+(v.valor===null?'':v.valor)+'"></td>'+
     '<td class="small muted" style="padding:3px 6px">'+(v.cita?'« '+esc(v.cita)+' »':'<span style="color:var(--bad)">'+T('sin cita')+'</span>')+'</td>'+
-    '<td style="padding:3px 6px;width:30px"><input type="checkbox" data-fon="'+i+'" checked style="width:auto"></td></tr>';
+    '<td style="padding:3px 6px;width:30px"><input type="checkbox" data-fon="'+i+'" '+(v.valor===null?'':'checked')+' style="width:auto"></td></tr>';
   $('factRevision').innerHTML =
     '<div class="banner warn">🤖 <b>Borrador generado con asistencia de IA — requiere revisión humana.</b></div>'+
     '<div class="banner gray"><b>'+T('Tarifario propuesto a partir de')+' «'+esc(FACT_PROP.archivo)+'»</b> — '+
       T('corregí lo que haga falta y destildá lo que no quieras aplicar.')+'</div>'+
+    (FACT_PROP.faltantes&&FACT_PROP.faltantes.length
+      ? '<div class="banner warn"><b>⚠ '+T('Tarifario incompleto')+':</b> '+T('no se encontraron automáticamente')+' '+esc(FACT_PROP.faltantes.join(', '))+'. '+T('Quedan visibles, sin marcar, para revisión o carga manual.')+'</div>' : '')+
     '<datalist id="factVisitas">'+nombres.map(n=>'<option value="'+esc(n)+'">').join('')+'</datalist>'+
     '<div class="row" style="margin:8px 0"><div style="flex:0 0 160px"><label>'+T('Moneda')+'</label>'+
       '<input type="text" id="factMoneda" value="'+esc(FACT_PROP.moneda||'')+'"></div></div>'+
