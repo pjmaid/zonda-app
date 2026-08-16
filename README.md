@@ -10,7 +10,7 @@ Esta rama incorpora control de concurrencia, auditoría transaccional y almacena
 2. Ejecutar en el SQL Editor de Supabase `supabase/migrations/20260809_integridad_concurrencia_auditoria.sql`.
 3. Ejecutar `supabase/migrations/20260810_registros_checklists_compartidos.sql`.
 4. Ejecutar `supabase/migrations/20260810_configuracion_permisos_por_protocolo.sql`.
-5. Configurar y desplegar la Edge Function de IA según la sección siguiente.
+5. Desplegar las Edge Functions de usuarios e IA según las secciones siguientes.
 6. Verificar las tres migraciones y la función en un ambiente de prueba.
 7. Recién después desplegar `index.html`.
 
@@ -44,6 +44,8 @@ El segundo comando debe ejecutarse después de asignar entorno, versión y SHA d
 - Crear protocolos queda reservado al administrador; el médico puede editar solamente los asignados y la coordinadora no puede modificar su definición.
 - Las consultas de IA pasan por `supabase/functions/ia`; las claves de los proveedores dejan de existir en el navegador.
 - La Edge Function valida usuario y membresía, anonimiza identificadores textuales detectables y registra cada generación en `ec_audit`.
+- La administración de usuarios pasa por `supabase/functions/crear-usuario`: solo un administrador del mismo sitio puede dar altas, eliminar cuentas o asignar una clave temporal.
+- Eliminar un usuario revoca su cuenta y asignaciones, pero conserva los registros clínicos y la pista de auditoría.
 - Las imágenes requieren confirmación explícita porque no pueden anonimizarse automáticamente sin OCR.
 - Las respuestas, fichas y tarifarios generados quedan marcados como borradores que requieren revisión humana.
 - Las visitas, los EA/EAS, los procesos de consentimiento y las randomizaciones pasan por controles automáticos de calidad antes de guardarse.
@@ -69,6 +71,21 @@ supabase functions deploy ia
 Para Anthropic usar `AI_PROVIDER=anthropic`, `AI_MODEL=claude-sonnet-5` y `ANTHROPIC_API_KEY`. Para Gemini usar `AI_PROVIDER=gemini`, `AI_MODEL=gemini-2.5-flash` y `GEMINI_API_KEY`.
 
 Después del despliegue, ingresar a Zonda como usuario autenticado y usar **Configuración → Verificar servicio de IA**. La comprobación no envía documentos al proveedor.
+
+## Administración de usuarios
+
+La función usa los secretos propios de Supabase (`SUPABASE_URL`, `SUPABASE_ANON_KEY` y `SUPABASE_SERVICE_ROLE_KEY`), que el proyecto inyecta automáticamente. Desplegarla antes que el cliente web:
+
+```bash
+supabase functions deploy crear-usuario
+```
+
+Después del despliegue, ingresar como administrador y verificar en **Configuración → Usuarios y permisos**:
+
+- alta con invitación por email y alta con clave temporal;
+- cambio de clave temporal, con cambio obligatorio en el siguiente ingreso;
+- eliminación de otro usuario, conservando sus registros y auditoría;
+- bloqueo de eliminación del propio usuario y del último administrador activo.
 
 ## Migración de datos guardados en el navegador
 

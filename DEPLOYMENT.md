@@ -18,7 +18,7 @@ Antes de cada despliegue, editar `runtime-config.js`:
 3. Ejecutar `node scripts/verify-release.mjs test`.
 4. Crear un backup administrado de Supabase y registrar su identificador.
 5. Aplicar las migraciones pendientes en `test`, en el orden del README.
-6. Desplegar las Edge Functions y luego los archivos web en `test`.
+6. Desplegar `crear-usuario` e `ia`, y luego los archivos web en `test`.
 7. Completar las pruebas manuales del README con dos usuarios y dos navegadores.
 8. Probar una restauración en un proyecto desechable y reconciliar cantidades.
 9. Aprobar el release y cambiar la configuración a `production`.
