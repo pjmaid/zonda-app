@@ -660,17 +660,18 @@ details>summary{color:var(--acc-dark)}
           <button class="danger" id="btnFactContratoEliminar">Eliminar</button>
           <button class="primary" id="btnFactLeer">🤖 Leer y armar el tarifario</button></div>
         <div class="row">
-          <div class="grow"><label>Copia del contrato</label><select id="factContratoSelect"></select></div>
+          <div class="grow"><label>Documento seleccionado para acciones y tarifario</label><select id="factContratoSelect"></select></div>
           <div style="flex:0 0 190px"><label>Versión / fecha</label><input type="text" id="factContratoVersion" placeholder="Ej: Enmienda 1 – 12/08/2026"></div>
           <div class="grow"><label>Subir nueva copia</label><input type="file" id="factContratoFile" accept=".pdf,.docx,.doc,.txt"></div>
           <div><button id="btnFactContratoUpload">Adjuntar contrato</button></div>
         </div>
+        <div id="factContratosLista" style="margin-top:12px"></div>
         <div class="muted small" id="factContratoInfo" style="margin-top:8px"></div>
         <div id="factLeerStatus" class="small" style="margin-top:6px"></div>
         <div id="factRevision" class="hidden" style="margin-top:10px"></div>
         <div style="border-top:1px solid var(--line);margin-top:16px;padding-top:14px">
-          <h3 style="margin:0 0 4px">💬 Preguntarle al contrato</h3>
-          <div class="muted small">La respuesta se basa únicamente en la copia seleccionada. Si el dato no figura, Zonda lo indicará.</div>
+          <h3 style="margin:0 0 4px">💬 Consultar todos los contratos y adendas</h3>
+          <div class="muted small">La búsqueda comprende todos los contratos, presupuestos, amendments y adendas cargados para el estudio. La respuesta debe identificar el archivo utilizado.</div>
           <div id="factChatLog" style="margin:10px 0;max-height:320px;overflow:auto"></div>
           <div class="row">
             <div class="grow"><textarea id="factChatInput" rows="2" placeholder="Ej: ¿Cuál es el plazo de pago y desde cuándo se cuenta?"></textarea></div>
@@ -10326,7 +10327,7 @@ function factContratoSeleccionado(){
 function renderFactChat(){
   const box = $('factChatLog');
   if(!FACT_CHAT.length){
-    box.innerHTML = '<div class="muted small">Todavía no hiciste preguntas sobre esta copia.</div>';
+    box.innerHTML = '<div class="muted small">Todavía no hiciste preguntas sobre los contratos y adendas del estudio.</div>';
     return;
   }
   box.innerHTML = FACT_CHAT.map(m=>
@@ -10485,19 +10486,31 @@ function renderFact(){
     : '<option value="">(sin contratos adjuntos)</option>';
   if(previo && contratos.some(d=>d.id===previo)) ctrSel.value = previo;
   const ctr = factContratoSeleccionado();
-  const chatKey = stId+'|'+(ctr?ctr.id:'');
+  $('factContratosLista').innerHTML = contratos.length
+    ? '<div class="small" style="margin-bottom:6px"><b>'+contratos.length+' '+T(contratos.length===1?'documento cargado':'documentos cargados')+'</b></div>'+
+      '<div class="tablewrap"><table><thead><tr><th></th><th>Archivo</th><th>Versión / fecha</th><th>Subido</th></tr></thead><tbody>'+
+      contratos.map(d=>'<tr data-contrato-select="'+d.id+'" style="cursor:pointer'+(ctr&&ctr.id===d.id?';background:var(--acc-soft)':'')+'">'+
+        '<td><input type="radio" name="factContratoActivo" '+(ctr&&ctr.id===d.id?'checked':'')+' aria-label="Seleccionar '+esc(d.filename)+'"></td>'+
+        '<td><b>'+esc(d.filename)+'</b></td><td>'+esc(d.version||'—')+'</td><td>'+fmtDate(String(d.subido||'').slice(0,10))+'</td></tr>').join('')+
+      '</tbody></table></div>'
+    : '<div class="muted small">Todavía no hay contratos ni adendas cargados.</div>';
+  $('factContratosLista').querySelectorAll('[data-contrato-select]').forEach(row=>row.addEventListener('click',()=>{
+    $('factContratoSelect').value=row.dataset.contratoSelect; renderFact();
+  }));
+  const chatKey = stId+'|'+contratos.map(d=>d.id).sort().join(',');
   if(FACT_CHAT_KEY!==chatKey){ FACT_CHAT_KEY=chatKey; FACT_CHAT=[]; $('factChatStatus').textContent=''; }
   $('factContratoInfo').innerHTML = ctr
-    ? '<b>'+T('Copia seleccionada')+':</b> '+esc(ctr.filename)+(ctr.version?' ('+esc(ctr.version)+')':'')+'. '+
-      T('Solo el personal con acceso a Facturación puede verla o consultarla.')
+    ? '<b>'+T('Documento seleccionado para acciones y tarifario')+':</b> '+esc(ctr.filename)+(ctr.version?' ('+esc(ctr.version)+')':'')+'. '+
+      T('El chat consulta los')+' '+contratos.length+' '+T(contratos.length===1?'documento cargado':'documentos cargados')+'. '+
+      T('Solo el personal con acceso a Facturación puede verlos o consultarlos.')
     : '<span style="color:var(--bad)">⚠ '+T('Este estudio no tiene contratos adjuntos. Subí la primera copia aquí.')+'</span>';
   ['btnFactContratoVer','btnFactContratoDescargar','btnFactContratoEliminar'].forEach(id=>$(id).disabled=!ctr);
   $('btnFactLeer').disabled = !ctr || !aiConfigured();
-  $('btnFactChat').disabled = !ctr || !aiConfigured();
+  $('btnFactChat').disabled = !contratos.length || !aiConfigured();
   renderFactChat();
   if(ctr && !aiConfigured()){
     $('factLeerStatus').innerHTML = '<b>'+T('Necesitás una sesión online para leer el contrato con IA.')+'</b>';
-    $('factChatStatus').innerHTML = '<b>'+T('Necesitás una sesión online para consultar el contrato con IA.')+'</b>';
+    $('factChatStatus').innerHTML = '<b>'+T('Necesitás una sesión online para consultar los contratos con IA.')+'</b>';
   }
 
   /* período por defecto: el mes en curso */
@@ -10549,7 +10562,7 @@ function renderFact(){
   if(bt) bt.addEventListener('click', ()=>{ $('toolsStudy').value = stId; openLog('tarifas'); });
 }
 ['factStudy','factDesde','factHasta'].forEach(id=>$(id).addEventListener('change', renderFact));
-$('factContratoSelect').addEventListener('change', ()=>{ FACT_CHAT=[]; FACT_CHAT_KEY=''; renderFact(); });
+$('factContratoSelect').addEventListener('change', renderFact);
 
 $('btnFactContratoVer').addEventListener('click', ()=>{ const d=factContratoSeleccionado(); if(d) openDoc(d.id); });
 $('btnFactContratoDescargar').addEventListener('click', ()=>{ const d=factContratoSeleccionado(); if(d) downloadDoc(d.id); });
@@ -10585,30 +10598,43 @@ $('btnFactContratoUpload').addEventListener('click', async ()=>{
 });
 
 $('btnFactChat').addEventListener('click', async ()=>{
-  const ctr=factContratoSeleccionado(), pregunta=$('factChatInput').value.trim();
+  const contratos=factContratos($('factStudy').value), pregunta=$('factChatInput').value.trim();
   const btn=$('btnFactChat'), stt=$('factChatStatus');
-  if(!ctr || !pregunta || !canFact()) return;
-  btn.disabled=true; stt.style.color='var(--muted)'; stt.textContent=T('Leyendo el contrato...');
+  if(!contratos.length || !pregunta || !canFact()) return;
+  btn.disabled=true; stt.style.color='var(--muted)';
+  stt.textContent=T('Leyendo')+' '+contratos.length+' '+T(contratos.length===1?'documento...':'documentos...');
   try{
-    let texto='';
-    try{ texto=await ciDocText(ctr); }catch(e){ texto=''; }
-    if(!texto || texto.length<80) throw new Error(T('La copia seleccionada no contiene texto legible. Subí un PDF con texto o un archivo Word.'));
+    const legibles=[], noLegibles=[];
+    for(const doc of contratos){
+      let texto='';
+      try{ texto=await ciDocText(doc); }catch(e){ texto=''; }
+      if(texto && texto.length>=80) legibles.push({doc,texto});
+      else noLegibles.push(doc.filename+(doc.version?' — '+doc.version:''));
+    }
+    if(!legibles.length) throw new Error(T('Ningún contrato contiene texto legible. Subí archivos PDF con texto o documentos Word.'));
+    const topeDocumentos=aiCtxMax()-30000;
+    const porDocumento=Math.max(2000,Math.floor(topeDocumentos/legibles.length));
+    const corpus=legibles.map(({doc,texto},i)=>
+      'DOCUMENTO '+(i+1)+': '+doc.filename+(doc.version?' — '+doc.version:'')+'\n<<<\n'+
+      texto.slice(0,porDocumento)+'\n>>>'
+    ).join('\n\n');
     const historial=FACT_CHAT.slice(-8).map(m=>(m.rol==='user'?'PREGUNTA':'RESPUESTA')+': '+m.texto).join('\n\n');
     const content=
-      'CONTRATO SELECCIONADO: '+ctr.filename+'\n<<<\n'+texto.slice(0,120000)+'\n>>>\n\n'+
+      'CONJUNTO DE CONTRATOS, PRESUPUESTOS Y ADENDAS DEL ESTUDIO:\n\n'+corpus+'\n\n'+
+      (noLegibles.length?'ARCHIVOS SIN TEXTO LEGIBLE, NO UTILIZADOS: '+noLegibles.join(' | ')+'\n\n':'')+
       (historial?'CONVERSACIÓN PREVIA:\n'+historial+'\n\n':'')+
       'PREGUNTA ACTUAL:\n'+pregunta;
     stt.textContent=T('Consultando a la IA...');
     const res=await aiChat({
       purpose:'contrato_consulta',
-      system:'Respondé en español y exclusivamente con lo que figura en el contrato seleccionado. Indicá la cláusula, sección o página cuando pueda identificarse. Si el dato no figura, respondé claramente «No surge del contrato». No inventes ni uses conocimiento externo.',
+      system:'Respondé en español y exclusivamente con lo que figura en el conjunto de contratos, presupuestos, amendments y adendas provisto. Para cada dato relevante citá entre corchetes el nombre del archivo y su versión, además de la cláusula, sección o página cuando pueda identificarse. Si hay diferencias entre documentos, explicalas y señalá cuál es posterior; considerá que una adenda modifica al contrato original únicamente cuando lo indica expresamente. Si el dato no figura en ninguno, respondé claramente «No surge de los contratos cargados». No inventes ni uses conocimiento externo.',
       content, maxTokens:3500
     });
     FACT_CHAT.push({rol:'user',texto:pregunta},{rol:'assistant',texto:res.text||T('Sin respuesta.')});
     $('factChatInput').value=''; renderFactChat();
-    stt.style.color='var(--ok)'; stt.textContent='✔ '+T('Respuesta generada; requiere revisión humana.');
+    stt.style.color='var(--ok)'; stt.textContent='✔ '+T('Respuesta generada a partir de')+' '+legibles.length+' '+T(legibles.length===1?'documento legible':'documentos legibles')+(noLegibles.length?' · '+noLegibles.length+' '+T('sin texto legible'):'')+'. '+T('Requiere revisión humana.');
   }catch(e){ stt.style.color='var(--bad)'; stt.textContent='⚠ '+e.message; }
-  finally{ btn.disabled=!factContratoSeleccionado() || !aiConfigured(); }
+  finally{ btn.disabled=!factContratos($('factStudy').value).length || !aiConfigured(); }
 });
 $('factChatInput').addEventListener('keydown', e=>{
   if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); $('btnFactChat').click(); }

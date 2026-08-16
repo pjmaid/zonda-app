@@ -28,18 +28,23 @@ test('los contratos se administran solamente desde Facturación', () => {
 
 test('Facturación permite elegir, abrir, descargar y eliminar copias', () => {
   assert.match(html, /id="factContratoSelect"/);
+  assert.match(html, /id="factContratosLista"/);
+  assert.match(html, /data-contrato-select/);
   assert.match(html, /id="btnFactContratoVer"/);
   assert.match(html, /id="btnFactContratoDescargar"/);
   assert.match(html, /id="btnFactContratoEliminar"/);
   assert.match(html, /function factContratoSeleccionado\(/);
 });
 
-test('el chat usa únicamente el contrato seleccionado y declara su finalidad', () => {
+test('el chat consulta todos los contratos y adendas y declara su finalidad', () => {
   assert.match(html, /id="factChatInput"/);
   assert.match(html, /id="btnFactChat"/);
   assert.match(html, /purpose:'contrato_consulta'/);
-  assert.match(html, /exclusivamente con lo que figura en el contrato seleccionado/);
-  assert.match(html, /No surge del contrato/);
+  assert.match(html, /const contratos=factContratos\(\$\('factStudy'\)\.value\)/);
+  assert.match(html, /CONJUNTO DE CONTRATOS, PRESUPUESTOS Y ADENDAS DEL ESTUDIO/);
+  assert.match(html, /exclusivamente con lo que figura en el conjunto de contratos/);
+  assert.match(html, /No surge de los contratos cargados/);
+  assert.match(html, /nombre del archivo y su versión/);
 });
 
 test('RLS protege metadatos y archivos de contrato con el permiso de facturación', () => {
