@@ -146,7 +146,7 @@ test('la IA no expone claves ni llama proveedores desde el navegador', () => {
 
 test('cada uso de aiChat declara su finalidad para la auditoría', () => {
   const calls = [...html.matchAll(/await aiChat\(\{([\s\S]*?)\n\s*\}\)/g)];
-  assert.equal(calls.length, 11);
+  assert.equal(calls.length, 12);
   for (const call of calls) assert.match(call[1], /purpose\s*:/);
 });
 

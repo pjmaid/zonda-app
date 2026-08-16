@@ -60,7 +60,23 @@ async function authenticate(req: Request) {
   );
   const members = memberResponse.ok ? await memberResponse.json() : [];
   if (!members[0]) throw new Error("MEMBERSHIP_REQUIRED");
-  return { supabaseUrl, serviceKey, user, member: members[0] };
+  const member = members[0];
+
+  // El permiso de facturación vive en la ficha ec_users. Se consulta con la
+  // service role para que la autorización no dependa de datos enviados por el cliente.
+  const profilesResponse = await fetch(
+    `${supabaseUrl}/rest/v1/ec_users?select=data&org_id=eq.${encodeURIComponent(member.org_id)}`,
+    { headers: { Authorization: `Bearer ${serviceKey}`, apikey: serviceKey } },
+  );
+  const profiles = profilesResponse.ok ? await profilesResponse.json() : [];
+  const email = String(user.email || "").toLowerCase();
+  const profile = profiles.find((row: { data?: Record<string, unknown> }) => {
+    const data = row?.data || {};
+    return String(data.authId || "") === String(user.id)
+      || (!!email && String(data.email || "").toLowerCase() === email);
+  });
+  const billingAllowed = member.rol === "admin" || profile?.data?.facturacion === true;
+  return { supabaseUrl, serviceKey, user, member, billingAllowed };
 }
 
 function providerConfig() {
@@ -183,6 +199,9 @@ Deno.serve(async (req) => {
     }
 
     const purpose = String(input?.purpose || "consulta_general").replace(/[^a-z0-9_.-]/gi, "_").slice(0, 80);
+    if (/^contrato_/.test(purpose) && !auth.billingAllowed) {
+      return json({ error: "BILLING_ACCESS_REQUIRED" }, 403);
+    }
     const maxTokens = Math.max(100, Math.min(30000, Number(input?.max_tokens) || 8000));
     const identifiers = Array.isArray(input?.identifiers) ? input.identifiers.map(String) : [];
     const rawBlocks: AiBlock[] = typeof input?.content === "string"
