@@ -658,9 +658,9 @@ details>summary{color:var(--acc-dark)}
           <button id="btnFactContratoVer">Ver</button>
           <button id="btnFactContratoDescargar">Descargar</button>
           <button class="danger" id="btnFactContratoEliminar">Eliminar</button>
-          <button class="primary" id="btnFactLeer">🤖 Leer y armar el tarifario</button></div>
+          <button class="primary" id="btnFactLeer">🤖 Analizar todos y armar el tarifario</button></div>
         <div class="row">
-          <div class="grow"><label>Documento seleccionado para acciones y tarifario</label><select id="factContratoSelect"></select></div>
+          <div class="grow"><label>Documento seleccionado</label><select id="factContratoSelect"></select></div>
           <div style="flex:0 0 190px"><label>Versión / fecha</label><input type="text" id="factContratoVersion" placeholder="Ej: Enmienda 1 – 12/08/2026"></div>
           <div class="grow"><label>Subir nueva copia</label><input type="file" id="factContratoFile" accept=".pdf,.docx,.doc,.txt"></div>
           <div><button id="btnFactContratoUpload">Adjuntar contrato</button></div>
@@ -10324,6 +10324,16 @@ function factContratoSeleccionado(){
   const id = $('factContratoSelect').value;
   return factContratos($('factStudy').value).find(d=>d.id===id) || null;
 }
+async function factEliminarContrato(doc){
+  if(!doc || !canFact()) return;
+  if(!confirm('¿Eliminar el contrato o adenda «'+(doc.filename||'')+'»?')) return;
+  try{
+    if(ragActivo()) await ragBorrar(doc);
+    if(doc.storage==='supabase') await storageDel(doc.path); else await idbDel(doc.id);
+    await removeEntity('docs', doc.id, T('Contrato o adenda eliminado.'));
+    FACT_CHAT=[]; FACT_CHAT_KEY=''; renderFact();
+  }catch(e){ alert('No se pudo eliminar el contrato o adenda: '+e.message); }
+}
 function renderFactChat(){
   const box = $('factChatLog');
   if(!FACT_CHAT.length){
@@ -10488,24 +10498,36 @@ function renderFact(){
   const ctr = factContratoSeleccionado();
   $('factContratosLista').innerHTML = contratos.length
     ? '<div class="small" style="margin-bottom:6px"><b>'+contratos.length+' '+T(contratos.length===1?'documento cargado':'documentos cargados')+'</b></div>'+
-      '<div class="tablewrap"><table><thead><tr><th></th><th>Archivo</th><th>Versión / fecha</th><th>Subido</th></tr></thead><tbody>'+
+      '<div class="tablewrap"><table><thead><tr><th></th><th>Archivo</th><th>Versión / fecha</th><th>Subido</th><th>Acciones</th></tr></thead><tbody>'+
       contratos.map(d=>'<tr data-contrato-select="'+d.id+'" style="cursor:pointer'+(ctr&&ctr.id===d.id?';background:var(--acc-soft)':'')+'">'+
         '<td><input type="radio" name="factContratoActivo" '+(ctr&&ctr.id===d.id?'checked':'')+' aria-label="Seleccionar '+esc(d.filename)+'"></td>'+
-        '<td><b>'+esc(d.filename)+'</b></td><td>'+esc(d.version||'—')+'</td><td>'+fmtDate(String(d.subido||'').slice(0,10))+'</td></tr>').join('')+
+        '<td><b>'+esc(d.filename)+'</b></td><td>'+esc(d.version||'—')+'</td><td>'+fmtDate(String(d.subido||'').slice(0,10))+'</td>'+
+        '<td><button class="ghost" data-contrato-ver="'+d.id+'">Ver</button> '+
+        '<button class="ghost" data-contrato-dl="'+d.id+'">Descargar</button> '+
+        '<button class="ghost" data-contrato-del="'+d.id+'" style="color:var(--bad)">Eliminar</button></td></tr>').join('')+
       '</tbody></table></div>'
     : '<div class="muted small">Todavía no hay contratos ni adendas cargados.</div>';
   $('factContratosLista').querySelectorAll('[data-contrato-select]').forEach(row=>row.addEventListener('click',()=>{
     $('factContratoSelect').value=row.dataset.contratoSelect; renderFact();
   }));
+  $('factContratosLista').querySelectorAll('[data-contrato-ver]').forEach(b=>b.addEventListener('click',e=>{
+    e.stopPropagation(); const d=contratos.find(x=>x.id===b.dataset.contratoVer); if(d) openDoc(d.id);
+  }));
+  $('factContratosLista').querySelectorAll('[data-contrato-dl]').forEach(b=>b.addEventListener('click',e=>{
+    e.stopPropagation(); const d=contratos.find(x=>x.id===b.dataset.contratoDl); if(d) downloadDoc(d.id);
+  }));
+  $('factContratosLista').querySelectorAll('[data-contrato-del]').forEach(b=>b.addEventListener('click',e=>{
+    e.stopPropagation(); const d=contratos.find(x=>x.id===b.dataset.contratoDel); if(d) factEliminarContrato(d);
+  }));
   const chatKey = stId+'|'+contratos.map(d=>d.id).sort().join(',');
   if(FACT_CHAT_KEY!==chatKey){ FACT_CHAT_KEY=chatKey; FACT_CHAT=[]; $('factChatStatus').textContent=''; }
   $('factContratoInfo').innerHTML = ctr
-    ? '<b>'+T('Documento seleccionado para acciones y tarifario')+':</b> '+esc(ctr.filename)+(ctr.version?' ('+esc(ctr.version)+')':'')+'. '+
-      T('El chat consulta los')+' '+contratos.length+' '+T(contratos.length===1?'documento cargado':'documentos cargados')+'. '+
+    ? '<b>'+T('Documento seleccionado')+':</b> '+esc(ctr.filename)+(ctr.version?' ('+esc(ctr.version)+')':'')+'. '+
+      T('El chat y el análisis del tarifario consultan los')+' '+contratos.length+' '+T(contratos.length===1?'documento cargado':'documentos cargados')+'. '+
       T('Solo el personal con acceso a Facturación puede verlos o consultarlos.')
     : '<span style="color:var(--bad)">⚠ '+T('Este estudio no tiene contratos adjuntos. Subí la primera copia aquí.')+'</span>';
   ['btnFactContratoVer','btnFactContratoDescargar','btnFactContratoEliminar'].forEach(id=>$(id).disabled=!ctr);
-  $('btnFactLeer').disabled = !ctr || !aiConfigured();
+  $('btnFactLeer').disabled = !contratos.length || !aiConfigured();
   $('btnFactChat').disabled = !contratos.length || !aiConfigured();
   renderFactChat();
   if(ctr && !aiConfigured()){
@@ -10566,16 +10588,7 @@ $('factContratoSelect').addEventListener('change', renderFact);
 
 $('btnFactContratoVer').addEventListener('click', ()=>{ const d=factContratoSeleccionado(); if(d) openDoc(d.id); });
 $('btnFactContratoDescargar').addEventListener('click', ()=>{ const d=factContratoSeleccionado(); if(d) downloadDoc(d.id); });
-$('btnFactContratoEliminar').addEventListener('click', async ()=>{
-  const doc=factContratoSeleccionado(); if(!doc || !canFact()) return;
-  if(!confirm('¿Eliminar la copia del contrato «'+(doc.filename||'')+'»?')) return;
-  try{
-    if(ragActivo()) await ragBorrar(doc);
-    if(doc.storage==='supabase') await storageDel(doc.path); else await idbDel(doc.id);
-    await removeEntity('docs', doc.id, T('Contrato eliminado.'));
-    FACT_CHAT=[]; FACT_CHAT_KEY=''; renderFact();
-  }catch(e){ alert('No se pudo eliminar el contrato: '+e.message); }
-});
+$('btnFactContratoEliminar').addEventListener('click', ()=>factEliminarContrato(factContratoSeleccionado()));
 $('btnFactContratoUpload').addEventListener('click', async ()=>{
   const stId=$('factStudy').value, f=$('factContratoFile').files[0], btn=$('btnFactContratoUpload');
   if(!canFact() || !stId || !getStudy(stId)){ toast(T('No tenés acceso o no hay un estudio seleccionado.')); return; }
@@ -10612,6 +10625,7 @@ $('btnFactChat').addEventListener('click', async ()=>{
       else noLegibles.push(doc.filename+(doc.version?' — '+doc.version:''));
     }
     if(!legibles.length) throw new Error(T('Ningún contrato contiene texto legible. Subí archivos PDF con texto o documentos Word.'));
+    if(noLegibles.length) throw new Error(T('No se puede analizar el conjunto completo porque estos archivos no tienen texto legible: ') + noLegibles.join(' | ') + '. '+T('Convertílos con OCR o subí una versión Word.'));
     const topeDocumentos=aiCtxMax()-30000;
     const porDocumento=Math.max(2000,Math.floor(topeDocumentos/legibles.length));
     const corpus=legibles.map(({doc,texto},i)=>
@@ -10621,7 +10635,6 @@ $('btnFactChat').addEventListener('click', async ()=>{
     const historial=FACT_CHAT.slice(-8).map(m=>(m.rol==='user'?'PREGUNTA':'RESPUESTA')+': '+m.texto).join('\n\n');
     const content=
       'CONJUNTO DE CONTRATOS, PRESUPUESTOS Y ADENDAS DEL ESTUDIO:\n\n'+corpus+'\n\n'+
-      (noLegibles.length?'ARCHIVOS SIN TEXTO LEGIBLE, NO UTILIZADOS: '+noLegibles.join(' | ')+'\n\n':'')+
       (historial?'CONVERSACIÓN PREVIA:\n'+historial+'\n\n':'')+
       'PREGUNTA ACTUAL:\n'+pregunta;
     stt.textContent=T('Consultando a la IA...');
@@ -10632,7 +10645,7 @@ $('btnFactChat').addEventListener('click', async ()=>{
     });
     FACT_CHAT.push({rol:'user',texto:pregunta},{rol:'assistant',texto:res.text||T('Sin respuesta.')});
     $('factChatInput').value=''; renderFactChat();
-    stt.style.color='var(--ok)'; stt.textContent='✔ '+T('Respuesta generada a partir de')+' '+legibles.length+' '+T(legibles.length===1?'documento legible':'documentos legibles')+(noLegibles.length?' · '+noLegibles.length+' '+T('sin texto legible'):'')+'. '+T('Requiere revisión humana.');
+    stt.style.color='var(--ok)'; stt.textContent='✔ '+T('Respuesta generada a partir de todos los')+' '+legibles.length+' '+T(legibles.length===1?'documento cargado':'documentos cargados')+'. '+T('Requiere revisión humana.');
   }catch(e){ stt.style.color='var(--bad)'; stt.textContent='⚠ '+e.message; }
   finally{ btn.disabled=!factContratos($('factStudy').value).length || !aiConfigured(); }
 });
@@ -10643,54 +10656,76 @@ $('factChatInput').addEventListener('keydown', e=>{
 /* ---- lectura del contrato con IA ---- */
 $('btnFactLeer').addEventListener('click', async ()=>{
   const stId = $('factStudy').value, st = getStudy(stId);
-  const ctr = factContratoSeleccionado();
+  const contratos = factContratos(stId);
   const stt = $('factLeerStatus'), btn = $('btnFactLeer');
-  if(!ctr) return;
+  if(!contratos.length) return;
   btn.disabled = true; stt.style.color='var(--muted)';
   try{
-    stt.textContent = T('Leyendo el contrato...');
-    let texto = '';
-    try{ texto = await ciDocText(ctr); }catch(e){ texto = ''; }
-    let content;
-    if(texto && texto.length>200){
-      content = 'CONTRATO / PRESUPUESTO DEL ESTUDIO:\n<<<\n'+texto.slice(0,120000)+'\n>>>';
-    } else {
-      /* contrato escaneado: se manda como imágenes */
-      stt.textContent = T('El contrato no tiene texto legible: se leen las páginas como imagen...');
-      const b = await docBlob(ctr);
-      if(!b) throw new Error(T('El archivo no está disponible en este navegador.'));
+    stt.textContent = T('Leyendo')+' '+contratos.length+' '+T(contratos.length===1?'documento...':'documentos...');
+    const legibles=[], escaneados=[], incompatibles=[];
+    for(const doc of contratos){
+      let texto='';
+      try{ texto=await ciDocText(doc); }catch(e){ texto=''; }
+      if(texto && texto.length>=80) legibles.push({doc,texto});
+      else {
+        const esPdf=/pdf/i.test(doc.mime||'') || /\.pdf$/i.test(doc.filename||'');
+        const blob=esPdf ? await docBlob(doc) : null;
+        if(blob) escaneados.push({doc,blob});
+        else incompatibles.push(doc.filename+(doc.version?' — '+doc.version:''));
+      }
+    }
+    if(incompatibles.length) throw new Error(T('No se puede analizar el conjunto completo porque estos archivos no tienen texto legible ni pueden procesarse como PDF: ') + incompatibles.join(' | ') + '. '+T('Convertílos con OCR o subí una versión Word.'));
+    const topeDocumentos=aiCtxMax()-30000;
+    const porDocumento=Math.max(2000,Math.floor(topeDocumentos/Math.max(1,legibles.length)));
+    const corpusTexto=legibles.map(({doc,texto},i)=>
+      'DOCUMENTO CON TEXTO '+(i+1)+': '+doc.filename+(doc.version?' — '+doc.version:'')+'\n<<<\n'+
+      texto.slice(0,porDocumento)+'\n>>>'
+    ).join('\n\n');
+    let content=[{t:'text',text:'CONJUNTO COMPLETO DE CONTRATOS, PRESUPUESTOS Y ADENDAS DEL ESTUDIO:\n\n'+
+      (corpusTexto||'Los documentos se aportan como imágenes escaneadas a continuación.')}];
+    if(escaneados.length){
+      stt.textContent=T('Preparando OCR visual de los contratos escaneados...');
       await ensurePdfJs();
-      const doc = await pdfjsLib.getDocument({ data: await b.arrayBuffer() }).promise;
-      const n = Math.min(doc.numPages, 10);
-      content = [{ t:'text', text:'Las imágenes que siguen son las páginas del CONTRATO / PRESUPUESTO del estudio.' }];
-      for(let i=1;i<=n;i++){
-        const pg = await doc.getPage(i);
-        content.push({ t:'text', text:'--- '+T('Página')+' '+i+' ---' });
-        content.push({ t:'img', mime:'image/png', data: await pdfPageImage(pg, 1600) });
+      const pdfs=[];
+      let paginasTotales=0;
+      for(const item of escaneados){
+        const pdf=await pdfjsLib.getDocument({data:await item.blob.arrayBuffer()}).promise;
+        paginasTotales+=pdf.numPages; pdfs.push({doc:item.doc,pdf});
+      }
+      if(paginasTotales>18) throw new Error(T('Los PDF escaneados suman')+' '+paginasTotales+' '+T('páginas. Para analizar todos los documentos completos sin omitir páginas, aplicales OCR o subí versiones con texto.'));
+      for(const item of pdfs){
+        content.push({t:'text',text:'DOCUMENTO ESCANEADO: '+item.doc.filename+(item.doc.version?' — '+item.doc.version:'')});
+        for(let i=1;i<=item.pdf.numPages;i++){
+          const pg=await item.pdf.getPage(i);
+          content.push({t:'text',text:'--- '+item.doc.filename+' · '+T('Página')+' '+i+' ---'});
+          content.push({t:'img',mime:'image/png',data:await pdfPageImage(pg,1100)});
+        }
       }
     }
     const visitasSt = (st.visitas||[]).map(v=>v.nombre).join(' | ');
     const pide =
-      'Del contrato o presupuesto del estudio, extraé el TARIFARIO por visita que el patrocinador paga al sitio.\n\n'+
+      'Del conjunto completo de contratos, presupuestos, amendments y adendas del estudio, extraé el TARIFARIO vigente por visita que el patrocinador paga al sitio.\n\n'+
       (visitasSt ? 'Visitas del protocolo cargadas en el sistema (usá EXACTAMENTE estos nombres cuando coincidan): '+visitasSt+'.\n\n' : '')+
       'Devolvé ÚNICAMENTE este objeto JSON:\n'+
-      '{"moneda":"USD","visitas":[{"nombre":"V1","valor":300,"cita":"fragmento textual del contrato"}],'+
-      '"extras":[{"concepto":"Screen failure","valor":150,"cita":"…"}],'+
-      '"condiciones":{"plazoPago":"…","facturacion":"…","notas":"…","cita":"…"}}\n\n'+
+      '{"moneda":"USD","visitas":[{"nombre":"V1","valor":300,"cita":"archivo y versión: fragmento textual"}],'+
+      '"extras":[{"concepto":"Screen failure","valor":150,"cita":"archivo y versión: fragmento textual"}],'+
+      '"condiciones":{"plazoPago":"…","facturacion":"…","notas":"…","cita":"archivo y versión: fragmento textual"}}\n\n'+
       'Reglas:\n'+
-      '- Usá ÚNICAMENTE lo que dice el contrato. No estimes ni completes valores que no figuren.\n'+
+      '- Usá ÚNICAMENTE lo que dicen los documentos provistos. No estimes ni completes valores que no figuren.\n'+
+      '- Compará el contrato original con todas las adendas. Aplicá un valor o condición posterior únicamente cuando la adenda indique expresamente que modifica lo anterior.\n'+
+      '- Si existen contradicciones no resueltas, explicalas en "notas" y no elijas un valor sin fundamento.\n'+
       '- "valor" es el número sin símbolos ni separadores de miles (usá punto decimal).\n'+
-      '- Cada valor lleva su "cita": el fragmento textual del contrato de donde sale (máximo 30 palabras).\n'+
+      '- Cada valor lleva su "cita": nombre y versión del archivo más el fragmento textual del que surge (máximo 30 palabras).\n'+
       '- En "extras" van los conceptos que no son una visita: screen failure, procedimientos no programados, reembolsos, overhead, pagos por hito.\n'+
       '- En "condiciones" resumí plazo de pago, forma de facturación y notas relevantes, con su cita.\n'+
-      '- Si el contrato no especifica el tarifario, devolvé listas vacías.';
+      '- Si los documentos no especifican el tarifario, devolvé listas vacías.';
     /* Los contratos no se incorporan al índice general del estudio. La lectura
-       usa exclusivamente la copia seleccionada dentro de Facturación. */
+       usa exclusivamente el conjunto completo cargado dentro de Facturación. */
     stt.textContent = T('Consultando a la IA (puede tardar unos segundos)...');
     const res = await aiChat({
       purpose:'contrato_tarifario',
       system:'Respondés exclusivamente con un objeto JSON válido, sin texto antes ni después y sin bloques de código.',
-      content: (typeof content==='string') ? pide+'\n\n'+content : content.concat([{ t:'text', text:pide }]),
+      content: [{t:'text',text:pide}].concat(content),
       maxTokens: 6000
     });
     const o = parseAiObjectLoose(res.text);
@@ -10706,16 +10741,16 @@ $('btnFactLeer').addEventListener('click', async ()=>{
         concepto:String((x&&x.concepto)||'').trim(), valor:(x&&!isNaN(parseFloat(x.valor)))?parseFloat(x.valor):null,
         cita:String((x&&x.cita)||'').slice(0,300) })).filter(x=>x.concepto),
       condiciones: o.condiciones && typeof o.condiciones==='object' ? o.condiciones : null,
-      archivo: ctr.filename
+      archivo: contratos.map(d=>d.filename+(d.version?' — '+d.version:'')).join(' · ')
     };
     if(!FACT_PROP.visitas.length && !FACT_PROP.extras.length)
-      throw new Error(T('No se encontró el tarifario en el contrato. Revisá que el documento adjunto incluya el anexo de pagos.'));
+      throw new Error(T('No se encontró el tarifario en los contratos cargados. Revisá que alguno incluya el anexo de pagos.'));
     renderFactRevision();
     stt.style.color='var(--ok)';
     stt.textContent = '✔ '+FACT_PROP.visitas.length+' '+T('visitas')+' · '+FACT_PROP.extras.length+' '+T('conceptos extra')+'. '+T('Revisá antes de aplicar.');
   }catch(e){
     stt.style.color='var(--bad)'; stt.textContent = '⚠ '+e.message;
-  }finally{ btn.disabled = false; }
+  }finally{ btn.disabled = !factContratos($('factStudy').value).length || !aiConfigured(); }
 });
 function renderFactRevision(){
   if(!FACT_PROP){ $('factRevision').classList.add('hidden'); return; }
