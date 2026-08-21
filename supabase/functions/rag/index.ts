@@ -1,3 +1,5 @@
+import {requiredEnv,resolveEnv} from "./config.mjs";
+
 const corsHeaders={"Access-Control-Allow-Origin":"*","Access-Control-Allow-Headers":"authorization, x-client-info, apikey, content-type"};
 const MAX_RETURN_RESULTS=25;
 const ALLOWED_TYPES=["protocolo","manual","enmienda","ci"] as const;
@@ -5,7 +7,8 @@ const allowedTypes=new Set<string>(ALLOWED_TYPES);
 let tokenCache:{value:string;expires:number}|null=null;
 
 const json=(body:unknown,status=200)=>new Response(JSON.stringify(body),{status,headers:{...corsHeaders,"Content-Type":"application/json"}});
-function env(name:string){const value=Deno.env.get(name)||"";if(!value)throw new Error(`RAG_CONFIG_MISSING_${name}`);return value;}
+const readEnv=(name:string)=>Deno.env.get(name);
+function env(name:string,legacyName?:string){return requiredEnv(readEnv,name,legacyName);}
 function validId(value:unknown,error:string){const id=String(value||"");if(!/^[A-Za-z0-9_-]{1,128}$/.test(id))throw new Error(error);return id;}
 function clampResults(value:unknown){const n=Number.parseInt(String(value||""),10);return Number.isFinite(n)?Math.max(1,Math.min(MAX_RETURN_RESULTS,n)):MAX_RETURN_RESULTS;}
 function b64url(input:Uint8Array|string){const bytes=typeof input==="string"?new TextEncoder().encode(input):input;let s="";for(const b of bytes)s+=String.fromCharCode(b);return btoa(s).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");}
@@ -14,7 +17,7 @@ function pemBytes(pem:string){const s=atob(pem.replace(/-----[^-]+-----|\s/g,"")
 
 async function googleToken(){
   if(tokenCache&&tokenCache.expires>Date.now()+60000)return tokenCache.value;
-  const service=JSON.parse(env("GOOGLE_SERVICE_ACCOUNT_JSON")),now=Math.floor(Date.now()/1000);
+  const service=JSON.parse(env("GOOGLE_SERVICE_ACCOUNT_JSON","GCP_SA_JSON")),now=Math.floor(Date.now()/1000);
   const header=b64url(JSON.stringify({alg:"RS256",typ:"JWT"}));
   const claim=b64url(JSON.stringify({iss:service.client_email,scope:"https://www.googleapis.com/auth/cloud-platform",aud:service.token_uri||"https://oauth2.googleapis.com/token",iat:now,exp:now+3600}));
   const key=await crypto.subtle.importKey("pkcs8",pemBytes(service.private_key),{name:"RSASSA-PKCS1-v1_5",hash:"SHA-256"},false,["sign"]);
@@ -51,7 +54,7 @@ async function shortHash(value:string){const d=await crypto.subtle.digest("SHA-2
 async function scopedDocId(orgId:string,docId:unknown){return `org-${await shortHash(orgId)}-${validId(docId,"INVALID_DOCUMENT_ID")}`.slice(0,128);}
 
 function config(){
-  const project=env("RAG_PROJECT_ID"),location=Deno.env.get("RAG_LOCATION")||"global",dataStore=env("RAG_DATA_STORE_ID"),engine=env("RAG_ENGINE_ID");
+  const project=env("RAG_PROJECT_ID","GCP_PROJECT"),location=resolveEnv(readEnv,"RAG_LOCATION","GCP_LOCATION")||"global",dataStore=env("RAG_DATA_STORE_ID","GCP_DATASTORE"),engine=env("RAG_ENGINE_ID","GCP_ENGINE");
   const root=`projects/${project}/locations/${location}/collections/default_collection`;
   const endpoint=location==="global"?"discoveryengine.googleapis.com":`${location}-discoveryengine.googleapis.com`;
   return{location,dataStore,engine,root,endpoint};
