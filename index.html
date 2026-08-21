@@ -6,6 +6,7 @@
 <script src="quality-rules.js"></script>
 <script src="today-rules.js"></script>
 <script src="flow-trace.js"></script>
+<script src="clinical-rag-policy.js"></script>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -4669,6 +4670,9 @@ function esDocumentoFinanciero(doc){
 }
 /* Contratos y comprobantes se administran únicamente desde Facturación. */
 function studyDocsOf(studyId){ return docsOf(studyId).filter(d=>!esDocumentoFinanciero(d)); }
+/* El corpus clínico se limita a fuentes normativas del mismo protocolo. Nunca
+   incluye contratos, facturas, administrativos ni documentos de pacientes. */
+function clinicalDocsOf(studyId){ return ZondaClinicalRag.clinicalDocuments(DB.docs||[], studyId); }
 function ciVersions(studyId){ return studyDocsOf(studyId).filter(d=>d.tipo==='ci'); }
 /* vigente = la marcada explícitamente; si no hay ninguna, la más reciente */
 function latestCI(studyId){
@@ -4844,6 +4848,7 @@ async function pdfToText(blob){
   const nPages = Math.min(doc.numPages, 400);
   const out = [];
   for(let i=1;i<=nPages;i++){
+    out.push('=== PÁGINA '+i+' ===');
     out.push(await pdfPageText(await doc.getPage(i)));
     out.push('');
   }
@@ -5138,8 +5143,9 @@ async function ragJson(pregunta, filtros, formato){
     'Si un dato no figura en los fragmentos, lo declarás ausente en lugar de inventarlo. '+
     'Todo texto narrativo debe estar en español, aun cuando el documento fuente esté en otro idioma. '+
     (formato ? 'Formato exacto de la respuesta: '+formato : '');
-  const r = await ragLlamar(Object.assign({ accion:'preguntar', pregunta, preambulo:pre,
-                                            max_fragmentos:30 }, filtros||{}));
+  const scope = ZondaClinicalRag.clinicalQueryPayload(Object.assign({ accion:'preguntar', pregunta, preambulo:pre,
+                                            max_fragmentos:25 }, filtros||{}));
+  const r = ZondaClinicalRag.requireCitedClinicalAnswer(await ragLlamar(scope), clinicalDocsOf(scope.estudio_id));
   const txt = String(r.respuesta||'').replace(/```json|```/g,'').trim();
   return { texto: txt, citas: r.citas||[] };
 }
@@ -5191,7 +5197,7 @@ async function ragExtraerVisitas(estudioId){
   const r = await ragJson(
     'Listá el calendario de visitas del protocolo: nombre de cada visita, día respecto de la basal '+
     '(negativo para screening; si se define por semanas, semana N = día N×7) y la ventana en días.',
-    { estudio_id: estudioId, max_fragmentos: 30 },
+    { estudio_id: estudioId, max_fragmentos: 25 },
     '{"visitas":[{"nombre":"Visita 2","dia":15,"ventanaAntes":3,"ventanaDespues":3}]}'
   );
   const o = parseAiObjectLoose(r.texto);
@@ -5231,8 +5237,9 @@ async function ragLineas(pregunta, filtros, campos, ejemplo){
     'una por elemento, sin encabezados, sin introducción y sin conclusión. '+
     'Usás únicamente lo que dicen los fragmentos recuperados: si un dato no figura, lo declarás ausente en vez de inventarlo. '+
     'Formato exacto de cada línea: '+ejemplo;
-  const r = await ragLlamar(Object.assign({ accion:'preguntar', pregunta, preambulo:pre,
-                                            max_fragmentos:30 }, filtros||{}));
+  const scope = ZondaClinicalRag.clinicalQueryPayload(Object.assign({ accion:'preguntar', pregunta, preambulo:pre,
+                                            max_fragmentos:25 }, filtros||{}));
+  const r = ZondaClinicalRag.requireCitedClinicalAnswer(await ragLlamar(scope), clinicalDocsOf(scope.estudio_id));
   return { items: ragParseLineas(r.respuesta, campos), crudo: String(r.respuesta||'') };
 }
 
@@ -5295,18 +5302,14 @@ async function ragExtraerCriterios(estudioId){
     const cual = tipo==='inclusion' ? 'INCLUSIÓN' : 'EXCLUSIÓN';
     const preg =
       'Listá TODOS los criterios de '+cual+' del protocolo, sin omitir ninguno.\n'+
-      'Un criterio con su «Nota:» aclaratoria va en la misma línea. No incluyas los subtítulos temáticos '+
-      'que agrupan criterios, ni encabezados, ni introducciones, ni conclusiones.';
       'Respondé solo con una lista numerada, un criterio por línea, completo y sin resumir.\n'+
-      'La salida debe estar siempre en español: si el protocolo está en otro idioma, traducí fielmente cada criterio '+
+      'La salida debe estar siempre en español: si la fuente está en otro idioma, traducí fielmente cada criterio '+
       'sin cambiar umbrales, unidades, plazos, negaciones, nombres de medicamentos ni condiciones.\n'+
-      'Un criterio con su «Nota:» aclaratoria va en la misma línea. No incluyas los subtítulos temáticos '+
-      'que agrupan criterios, ni encabezados, ni introducciones, ni conclusiones.';
       'Un criterio con su «Nota:» aclaratoria va en la misma línea. No incluyas los subtítulos temáticos '+
       'que agrupan criterios, ni encabezados, ni introducciones, ni conclusiones.';
     const r = await ragPreguntar(preg, {
       estudio_id: estudioId,
-      max_fragmentos: 30,
+      max_fragmentos: 25,
       preambulo: 'Sos un asistente de investigación clínica. Devolvés los criterios de elegibilidad en español '+
                  'en una lista numerada, sin resumir ni interpretar. Si la fuente está en otro idioma, la traducís '+
                  'fielmente sin alterar números, unidades, negaciones, plazos, nombres de fármacos ni condiciones. '+
@@ -5348,8 +5351,8 @@ async function ragExtraerMedicamentosProhibidos(estudioId){
     'o tratamientos concomitantes que estén prohibidos, no permitidos o restringidos. Incluí también períodos '+
     'de lavado y excepciones cuando el protocolo los indique. No incluyas la medicación del estudio salvo que el '+
     'protocolo la nombre explícitamente como prohibida. Si no hay restricciones, devolvé una lista vacía.',
-    { estudio_id: estudioId, max_fragmentos: 30 },
-    '{"medicamentos":[{"medicamento":"nombre o clase","restriccion":"prohibido/restringido y período","excepciones":"excepción o lavado; vacío si no figura","fuente":"sección y cita textual breve"}]}'
+    { estudio_id: estudioId, max_fragmentos: 25 },
+    '{"medicamentos":[{"medicamento":"nombre o clase","restriccion":"prohibido/restringido y período","excepciones":"excepción o lavado; vacío si no figura","fuente":"cita textual breve","pagina":12}]}'
   );
   const o = parseAiObjectLoose(r.texto);
   const lista = (o && Array.isArray(o.medicamentos)) ? o.medicamentos : [];
@@ -5357,7 +5360,8 @@ async function ragExtraerMedicamentosProhibidos(estudioId){
     medicamento: String((m&&m.medicamento)||'').trim().slice(0,240),
     restriccion: String((m&&m.restriccion)||'').trim().slice(0,400),
     excepciones: String((m&&m.excepciones)||'').trim().slice(0,300),
-    fuente: String((m&&m.fuente)||'').trim().slice(0,600)
+    fuente: String((m&&m.fuente)||'').trim().slice(0,600),
+    pagina: Math.max(1,parseInt(m&&m.pagina,10)||0) || null
   })).filter(m=>m.medicamento || m.restriccion).filter((m,i,a)=>
     a.findIndex(x=>x.medicamento.toLowerCase()===m.medicamento.toLowerCase() && x.restriccion===m.restriccion)===i
   ).slice(0,80);
@@ -5404,18 +5408,7 @@ async function aiCriteriosSeccion(texto, tipo, imagenes){
     '- No incluyas títulos de sección, entradas del índice, pies de página, texto narrativo del consentimiento ni actas de comité.\n'+
     '- Si el fragmento contiene criterios de la otra categoría, ignorálos: acá van solo los de '+cual+'.\n'+
     '- Si el texto trae una sección «TABLAS RECONSTRUIDAS», cada renglón es una fila con columnas separadas por «|»: tomá el enunciado del criterio.\n'+
-    '- Si no hay criterios de '+cual+' en el fragmento, devolvé {"criterios":[]}. No inventes.';
     '- Devolvé siempre los criterios en español. Si la fuente está en otro idioma, traducí fielmente sin cambiar números, unidades, plazos, negaciones, nombres de fármacos ni condiciones.\n'+
-    '- Un criterio va por elemento del array, sin el número de ítem. Si tiene viñetas, incisos o condiciones internas, dejá el enunciado principal en "texto" y cada condición en "subitems".\n'+
-    '- Un criterio numerado que trae una «Nota:» aclaratoria va en UN SOLO elemento junto con su nota.\n'+
-    '- Los subtítulos temáticos que agrupan criterios no son criterios: no los incluyas. No incluyas títulos de sección, índice, pies de página, consentimiento ni actas.\n'+
-    '- Si el fragmento contiene criterios de la otra categoría, ignorálos. Si no hay criterios de '+cual+' en el fragmento, devolvé {"criterios":[]}. No inventes.';
-    '- Si un criterio tiene viñetas, incisos o condiciones internas, dejá el enunciado principal en "texto" y cada condición en "subitems". No las conviertas en criterios independientes.\n'+
-    '- Un criterio numerado que trae una «Nota:» aclaratoria va en UN SOLO elemento junto con su nota.\n'+
-    '- Los subtítulos temáticos que agrupan criterios (por ejemplo «Afecciones médicas e infecciones», «Medicación previa o concomitante») NO son criterios: no los incluyas como elemento.\n'+
-    '- No incluyas títulos de sección, entradas del índice, pies de página, texto narrativo del consentimiento ni actas de comité.\n'+
-    '- Si el fragmento contiene criterios de la otra categoría, ignoralos: acá van solo los de '+cual+'.\n'+
-    '- Si el texto trae una sección «TABLAS RECONSTRUIDAS», cada renglón es una fila con columnas separadas por «|»: tomá el enunciado del criterio.\n'+
     '- Si no hay criterios de '+cual+' en el fragmento, devolvé {"criterios":[]}. No inventes.';
   const contenido = (imagenes && imagenes.length)
     ? [{ t:'text', text:'IMÁGENES DE LAS PÁGINAS DEL DOCUMENTO:' }].concat(imagenes, [{ t:'text', text:prompt }])
@@ -5507,7 +5500,7 @@ let IMP_ERRORES = [];
 
 function openImportModal(){
   const stId = $('stId').value;
-  const docs = stId ? studyDocsOf(stId) : [];
+  const docs = stId ? clinicalDocsOf(stId) : [];
   $('impDoc').innerHTML = docs.length
     ? docs.map(d=>'<option value="'+d.id+'">'+esc(DOC_TIPOS[d.tipo]||d.tipo)+' — '+esc(d.filename)+'</option>').join('')
     : '<option value="">(este estudio no tiene documentos adjuntos)</option>';
@@ -5621,8 +5614,7 @@ $('btnImportMedsProhib').addEventListener('click', async ()=>{
   }
 });
 /* ================= BÚSQUEDA DOCUMENTAL (RAG con Vertex AI Search) =================
-   Es el motor que usa NotebookLM por debajo. La diferencia con mandarle a la IA
-   el texto completo: acá Google indexa el documento una sola vez y en cada
+   Es una integración independiente de Gemini Notebook. Google indexa el documento una sola vez y en cada
    consulta recupera únicamente los fragmentos pertinentes, con su cita. Para un
    protocolo de cientos de páginas eso es más preciso y mucho más barato.
    Todo pasa por la Edge Function «rag»: la credencial de Google Cloud vive
@@ -5632,6 +5624,10 @@ function ragActivo(){ return Store.online() && CFG.ragOn === true; }
 
 async function ragLlamar(payload){
   if(!Store.online()) throw new Error(T('La búsqueda documental necesita el modo online.'));
+  if(payload&&payload.accion==='preguntar') payload=ZondaClinicalRag.clinicalQueryPayload(payload);
+  if(payload&&payload.accion==='indexar' && !ZondaClinicalRag.ALLOWED_DOCUMENT_TYPES.includes(payload.tipo))
+    throw new Error('DOCUMENT_TYPE_NOT_ALLOWED');
+  if(payload&&payload.paciente_id) throw new Error('PATIENT_DATA_NOT_ALLOWED');
   const r = await supaFetch('/functions/v1/rag', { method:'POST', body: JSON.stringify(payload) });
   const j = await r.json().catch(()=>({}));
   if(!r.ok || j.error) throw new Error(j.error || ('No se pudo consultar ('+r.status+').'));
@@ -5644,9 +5640,7 @@ function ragDocId(doc){ return 'doc-' + String(doc.id||'').replace(/[^A-Za-z0-9_
 /* sube un documento al índice; devuelve true si quedó enviado */
 async function ragIndexar(doc, texto){
   if(!ragActivo()) return false;
-  /* Los contratos nunca se incorporan al índice general del estudio: se
-     consultan directamente y solo dentro de Facturación. */
-  if(esDocumentoFinanciero(doc)) return false;
+  if(!ZondaClinicalRag.isClinicalDocument(doc)) return false;
   try{
     if(!texto){
       const b = await docBlob(doc);
@@ -5654,8 +5648,8 @@ async function ragIndexar(doc, texto){
       texto = await extractTextTablas(b, doc.filename);
     }
     if((texto||'').trim().length < 50) return false;
-    await ragLlamar({ accion:'indexar', doc_id:ragDocId(doc), texto,
-                      estudio_id:doc.estudioId||'', paciente_id:doc.pacienteId||'',
+    await ragLlamar({ accion:'indexar', doc_id:ragDocId(doc), source_doc_id:doc.id, texto,
+                      estudio_id:doc.estudioId||'',
                       titulo:doc.filename||'', tipo:doc.tipo||'' });
     doc.ragIndexado = new Date().toISOString();
     try{ await Store.upsert('docs', doc); }catch(e){}
@@ -5678,13 +5672,14 @@ async function ragIndexarLista(docs, elEstado){
 
 async function ragBorrar(doc){
   if(!ragActivo()) return;
-  try{ await ragLlamar({ accion:'borrar', doc_id:ragDocId(doc) }); }catch(e){}
+  try{ await ragLlamar({ accion:'borrar', doc_id:ragDocId(doc), source_doc_id:doc.id, estudio_id:doc.estudioId||'' }); }catch(e){}
 }
 
 /* consulta con recuperación: devuelve { a, citas } como el resto del panel */
 async function ragPreguntar(pregunta, filtros){
-  const j = await ragLlamar(Object.assign({ accion:'preguntar', pregunta,
+  const scope = ZondaClinicalRag.clinicalQueryPayload(Object.assign({ accion:'preguntar', pregunta,
     preambulo:'Respondé en español, usando únicamente los fragmentos recuperados y sin agregar información externa.' }, filtros||{}));
+  const j = ZondaClinicalRag.requireCitedClinicalAnswer(await ragLlamar(scope), clinicalDocsOf(scope.estudio_id));
   if(j.sinRespuesta && !j.respuesta)
     throw new Error(T('El buscador no encontró contenido para responder. Puede que los documentos todavía se estén indexando.'));
   return { a: j.respuesta || T('Sin respuesta.'), citas: j.citas || [] };
@@ -5794,7 +5789,7 @@ $('btnRagList').addEventListener('click', async ()=>{
 $('btnRagIndexAll').addEventListener('click', async ()=>{
   const m = $('ragMsg');
   const stId = $('stId') ? $('stId').value : '';
-  const docs = stId ? studyDocsOf(stId) : (DB.docs||[]).filter(d=>d.estudioId && d.tipo!=='contrato');
+  const docs = stId ? clinicalDocsOf(stId) : [];
   if(!docs.length){ m.style.color='var(--warn)'; m.textContent = T('No hay documentos para indexar. Abrí un estudio con documentos adjuntos.'); return; }
   if(!CFG.ragOn){ m.style.color='var(--warn)'; m.textContent = T('Activá primero la casilla de búsqueda documental.'); return; }
   let ok=0, mal=0;
@@ -5809,9 +5804,10 @@ $('btnRagIndexAll').addEventListener('click', async ()=>{
                   ' '+T('Google tarda unos minutos en procesarlos antes de poder consultarlos.');
 });
 
-/* ================= PUENTE CON NOTEBOOKLM =================
-   NotebookLM (hoy «Gemini Notebook») no tiene API pública: solo la versión
-   Enterprise de Google Cloud la expone. No se puede consultar desde acá.
+/* ================= PUENTE CON GEMINI NOTEBOOK =================
+   La API Preview de Gemini Notebook Enterprise administra notebooks y fuentes,
+   pero no publica un método de conversación/RAG equivalente a la interfaz.
+   Por eso Zonda no simula una dependencia directa ni envía datos de pacientes.
    Lo que sí se puede es sacarle provecho sin depender de la IA de Zonda:
    la app arma la consulta con el formato exacto que necesita, se pega en
    NotebookLM —que ya tiene el protocolo cargado y lo lee mejor que nadie— y
@@ -6272,9 +6268,9 @@ function openCiModal(docId){
   ciModalShow(CI_SUGERIDAS);
 }
 
-/* consulta sobre el protocolo y demás documentos del estudio (sin el CI) */
+/* consulta sobre las fuentes clínicas permitidas del estudio (sin el CI) */
 function openStudyAsk(stId){
-  const docs = studyDocsOf(stId).filter(d=>d.tipo!=='ci');
+  const docs = clinicalDocsOf(stId).filter(d=>d.tipo!=='ci');
   if(!docs.length){ toast(T('Este estudio no tiene documentos adjuntos aparte del CI. Adjuntá el protocolo en «Documentos del estudio».')); return; }
   /* el protocolo primero: es la fuente principal */
   docs.sort((a,b)=> (a.tipo==='protocolo'?0:1) - (b.tipo==='protocolo'?0:1));
@@ -6332,7 +6328,7 @@ function renderCiChat(){
       '<div style="white-space:pre-wrap;padding:6px 0 0 4px">'+esc(m.a)+'</div>'+
       citas.filter(c=>c && (c.cita||'').trim()).map(c=>
         '<div class="small muted" style="border-left:3px solid var(--line);padding-left:8px;margin-top:5px">« '+esc(c.cita)+' »'+
-        (c.documento ? ' <b>— '+esc(c.documento)+'</b>' : '')+'</div>').join('')+
+        (c.documento ? ' <b>— '+esc(c.documento)+(c.pagina?' · pág. '+esc(String(c.pagina)):'')+'</b>' : '')+'</div>').join('')+
     '</div>';
   }).join('');
   $('ciChat').scrollTop = $('ciChat').scrollHeight;
@@ -6371,10 +6367,10 @@ async function aiAskDocs(fuentes, pregunta){
     cuerpo+'\n\n'+
     'PREGUNTA: '+pregunta+'\n\n'+
     'Respondé ÚNICAMENTE con este objeto JSON:\n'+
-    '{"respuesta":"…","citas":[{"documento":"nombre del archivo","cita":"fragmento textual copiado literalmente (máximo 40 palabras)"}]}\n\n'+
+    '{"respuesta":"…","citas":[{"documento":"nombre del archivo","pagina":12,"cita":"fragmento textual copiado literalmente (máximo 40 palabras)"}]}\n\n'+
     'Reglas:\n'+
     '- No uses conocimiento externo ni supuestos: solo lo que dicen los documentos.\n'+
-    '- Cada afirmación de la respuesta debe estar respaldada por al menos una cita textual, indicando en "documento" el nombre del archivo del que sale.\n'+
+    '- Cada afirmación debe estar respaldada por una cita textual con nombre exacto del documento y número de página indicado por el marcador «PÁGINA».\n'+
     '- Si los documentos no responden la pregunta, "respuesta" debe decir que los documentos no lo especifican y "citas" debe quedar vacío.\n'+
     '- Si dos documentos se contradicen, señalalo y citá los dos.\n'+
     '- Escribí la respuesta en '+AI_LANG_NAME()+', de forma clara y breve.';
@@ -6388,17 +6384,23 @@ async function aiAskDocs(fuentes, pregunta){
   if(recortados.length) o.respuesta += '\n\n⚠ '+T('Por longitud se leyó solo una parte de')+': '+recortados.join(', ')+'.';
   let citas = Array.isArray(o.citas) ? o.citas : [];
   if(!citas.length && o.cita) citas = [{ documento: fuentes.length===1 ? fuentes[0].nombre : '', cita:o.cita }];
-  citas = citas.map(c=>({ documento:String((c&&c.documento)||'').slice(0,120), cita:String((c&&c.cita)||'').slice(0,600) }))
-               .filter(c=>c.cita.trim()).slice(0,8);
+  citas = ZondaClinicalRag.verifiedCitations(citas.map(c=>({
+    documento:String((c&&c.documento)||'').slice(0,120), pagina:c&&c.pagina,
+    cita:String((c&&c.cita)||'').slice(0,600)
+  })), CI_DOCS).filter(c=>c.cita.trim()).slice(0,8);
+  if(!citas.length) throw new Error(T('La respuesta no trajo una cita verificable con documento y página; no se presenta como respuesta clínica confiable.'));
   return { a:String(o.respuesta), citas, asistida:true, aiMeta:res.meta };
 }
 
 /* búsqueda sin IA en varios documentos, indicando el origen de cada hallazgo */
 function docsSearchHits(fuentes, pregunta){
   const out = [];
-  for(const f of fuentes)
-    for(const hit of ciSearch(f.texto, pregunta))
-      out.push({ documento:f.nombre, cita:hit });
+  for(const f of fuentes){
+    const paginas=String(f.texto||'').split(/=== PÁGINA (\d+) ===/);
+    for(let i=1;i<paginas.length;i+=2)
+      for(const hit of ciSearch(paginas[i+1]||'', pregunta))
+        out.push({ documento:f.nombre, pagina:parseInt(paginas[i],10), cita:hit });
+  }
   return out.slice(0,6);
 }
 
@@ -6447,6 +6449,7 @@ async function askCi(){
       CI_HIST.push({ q, a:res.a+nota, citas:res.citas, asistida:true, aiMeta:res.aiMeta });
     } else {
       const hits = docsSearchHits(fuentes, q);
+      if(!hits.length) throw new Error(T('No hay una fuente verificable con documento y página para responder de forma confiable.'));
       CI_HIST.push({ q,
         a: (hits.length
             ? T(CI_MODE==='ci' ? 'Párrafos del consentimiento relacionados con tu pregunta:' : 'Párrafos de los documentos relacionados con tu pregunta:')
@@ -6966,7 +6969,7 @@ async function flowRunTexto(blob, filename, pasteTxt, st){
 /* --- modal --- */
 function openFlowModal(){
   const stId = $('stId').value;
-  const docs = stId ? studyDocsOf(stId) : [];
+  const docs = stId ? clinicalDocsOf(stId) : [];
   $('flowDoc').innerHTML = docs.length
     ? docs.map(dd=>'<option value="'+dd.id+'">'+esc(DOC_TIPOS[dd.tipo]||dd.tipo)+' — '+esc(dd.filename)+'</option>').join('')
     : '<option value="">'+T('(este estudio no tiene documentos adjuntos)')+'</option>';
@@ -10351,7 +10354,7 @@ async function factDesindexarContratos(contratos){
   for(const doc of contratos.filter(d=>d.ragIndexado && !FACT_RAG_CLEANUP.has(d.id))){
     FACT_RAG_CLEANUP.add(doc.id);
     try{
-      await ragLlamar({ accion:'borrar', doc_id:ragDocId(doc) });
+      await ragLlamar({ accion:'borrar', doc_id:ragDocId(doc), source_doc_id:doc.id, estudio_id:doc.estudioId||'' });
       const limpio=Object.assign({},doc); delete limpio.ragIndexado;
       await Store.upsert('docs',limpio);
     }catch(e){ FACT_RAG_CLEANUP.delete(doc.id); }
@@ -10921,7 +10924,7 @@ const AIR_DEFS = {
 let AIR_TIPO = null, AIR_RES = null;
 
 function airDocsDe(stId){
-  return studyDocsOf(stId).filter(d=>d.tipo!=='ci')
+  return clinicalDocsOf(stId).filter(d=>d.tipo!=='ci')
     .sort((a,b)=>(a.tipo==='protocolo'?0:1)-(b.tipo==='protocolo'?0:1));
 }
 function openAirep(tipo){
@@ -10967,6 +10970,7 @@ async function airGenerate(){
   const stt = $('airStatus'), btn = $('btnAirGen');
   btn.disabled = true; stt.style.color='var(--muted)';
   try{
+    if(def.todos) throw new Error(T('Las consultas clínicas cruzadas están deshabilitadas: consultá un protocolo por vez para preservar el aislamiento de fuentes.'));
     /* documentos a leer */
     const lista = def.todos
       ? DB.studies.flatMap(s=>airDocsDe(s.id).slice(0,2).map(d=>({d, st:s})))
@@ -11004,18 +11008,30 @@ async function airGenerate(){
     const prompt = 'Sos un asistente del equipo de investigación clínica. '+def.pide+ctx+
       '\n\nDOCUMENTOS DEL ESTUDIO:'+cuerpo+
       '\n\nDevolvé ÚNICAMENTE este objeto JSON:\n'+
-      '{"titulo":"…","secciones":[{"titulo":"…","texto":"…","citas":[{"documento":"nombre del archivo","cita":"fragmento textual copiado literalmente (máximo 40 palabras)"}]}]}\n\n'+
+      '{"titulo":"…","secciones":[{"titulo":"…","texto":"…","citas":[{"documento":"nombre del archivo","pagina":12,"cita":"fragmento textual copiado literalmente (máximo 40 palabras)"}]}]}\n\n'+
       'Reglas:\n'+
       '- Usá ÚNICAMENTE el texto de los documentos incluidos. Nada de conocimiento externo ni supuestos.\n'+
-      '- Cada sección debe llevar al menos una cita textual con el nombre del archivo del que sale.\n'+
+      '- Cada sección debe llevar al menos una cita textual con el nombre exacto del archivo y la página indicada por el marcador «PÁGINA».\n'+
       '- Si un punto no figura en los documentos, escribilo explícitamente («no lo especifica») y dejá "citas" vacío en esa sección.\n'+
       '- "texto" en '+AI_LANG_NAME()+', claro y breve, con viñetas separadas por saltos de línea cuando ayude.';
     if(ragActivo()){
       try{
-        const rr = await ragJson(def.pide+ctx, { estudio_id: def.todos ? '' : ($('airStudy').value||''), max_fragmentos: 30 },
-          '{"titulo":"...","secciones":[{"titulo":"...","texto":"...","citas":[{"documento":"archivo","cita":"fragmento textual"}]}]}');
+        const rr = await ragJson(def.pide+ctx, { estudio_id: $('airStudy').value||'', max_fragmentos: 25 },
+          '{"titulo":"...","secciones":[{"titulo":"...","texto":"...","citas":[{"documento":"archivo","pagina":12,"cita":"fragmento textual"}]}]}');
         const oR = parseAiObjectLoose(rr.texto);
-        if(oR && Array.isArray(oR.secciones) && oR.secciones.length) return oR;
+        if(oR && Array.isArray(oR.secciones) && oR.secciones.length){
+          AIR_RES={ asistida:true, aiMeta:{via:'rag'}, titulo:String(oR.titulo||T(def.nombre)),
+            estudio:st.codigo||'', cortada:false, fallidos,
+            secciones:oR.secciones.map(s=>({ titulo:String((s&&s.titulo)||''), texto:String((s&&s.texto)||''),
+              citas:ZondaClinicalRag.verifiedCitations(Array.isArray(s&&s.citas)?s.citas:[],lista.map(x=>x.d))
+            })).filter(s=>s.titulo||s.texto) };
+          if(AIR_RES.secciones.some(s=>s.texto&&!/no lo especifica/i.test(s.texto)&&!s.citas.length)){
+            AIR_RES=null;
+            throw new Error(T('El informe no trajo citas verificables con documento y página para todas sus afirmaciones clínicas.'));
+          }
+          renderAirep(); stt.style.color='var(--ok)'; stt.textContent='✔ '+AIR_RES.secciones.length+' '+T('secciones')+'.';
+          return;
+        }
         if(ragEstricto()) throw new Error(T('El índice no devolvió contenido para este informe.'));
       }catch(eR){
         if(ragEstricto() || !aiConfigured()) throw eR;
@@ -11042,11 +11058,16 @@ async function airGenerate(){
       fallidos,
       secciones: o.secciones.map(s=>({
         titulo: String((s&&s.titulo)||''), texto: String((s&&s.texto)||''),
-        citas: (Array.isArray(s&&s.citas)?s.citas:[]).map(c=>({
-          documento:String((c&&c.documento)||'').slice(0,120), cita:String((c&&c.cita)||'').slice(0,600)
-        })).filter(c=>c.cita.trim()).slice(0,6)
+        citas: ZondaClinicalRag.verifiedCitations((Array.isArray(s&&s.citas)?s.citas:[]).map(c=>({
+          documento:String((c&&c.documento)||'').slice(0,120), pagina:c&&c.pagina,
+          cita:String((c&&c.cita)||'').slice(0,600)
+        })), lista.map(x=>x.d)).filter(c=>c.cita.trim()).slice(0,6)
       })).filter(s=>s.titulo||s.texto)
     };
+    if(AIR_RES.secciones.some(s=>s.texto&&!/no lo especifica/i.test(s.texto)&&!s.citas.length)){
+      AIR_RES=null;
+      throw new Error(T('El informe no trajo citas verificables con documento y página para todas sus afirmaciones clínicas.'));
+    }
     renderAirep();
     stt.style.color='var(--ok)';
     stt.textContent = '✔ '+AIR_RES.secciones.length+' '+T('secciones')+'.'+
@@ -11066,7 +11087,7 @@ function renderAirep(){
       '<div style="font-weight:600;color:var(--acc-dark)">'+esc(s.titulo)+'</div>'+
       '<div style="white-space:pre-wrap;padding:4px 0 0 2px">'+esc(s.texto)+'</div>'+
       s.citas.map(c=>'<div class="small muted" style="border-left:3px solid var(--line);padding-left:8px;margin-top:4px">'+
-        '« '+esc(c.cita)+' »'+(c.documento?' <b>— '+esc(c.documento)+'</b>':'')+'</div>').join('')+
+        '« '+esc(c.cita)+' »'+(c.documento?' <b>— '+esc(c.documento)+(c.pagina?' · pág. '+esc(String(c.pagina)):'')+'</b>':'')+'</div>').join('')+
     '</div>').join('')+'</div>';
 }
 function airReportHtml(){
@@ -11075,7 +11096,7 @@ function airReportHtml(){
     '<b>'+T('Fecha del informe:')+'</b> '+fmtDate(todayISO())+'</div>'+
     AIR_RES.secciones.map(s=>'<h2>'+esc(s.titulo)+'</h2><div style="white-space:pre-wrap">'+esc(s.texto)+'</div>'+
       s.citas.map(c=>'<div style="font-size:11px;color:#4d5c6b;border-left:2px solid #ccc;padding-left:6px;margin:4px 0">'+
-        '« '+esc(c.cita)+' » — <b>'+esc(c.documento)+'</b></div>').join('')).join('')+
+        '« '+esc(c.cita)+' » — <b>'+esc(c.documento)+(c.pagina?' · pág. '+esc(String(c.pagina)):'')+'</b></div>').join('')).join('')+
     '<div class="foot">'+T('Ficha generada por Zonda a partir de los documentos del estudio, con IA. Es un apoyo de trabajo: verificá contra el protocolo original antes de usarla.')+'</div>';
 }
 function airReportText(){
@@ -11083,7 +11104,7 @@ function airReportText(){
   const L = [AIR_RES.titulo.toUpperCase(), 'BORRADOR GENERADO CON ASISTENCIA DE IA — REQUIERE REVISIÓN HUMANA', AIR_RES.estudio+' — '+fmtDate(todayISO()), ''];
   for(const s of AIR_RES.secciones){
     L.push('== '+s.titulo+' ==', s.texto);
-    s.citas.forEach(c=>L.push('   « '+c.cita+' » — '+c.documento));
+    s.citas.forEach(c=>L.push('   « '+c.cita+' » — '+c.documento+(c.pagina?' · pág. '+c.pagina:'')));
     L.push('');
   }
   L.push(T('Generado por Zonda a partir de los documentos del estudio. Verificá contra el protocolo original.'));
