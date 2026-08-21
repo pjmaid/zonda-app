@@ -43,7 +43,8 @@ test('excluye contratos, facturas, administrativos e historias clínicas', () =>
   assert.deepEqual(policy.clinicalDocuments(docs, 'imvt').map(d => d.tipo), ['protocolo','manual','enmienda','ci']);
   assert.throws(() => policy.clinicalQueryPayload({ estudio_id:'imvt', paciente_id:'p1' }), /PATIENT_DATA_NOT_ALLOWED/);
   assert.match(ragFunction, /ALLOWED_TYPES=\["protocolo","manual","enmienda","ci"\]/);
-  assert.match(ragFunction, /structData\.org_id.*structData\.estudio_id.*structData\.tipo/);
+  assert.match(ragFunction, /return`org_id: ANY.*estudio_id: ANY.*tipo: ANY/);
+  assert.doesNotMatch(ragFunction, /return`structData\.org_id/);
   assert.match(ragFunction, /if\(input\?\.paciente_id\)throw new Error\("PATIENT_DATA_NOT_ALLOWED"\)/);
   assert.match(ragFunction, /rest\/v1\/ec_docs\?select=id,data/);
   assert.match(ragFunction, /data\.estudioId!==studyId.*allowedTypes\.has.*data\.pacienteId/);
