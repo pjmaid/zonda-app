@@ -77,6 +77,8 @@ Después del despliegue, ingresar a Zonda como usuario autenticado y usar **Conf
 
 Para habilitar la protección de contratos, aplicar también `supabase/migrations/20260816_contratos_solo_facturacion.sql` y volver a desplegar `supabase/functions/ia`.
 
+La arquitectura y las reglas de aislamiento de la recuperación clínica con Gemini/Vertex están documentadas en `docs/GEMINI_DOCUMENT_RETRIEVAL.md`. La API de Gemini Notebook Enterprise no se usa como si ofreciera una consulta RAG: hoy sus endpoints públicos de notebooks son de administración, no de conversación.
+
 ## Administración de usuarios
 
 La función usa los secretos propios de Supabase (`SUPABASE_URL`, `SUPABASE_ANON_KEY` y `SUPABASE_SERVICE_ROLE_KEY`), que el proyecto inyecta automáticamente. Desplegarla antes que el cliente web:
