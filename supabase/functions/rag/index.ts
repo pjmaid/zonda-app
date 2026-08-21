@@ -70,7 +70,7 @@ function prepareText(text:string){
 }
 function truncateUtf8(text:string){const bytes=new TextEncoder().encode(text);return bytes.length<=950000?text:new TextDecoder().decode(bytes.slice(0,950000));}
 function escapeFilter(value:string){return value.replace(/\\/g,"\\\\").replace(/"/g,'\\"');}
-function clinicalFilter(orgId:string,studyId:string){const types=ALLOWED_TYPES.map(t=>`"${t}"`).join(",");return`structData.org_id: ANY("${escapeFilter(orgId)}") AND structData.estudio_id: ANY("${escapeFilter(studyId)}") AND structData.tipo: ANY(${types})`;}
+function clinicalFilter(orgId:string,studyId:string){const types=ALLOWED_TYPES.map(t=>`"${t}"`).join(",");return`org_id: ANY("${escapeFilter(orgId)}") AND estudio_id: ANY("${escapeFilter(studyId)}") AND tipo: ANY(${types})`;}
 
 function deepValues(value:unknown,re:RegExp,out:unknown[]=[]){if(!value||typeof value!=="object")return out;for(const[k,v]of Object.entries(value as Record<string,unknown>)){if(re.test(k))out.push(v);deepValues(v,re,out);}return out;}
 function pageFrom(reference:unknown){for(const v of deepValues(reference,/page(?:Identifier|Number)?$/i)){const p=Number.parseInt(String(v||"").replace(/\D+/g,""),10);if(p>0)return p;}for(const t of deepValues(reference,/content|text/i).map(String)){const m=t.match(/\[PÁGINA\s+(\d+)\]/i);if(m)return Number.parseInt(m[1],10);}return null;}
