@@ -7,6 +7,7 @@ const root = path.resolve(__dirname, '..');
 const policy = require(path.join(root, 'clinical-rag-policy.js'));
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const ragFunction = fs.readFileSync(path.join(root, 'supabase/functions/rag/index.ts'), 'utf8');
+const pdfVendor = path.join(root, 'vendor', 'pdfjs-3.11.174');
 
 test('nunca solicita más de 25 resultados documentales', () => {
   assert.equal(policy.MAX_RETURN_RESULTS, 25);
@@ -66,4 +67,21 @@ test('criterios, medicamentos y tareas siguen siendo borradores antes del guarda
   assert.match(html, /\$\('btnApplyImport'\)\.addEventListener/);
   assert.match(html, /Datos aplicados al formulario\. Revisá contra el protocolo y guardá el estudio/);
   assert.match(html, /EDIT_VISITAS = actuales/);
+});
+
+test('PDF.js y su worker se sirven localmente con licencia', () => {
+  assert.match(html, /loadScript\('\/vendor\/pdfjs-3\.11\.174\/pdf\.min\.js'\)/);
+  assert.match(html, /workerSrc = '\/vendor\/pdfjs-3\.11\.174\/pdf\.worker\.min\.js'/);
+  assert.doesNotMatch(html, /cdnjs\.cloudflare\.com\/ajax\/libs\/pdf\.js/);
+  for (const file of ['pdf.min.js','pdf.worker.min.js','LICENSE','README.md']) {
+    assert.equal(fs.existsSync(path.join(pdfVendor, file)), true, file+' debe existir');
+  }
+});
+
+test('la indexación distingue descarga, extracción y envío sin exponer errores crudos', () => {
+  assert.match(html, /return ragFallo\('descarga'\)/);
+  assert.match(html, /catch\(e\)\{ return ragFallo\('extraccion'\); \}/);
+  assert.match(html, /catch\(e\)\{ return ragFallo\('envio'\); \}/);
+  assert.match(html, /ragResumenFallos\(r\.errores\)/);
+  assert.doesNotMatch(html, /ragResumenFallos[\s\S]{0,800}e\.message/);
 });

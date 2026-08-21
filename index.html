@@ -4795,8 +4795,8 @@ function loadScript(src){
 }
 async function ensurePdfJs(){
   if(window.pdfjsLib) return;
-  await loadScript('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js');
-  window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  await loadScript('/vendor/pdfjs-3.11.174/pdf.min.js');
+  window.pdfjsLib.GlobalWorkerOptions.workerSrc = '/vendor/pdfjs-3.11.174/pdf.worker.min.js';
 }
 async function ensureMammoth(){
   if(window.mammoth) return;
@@ -5637,37 +5637,51 @@ async function ragLlamar(payload){
 /* identificador estable del documento dentro del índice */
 function ragDocId(doc){ return 'doc-' + String(doc.id||'').replace(/[^A-Za-z0-9_-]/g,'').slice(0,50); }
 
-/* sube un documento al índice; devuelve true si quedó enviado */
-async function ragIndexar(doc, texto){
-  if(!ragActivo()) return false;
-  if(!ZondaClinicalRag.isClinicalDocument(doc)) return false;
+/* Diagnóstico acotado: informa la etapa, nunca el contenido ni el error crudo. */
+function ragFallo(etapa){ return { ok:false, etapa }; }
+function ragResumenFallos(errores){
+  const conteo = {};
+  for(const e of (errores||[])) conteo[e.etapa] = (conteo[e.etapa]||0)+1;
+  const nombres = { configuracion:'configuración', validacion:'validación', descarga:'descarga', extraccion:'extracción', envio:'envío' };
+  const partes = Object.keys(conteo).map(k=>conteo[k]+' '+(nombres[k]||'procesamiento'));
+  return partes.length ? ' '+T('Diagnóstico')+': '+partes.join(', ')+'.' : '';
+}
+
+/* sube un documento al índice y conserva sólo la etapa segura si falla */
+async function ragIndexarDetalle(doc, texto){
+  if(!ragActivo()) return ragFallo('configuracion');
+  if(!ZondaClinicalRag.isClinicalDocument(doc)) return ragFallo('validacion');
+  if(!texto){
+    let b = null;
+    try{ b = await docBlob(doc); }catch(e){}
+    if(!b) return ragFallo('descarga');
+    try{ texto = await extractTextTablas(b, doc.filename); }
+    catch(e){ return ragFallo('extraccion'); }
+  }
+  if((texto||'').trim().length < 50) return ragFallo('extraccion');
   try{
-    if(!texto){
-      const b = await docBlob(doc);
-      if(!b) return false;
-      texto = await extractTextTablas(b, doc.filename);
-    }
-    if((texto||'').trim().length < 50) return false;
     await ragLlamar({ accion:'indexar', doc_id:ragDocId(doc), source_doc_id:doc.id, texto,
                       estudio_id:doc.estudioId||'',
                       titulo:doc.filename||'', tipo:doc.tipo||'' });
     doc.ragIndexado = new Date().toISOString();
     try{ await Store.upsert('docs', doc); }catch(e){}
-    return true;
-  }catch(e){ return false; }
+    return { ok:true };
+  }catch(e){ return ragFallo('envio'); }
 }
+async function ragIndexar(doc, texto){ return (await ragIndexarDetalle(doc, texto)).ok; }
 
 /* indexa una lista de documentos mostrando el avance en un elemento de estado */
 async function ragIndexarLista(docs, elEstado){
-  let ok=0, mal=0;
+  let ok=0, mal=0; const errores=[];
   for(let i=0;i<docs.length;i++){
     if(elEstado){
       elEstado.style.color='var(--muted)';
       elEstado.textContent = T('Indexando')+' '+(i+1)+'/'+docs.length+': '+docs[i].filename+'...';
     }
-    if(await ragIndexar(docs[i])) ok++; else mal++;
+    const resultado = await ragIndexarDetalle(docs[i]);
+    if(resultado.ok) ok++; else { mal++; errores.push(resultado); }
   }
-  return { ok, mal };
+  return { ok, mal, errores };
 }
 
 async function ragBorrar(doc){
@@ -5748,7 +5762,7 @@ $('btnEvalIndex').addEventListener('click', async ()=>{
   btn.disabled = false;
   stEl.style.color = r.mal ? 'var(--warn)' : 'var(--ok)';
   stEl.textContent = (r.mal?'⚠ ':'✔ ')+r.ok+' '+T('documento(s) enviados al índice')+
-    (r.mal? ', '+r.mal+' '+T('no se pudieron leer.') : '.')+' '+
+    (r.mal? ', '+r.mal+' '+T('no se pudieron procesar.')+ragResumenFallos(r.errores) : '.')+' '+
     T('Google tarda unos minutos en procesarlos: esperá y volvé a evaluar.');
   openEvalModal();
 });
@@ -5765,7 +5779,7 @@ $('btnNarrIndex').addEventListener('click', async ()=>{
   btn.disabled = false;
   stEl.style.color = r.mal ? 'var(--warn)' : 'var(--ok)';
   stEl.textContent = (r.mal?'⚠ ':'✔ ')+r.ok+' '+T('documento(s) enviados al índice')+
-    (r.mal? ', '+r.mal+' '+T('no se pudieron leer.') : '.')+' '+
+    (r.mal? ', '+r.mal+' '+T('no se pudieron procesar.')+ragResumenFallos(r.errores) : '.')+' '+
     T('Google tarda unos minutos en procesarlos: esperá y volvé a redactar.');
 });
 
@@ -5792,15 +5806,10 @@ $('btnRagIndexAll').addEventListener('click', async ()=>{
   const docs = stId ? clinicalDocsOf(stId) : [];
   if(!docs.length){ m.style.color='var(--warn)'; m.textContent = T('No hay documentos para indexar. Abrí un estudio con documentos adjuntos.'); return; }
   if(!CFG.ragOn){ m.style.color='var(--warn)'; m.textContent = T('Activá primero la casilla de búsqueda documental.'); return; }
-  let ok=0, mal=0;
-  for(let i=0;i<docs.length;i++){
-    m.style.color='var(--muted)';
-    m.textContent = T('Indexando')+' '+(i+1)+'/'+docs.length+': '+docs[i].filename+'...';
-    if(await ragIndexar(docs[i])) ok++; else mal++;
-  }
-  m.style.color = mal ? 'var(--warn)' : 'var(--ok)';
-  m.textContent = (mal?'⚠ ':'✔ ')+ok+' '+T('documento(s) enviados al índice')+
-                  (mal? ', '+mal+' '+T('no se pudieron leer.') : '.')+
+  const r = await ragIndexarLista(docs, m);
+  m.style.color = r.mal ? 'var(--warn)' : 'var(--ok)';
+  m.textContent = (r.mal?'⚠ ':'✔ ')+r.ok+' '+T('documento(s) enviados al índice')+
+                  (r.mal? ', '+r.mal+' '+T('no se pudieron procesar.')+ragResumenFallos(r.errores) : '.')+
                   ' '+T('Google tarda unos minutos en procesarlos antes de poder consultarlos.');
 });
 

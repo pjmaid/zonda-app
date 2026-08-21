@@ -22,7 +22,7 @@ test('los contratos se administran solamente desde Facturación', () => {
   assert.match(html, /id="btnFactContratoUpload"/);
   assert.match(html, /function studyDocsOf\(studyId\).*!esDocumentoFinanciero\(d\)/);
   assert.match(html, /const list = studyDocsOf\(stId\)/);
-  assert.match(html, /if\(!ZondaClinicalRag\.isClinicalDocument\(doc\)\) return false/);
+  assert.match(html, /if\(!ZondaClinicalRag\.isClinicalDocument\(doc\)\) return ragFallo\('validacion'\)/);
   assert.match(html, /factDesindexarContratos\(contratos\)/);
 });
 
