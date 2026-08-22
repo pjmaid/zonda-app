@@ -560,7 +560,7 @@ details>summary{color:var(--acc-dark)}
     <div id="toolsMenu"></div>
   </section>
 
-  <!-- ==== REGISTRO (motor genérico) ==== -->
+  <!-- ==== EDITOR COMPARTIDO DE REGISTROS ==== -->
   <section id="view-log" class="view hidden">
     <div class="toolbar">
       <h2 style="margin:0" id="logTitle">Registro</h2>
@@ -2601,7 +2601,9 @@ function showView(id){
   $$('.view').forEach(v=>v.classList.add('hidden'));
   $(id).classList.remove('hidden');
   if(typeof applyLang==='function') setTimeout(applyLang, 0);
-  const tab = TAB_OF_VIEW[id];
+  const tab = id==='view-log' && window.ZONDA_LOG_PARENT_TAB
+    ? window.ZONDA_LOG_PARENT_TAB
+    : TAB_OF_VIEW[id];
   $$('#tabs button').forEach(b=>b.classList.toggle('active', b.dataset.tab===tab));
   window.scrollTo(0,0);
 }
@@ -9520,12 +9522,19 @@ function renderTools(){
   $('btnFeatOpen').addEventListener('click', ()=>{ renderFeatures(); showView('view-features'); });
 }
 $('toolsStudy').addEventListener('change', ()=>{ if(LOG_TIPO) renderLog(); });
-$('btnBackTools').addEventListener('click', ()=>{ renderTools(); showView('view-tools'); });
+$('btnBackTools').addEventListener('click', ()=>{
+  if(window.ZONDA_LOG_PARENT_TAB==='fact'){
+    renderFact(); showView('view-fact'); return;
+  }
+  renderTools(); showView('view-tools');
+});
 $('btnBackTools2').addEventListener('click', ()=>{ renderTools(); showView('view-tools'); });
 
 /* ---- un módulo de registro ---- */
 function openLog(tipo){
   LOG_TIPO = tipo; LOG_EDIT = null;
+  /* Tarifas pertenece exclusivamente a Facturación aunque reutilice este editor. */
+  window.ZONDA_LOG_PARENT_TAB = tipo==='tarifas' ? 'fact' : 'tools';
   const def = LOG_DEFS[tipo];
   $('logTitle').textContent = def.icon+' '+T(def.nombre);
   $('logHelp').textContent = T(def.ayuda);
@@ -10608,7 +10617,7 @@ $('btnFactLeer').addEventListener('click', async ()=>{
     const porDocumento=Math.max(2000,Math.floor(topeDocumentos/Math.max(1,legibles.length)));
     const corpusTexto=legibles.map(({doc,texto},i)=>
       'DOCUMENTO CON TEXTO '+(i+1)+': '+doc.filename+(doc.version?' — '+doc.version:'')+'\n<<<\n'+
-      texto.slice(0,porDocumento)+'\n>>>'
+      ZondaBillingAI.contractTariffExcerpt(texto,porDocumento)+'\n>>>'
     ).join('\n\n');
     let content=[{t:'text',text:'CONJUNTO COMPLETO DE CONTRATOS, PRESUPUESTOS Y ADENDAS DEL ESTUDIO:\n\n'+
       (corpusTexto||'Los documentos se aportan como imágenes escaneadas a continuación.')}];
@@ -10641,6 +10650,8 @@ $('btnFactLeer').addEventListener('click', async ()=>{
       '"condiciones":{"plazoPago":"…","facturacion":"…","notas":"…","cita":"archivo y versión: fragmento textual"}}\n\n'+
       'Reglas:\n'+
       '- Usá ÚNICAMENTE lo que dicen los documentos provistos. No estimes ni completes valores que no figuren.\n'+
+      '- Localizá la tabla o anexo económico y transcribí TODAS sus filas, en el mismo orden: no omitas visitas intermedias, repetidas, extensiones ni seguimientos.\n'+
+      '- Devolvé un elemento de "visitas" por cada fila de visita de la tabla, aunque el nombre no coincida exactamente con el sistema.\n'+
       '- Compará el contrato original con todas las adendas. Aplicá un valor o condición posterior únicamente cuando la adenda indique expresamente que modifica lo anterior.\n'+
       '- Si existen contradicciones no resueltas, explicalas en "notas" y no elijas un valor sin fundamento.\n'+
       '- "valor" es el número sin símbolos ni separadores de miles (usá punto decimal).\n'+
@@ -10655,7 +10666,7 @@ $('btnFactLeer').addEventListener('click', async ()=>{
       purpose:'contrato_tarifario',
       system:'Respondés exclusivamente con un objeto JSON válido, sin texto antes ni después y sin bloques de código.',
       content: [{t:'text',text:pide}].concat(content),
-      maxTokens: 6000
+      maxTokens: 8000
     });
     const o = parseAiObjectLoose(res.text);
     if(!o) throw new Error(T('La IA no devolvió un resultado interpretable.'));
@@ -10664,9 +10675,9 @@ $('btnFactLeer').addEventListener('click', async ()=>{
       estudioId:stId,
       aiMeta:res.meta,
       moneda: String(o.moneda||''),
-      visitas: ZondaBillingAI.gateTariffRows((Array.isArray(o.visitas)?o.visitas:[]).map(v=>({
+      visitas: ZondaBillingAI.reconcileTariffRows((Array.isArray(o.visitas)?o.visitas:[]).map(v=>({
         nombre:String((v&&v.nombre)||'').trim(), valor:(v&&v.valor!==undefined&&v.valor!==null&&!isNaN(parseFloat(v.valor)))?parseFloat(v.valor):null,
-        cita:String((v&&v.cita)||'').slice(0,300) })).filter(v=>v.nombre),contratos,stId),
+        cita:String((v&&v.cita)||'').slice(0,300) })).filter(v=>v.nombre),st.visitas||[],contratos,stId),
       extras: ZondaBillingAI.gateTariffRows((Array.isArray(o.extras)?o.extras:[]).map(x=>({
         concepto:String((x&&x.concepto)||'').trim(), valor:(x&&!isNaN(parseFloat(x.valor)))?parseFloat(x.valor):null,
         cita:String((x&&x.cita)||'').slice(0,300) })).filter(x=>x.concepto),contratos,stId),
@@ -10676,8 +10687,10 @@ $('btnFactLeer').addEventListener('click', async ()=>{
     if(!FACT_PROP.visitas.length && !FACT_PROP.extras.length)
       throw new Error(T('No se encontró el tarifario en los contratos cargados. Revisá que alguno incluya el anexo de pagos.'));
     renderFactRevision();
-    stt.style.color='var(--ok)';
-    stt.textContent = '✔ '+FACT_PROP.visitas.length+' '+T('visitas')+' · '+FACT_PROP.extras.length+' '+T('conceptos extra')+'. '+T('Revisá antes de aplicar.');
+    const faltantes=FACT_PROP.visitas.filter(v=>v.faltante).length;
+    stt.style.color=faltantes?'var(--bad)':'var(--ok)';
+    stt.textContent = (faltantes?'⚠ ':'✔ ')+FACT_PROP.visitas.length+' '+T('visitas')+' · '+FACT_PROP.extras.length+' '+T('conceptos extra')+'. '+
+      (faltantes?faltantes+' '+T('visitas del estudio no fueron encontradas en la tabla contractual. Revisá el borrador.') : T('Tabla completa cotejada. Revisá antes de aplicar.'));
   }catch(e){
     stt.style.color='var(--bad)'; stt.textContent = '⚠ '+e.message;
   }finally{ btn.disabled = !factContratos($('factStudy').value).length || !aiConfigured(); }
@@ -10691,7 +10704,7 @@ function renderFactRevision(){
   const fila = (i,v)=>'<tr>'+
     '<td style="padding:3px 6px"><input type="text" data-fv="'+i+'" value="'+esc(v.nombre)+'" list="factVisitas"></td>'+
     '<td style="padding:3px 6px;width:110px"><input type="number" step="any" data-fval="'+i+'" value="'+(v.valor===null?'':v.valor)+'"></td>'+
-    '<td class="small muted" style="padding:3px 6px">'+(v.citaValida?'✓ « '+esc(v.cita)+' »':'<span style="color:var(--bad)">⚠ '+T('sin cita verificable')+'</span>')+'</td>'+
+    '<td class="small muted" style="padding:3px 6px">'+(v.citaValida?'✓ « '+esc(v.cita)+' »':'<span style="color:var(--bad)">⚠ '+T(v.faltante?'no encontrada en la tabla contractual':'sin valor o cita verificable')+'</span>')+'</td>'+
     '<td style="padding:3px 6px;width:30px"><input type="checkbox" data-fon="'+i+'" '+(v.citaValida?'checked':'disabled')+' style="width:auto"></td></tr>';
   $('factRevision').innerHTML =
     '<div class="banner warn">🤖 <b>Borrador generado con asistencia de IA — requiere revisión humana.</b></div>'+

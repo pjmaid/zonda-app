@@ -21,3 +21,10 @@ test('Facturación conserva las tarifas y su acceso principal', () => {
   assert.match(html, /<button data-tab="fact">💵 Facturación<\/button>/);
   assert.match(html, /function renderFact\(\)/);
 });
+
+test('el editor de tarifas conserva el contexto de Facturación y nunca vuelve a Herramientas', () => {
+  assert.match(html, /ZONDA_LOG_PARENT_TAB = tipo==='tarifas' \? 'fact' : 'tools'/);
+  assert.match(html, /id==='view-log' && window\.ZONDA_LOG_PARENT_TAB/);
+  assert.match(html, /if\(window\.ZONDA_LOG_PARENT_TAB==='fact'\)\{\s*renderFact\(\); showView\('view-fact'\); return;/);
+  assert.match(html, /openLog\('tarifas'\)/);
+});
