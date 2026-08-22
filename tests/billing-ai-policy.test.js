@@ -41,6 +41,27 @@ test('las filas del tarifario sin cita válida quedan bloqueadas antes de persis
   assert.match(html,/sin cita verificable/);
 });
 
+test('coteja la tabla contra todas las visitas del estudio y explicita las faltantes', () => {
+  const rows=policy.reconcileTariffRows([
+    {nombre:'Visita 1 (Inicio)',valor:100,cita:'Contrato GARDENIA.pdf, página 10'},
+    {nombre:'V3',valor:300,cita:'Contrato GARDENIA.pdf, página 10'}
+  ],[{nombre:'V1'},{nombre:'V2'},{nombre:'V3'}],docs,'study-a');
+  assert.deepEqual(rows.map(row=>row.nombre),['V1','V2','V3']);
+  assert.equal(rows[0].citaValida,true);
+  assert.equal(rows[1].faltante,true);
+  assert.equal(rows[1].citaValida,false);
+  assert.equal(rows[2].citaValida,true);
+  assert.equal(policy.visitKey('Visita 01 (Inicio)'),'v1');
+});
+
+test('conserva el sector tarifario aunque la tabla esté al final de un contrato largo', () => {
+  const text='INTRODUCCIÓN\n'+'x'.repeat(12000)+'\nANEXO TARIFARIO COMPLETO\nV1 100\nV2 200\nV12 900';
+  const excerpt=policy.contractTariffExcerpt(text,3000);
+  assert.match(excerpt,/ANEXO TARIFARIO COMPLETO/);
+  assert.match(excerpt,/V12 900/);
+  assert.ok(excerpt.length<=3000);
+});
+
 test('el tarifario y sus borradores nunca se reutilizan entre estudios', () => {
   assert.match(html,/function factTarifas\(stId\)\{\s*return logRows\('tarifas'\)\.filter\(r=>r\.estudioId===stId\)/);
   assert.match(html,/FACT_PROP && FACT_PROP\.estudioId!==stId/);
@@ -52,4 +73,7 @@ test('la interfaz carga la política y conserva toda salida como borrador revisa
   assert.match(html,/billing-ai-policy\.js/);
   assert.match(html,/Borrador sin cita contractual verificable/);
   assert.match(html,/Borrador generado con asistencia de IA — requiere revisión humana/);
+  assert.match(html,/transcribí TODAS sus filas/);
+  assert.match(html,/reconcileTariffRows/);
+  assert.match(html,/Tabla completa cotejada/);
 });
