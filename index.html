@@ -9018,7 +9018,11 @@ const FEAT_GRUPOS = { nav:'Solapas', ag:'Agenda y logística', prep:'Preparació
 function featAll(){
   const out = [];
   for(const [id,d] of Object.entries(FEAT_EXTRA)) out.push({ id, grupo:d.g, nombre:d.n });
-  for(const [tipo,d] of Object.entries(LOG_DEFS)) out.push({ id:'log.'+tipo, grupo:'reg', nombre:d.icon+' '+d.nombre });
+  /* Las tarifas se administran desde Facturación, no desde Herramientas. */
+  for(const [tipo,d] of Object.entries(LOG_DEFS)){
+    if(d.grupo==='adm') continue;
+    out.push({ id:'log.'+tipo, grupo:'reg', nombre:d.icon+' '+d.nombre });
+  }
   return out;
 }
 function renderFeatures(){
@@ -9515,7 +9519,7 @@ const LOG_DEFS = {
 const LOG_GRUPOS = {
   lab:'Muestras y laboratorio', ip:'Medicación del estudio', seg:'Seguridad y desviaciones',
   datos:'Datos, CRF y EDC', reg:'Documentación regulatoria', ci:'Consentimiento informado',
-  recl:'Reclutamiento y paciente', equipo:'Equipo y comunicación', adm:'Administración y facturación'
+  recl:'Reclutamiento y paciente', equipo:'Equipo y comunicación'
 };
 
 let LOG_TIPO = null;      /* módulo abierto */
