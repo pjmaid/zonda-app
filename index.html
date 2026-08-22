@@ -7,6 +7,7 @@
 <script src="today-rules.js"></script>
 <script src="flow-trace.js"></script>
 <script src="clinical-rag-policy.js"></script>
+<script src="patient-eligibility-policy.js"></script>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -1188,14 +1189,7 @@ details>summary{color:var(--acc-dark)}
     </div>
     <div class="muted small" id="narrIntro" style="margin-bottom:8px"></div>
     <div id="narrDocsBox" style="max-height:150px;overflow:auto;margin-bottom:8px"></div>
-    <label style="display:block;font-weight:400;color:var(--ink);margin:2px 0 8px">
-      <input type="checkbox" id="narrVisual" style="width:auto;margin-right:7px">
-      <b>Leer las páginas como imagen</b> — para laboratorios en tablas complejas o documentos escaneados. Más preciso con tablas, consume más créditos.
-    </label>
-    <div class="toolbar" id="narrRagBox" style="margin:4px 0 8px">
-      <button id="btnNarrIndex">⬆ Indexar estos documentos</button>
-      <span class="muted small">Necesario para que la búsqueda documental pueda responder sobre este paciente.</span>
-    </div>
+    <div class="banner gray small">Los documentos del paciente se procesan localmente como texto y se anonimizan antes de cualquier consulta. Nunca se indexan ni se envían como imágenes.</div>
     <div class="toolbar" style="margin-bottom:6px">
       <button class="primary" id="btnNarrRun">Redactar la fundamentación</button>
       <span class="spacer"></span>
@@ -1216,14 +1210,7 @@ details>summary{color:var(--acc-dark)}
     </div>
     <div id="evalModeInfo" class="banner gray"></div>
     <div id="evalDocsBox" style="margin-top:8px"></div>
-    <label style="display:block;font-weight:400;color:var(--ink);margin:2px 0 8px">
-      <input type="checkbox" id="evalVisual" style="width:auto;margin-right:7px">
-      <b>Leer las páginas como imagen</b> — para laboratorios en tablas complejas o documentos escaneados. Más preciso con tablas, consume más créditos.
-    </label>
-    <div class="toolbar" id="evalRagBox" style="margin:4px 0 8px">
-      <button id="btnEvalIndex">⬆ Indexar estos documentos</button>
-      <span class="muted small">Necesario para que la búsqueda documental pueda responder sobre este paciente.</span>
-    </div>
+    <div class="banner gray small">Vertex consulta únicamente el protocolo para obtener citas verificables. Los datos del paciente se anonimizan antes de enviarse al servicio seguro y nunca se incorporan al índice.</div>
     <label>Texto adicional (opcional): pegá datos de la historia clínica, laboratorio, etc.</label>
     <textarea id="evalPaste" rows="5" placeholder="Ej: Paciente de 54 años con diagnóstico de... Laboratorio 20/07: creatinina 0,9 mg/dl..."></textarea>
     <div class="toolbar" style="margin-top:10px;margin-bottom:0">
@@ -3476,7 +3463,7 @@ function openPatientEditor(id){
   togglePaSexo();
   /* si al guardar el paciente cambia el método, la próxima visita lo toma */
   PA_CRIT = p ? Object.assign({}, p.criterios||{}) : {};
-  PA_JUST = {};
+  PA_JUST = p ? Object.assign({}, p.critJust||{}) : {};
   $('paAiNotice').innerHTML = '';
   renderPaCriterios();
   renderPaDocs();
@@ -3535,9 +3522,12 @@ function renderPaCriterios(){
         const jd = document.createElement('div');
         jd.className='small';
         jd.style.cssText='flex-basis:100%;color:var(--muted);padding:2px 4px 0';
-        jd.innerHTML = j.ai
+        const fuente=j.protocolo
+          ? '<br>📚 <b>'+esc(j.protocolo.documento)+'</b>, pág. '+esc(String(j.protocolo.pagina))
+          : (j.ai?'<br>⚠ '+T('Sin cita verificable del protocolo: queda pendiente.'):'');
+        jd.innerHTML = (j.ai
           ? '🤖 <i>'+esc(j.just||'(sin justificación)')+'</i>'
-          : (j.snips||[]).map(s=>'🔎 <i>'+esc(s)+'</i>').join('<br>');
+          : (j.snips||[]).map(s=>'🔎 <i>'+esc(s)+'</i>').join('<br>'))+fuente;
         d.appendChild(jd);
       }
       box.appendChild(d);
@@ -3587,6 +3577,7 @@ $('btnSavePatient').addEventListener('click', async ()=>{
     anticoncepcion: $('paAnti').value,
     anticoncepcionDet: $('paAntiDet').value.trim(),
     criterios: Object.assign({}, PA_CRIT),
+    critJust: Object.assign({}, PA_JUST),
     critFirma: (getStudy($('paEstudio').value) ? critFirma(getStudy($('paEstudio').value)) : '')
   };
   if(!await persist('patients', p, 'Paciente guardado.')) return;
@@ -5240,61 +5231,32 @@ async function ragLineas(pregunta, filtros, campos, ejemplo){
   const scope = ZondaClinicalRag.clinicalQueryPayload(Object.assign({ accion:'preguntar', pregunta, preambulo:pre,
                                             max_fragmentos:25 }, filtros||{}));
   const r = ZondaClinicalRag.requireCitedClinicalAnswer(await ragLlamar(scope), clinicalDocsOf(scope.estudio_id));
-  return { items: ragParseLineas(r.respuesta, campos), crudo: String(r.respuesta||'') };
+  return { items: ragParseLineas(r.respuesta, campos), crudo: String(r.respuesta||''), citas:r.citas||[] };
 }
 
-/* evaluación de los criterios de un paciente desde el índice */
-async function ragEvalCriterios(st, pacienteId, estudioId){
+/* Vertex consulta solamente el protocolo. Nunca recibe documentos, texto ni
+   identificadores del paciente. Devuelve la fuente verificable de cada criterio. */
+async function ragCitasCriterios(st, estudioId){
   const inc = st.criteriosInclusion||[], exc = st.criteriosExclusion||[];
   const items = inc.map((c,i)=>({k:'i'+i,c})).concat(exc.map((c,i)=>({k:'e'+i,c})));
-  const salida = []; let crudo = '';
+  const salida = [], citas = []; let crudo = '';
   for(let i=0;i<items.length;i+=10){
     const lote = items.slice(i,i+10);
     const preg =
-      'Para cada criterio de elegibilidad de la lista, decidí si la documentación clínica de este participante lo satisface.\n\n'+
+      'Ubicá en el protocolo la fuente de cada criterio de elegibilidad de la lista.\n\n'+
       'CRITERIOS:\n'+lote.map(x=>x.k+'. '+x.c).join('\n')+'\n\n'+
-      'Respondé una línea por criterio. En los de inclusión (clave i): «si» si la documentación dice que lo cumple, '+
-      '«no» si dice que no, «pendiente» si el dato no figura. En los de exclusión (clave e): «si» si PRESENTA la '+
-      'condición, «no» si está descartada, «pendiente» si no figura. Ante cualquier duda, «pendiente».';
+      'Respondé una línea por criterio con el nombre exacto del documento, la página y una cita textual breve. '+
+      'Si no encontrás una fuente verificable para una clave, omití esa línea.';
     try{
-      const r = await ragLineas(preg, { paciente_id: pacienteId, estudio_id: estudioId||'' },
-        ['respuesta','justificacion'],
-        'clave | si|no|pendiente | cita textual del documento     (ejemplo: i0 | si | «Edad: 36 años»)');
+      const r = await ragLineas(preg, { estudio_id: estudioId||'' },
+        ['documento','pagina','cita'],
+        'clave | documento exacto | página | cita textual     (ejemplo: i0 | Protocolo v3.pdf | 42 | «Edad mínima: 18 años»)');
       salida.push(...r.items);
+      citas.push(...(r.citas||[]));
       if(!crudo) crudo = r.crudo;
     }catch(e){}
   }
-  return { items: salida, crudo };
-}
-
-/* fundamentación de un lote de criterios desde el índice */
-async function ragNarrarLote(lote, p, estudioId){
-  const resp = p.criterios || {};
-  const yaResp = lote.map(it=>it.clave+'='+(resp[it.clave]||'pendiente')).join(', ');
-  const sexo = p.sexo==='F' ? 'femenino' : (p.sexo==='M' ? 'masculino' : 'no consignado');
-  const preg =
-    'Redactá una fundamentación breve para cada criterio, referida a este participante (sexo '+sexo+'), '+
-    'usando su historia clínica y sus estudios, y el enunciado del criterio en el protocolo.\n\n'+
-    'CRITERIOS:\n'+lote.map(it=>it.clave+'. ['+(it.tipo==='inclusion'?'INCLUSIÓN':'EXCLUSIÓN')+' '+it.n+'] '+it.criterio).join('\n')+'\n\n'+
-    'RESPUESTAS YA REGISTRADAS POR EL INVESTIGADOR (respetalas): '+(yaResp||'ninguna')+'\n\n'+
-    'Una línea por criterio. En tercera persona, prosa clínica sobria, mencionando el dato concreto '+
-    '(valor, fecha, diagnóstico, fármaco) tal como figura. La conclusión va DENTRO de la misma oración: '+
-    'cerrá con «…, por lo que cumple con el criterio», «…, por lo que no cumple con el criterio» o '+
-    '«…, por lo que el criterio queda pendiente de documentación». Máximo 45 palabras. '+
-    'No identifiques al participante por nombre.';
-  const r = await ragLineas(preg, { paciente_id: p.id, estudio_id: estudioId||'' },
-    ['estado','texto'],
-    'clave | cumple|no_cumple|pendiente | la fondamentación     (ejemplo: i0 | cumple | La participante tiene 36 años, por lo que cumple con el criterio.)');
-  const porClave = {};
-  for(const o of r.items){
-    const est = String(o.estado||'').toLowerCase().replace(/\s/g,'_');
-    porClave[o.clave] = {
-      clave: o.clave,
-      texto: o.texto || '',
-      estado: ['cumple','no_cumple','pendiente'].includes(est) ? est : 'pendiente'
-    };
-  }
-  return { porClave, crudo: r.crudo };
+  return { porClave:ZondaPatientEligibility.verifiedCriterionCitations(salida,citas), crudo };
 }
 
 async function ragExtraerCriterios(estudioId){
@@ -5748,39 +5710,6 @@ $('btnRagTest').addEventListener('click', async ()=>{
       m.style.color='var(--bad)'; m.textContent = '⚠ '+(j.error||T('No se pudo conectar.'));
     }
   }catch(e){ m.style.color='var(--bad)'; m.textContent = '⚠ '+e.message; }
-});
-
-/* indexar los documentos del paciente desde el diálogo de evaluación */
-$('btnEvalIndex').addEventListener('click', async ()=>{
-  const stEl = $('evalStatus'), btn = $('btnEvalIndex');
-  const docs = Array.from(document.querySelectorAll('#evalDocsBox input[type=checkbox]:checked'))
-    .map(c=>(DB.docs||[]).find(d=>d.id===c.dataset.doc)).filter(Boolean);
-  if(!docs.length){ stEl.style.color='var(--warn)'; stEl.textContent = T('Seleccioná al menos un documento.'); return; }
-  if(!ragActivo()){ stEl.style.color='var(--warn)'; stEl.textContent = T('Activá la búsqueda documental en Configuración.'); return; }
-  btn.disabled = true;
-  const r = await ragIndexarLista(docs, stEl);
-  btn.disabled = false;
-  stEl.style.color = r.mal ? 'var(--warn)' : 'var(--ok)';
-  stEl.textContent = (r.mal?'⚠ ':'✔ ')+r.ok+' '+T('documento(s) enviados al índice')+
-    (r.mal? ', '+r.mal+' '+T('no se pudieron procesar.')+ragResumenFallos(r.errores) : '.')+' '+
-    T('Google tarda unos minutos en procesarlos: esperá y volvé a evaluar.');
-  openEvalModal();
-});
-
-/* lo mismo desde el diálogo de fundamentación */
-$('btnNarrIndex').addEventListener('click', async ()=>{
-  const stEl = $('narrStatus'), btn = $('btnNarrIndex');
-  const docs = Array.from(document.querySelectorAll('#narrDocsBox input[type=checkbox]:checked'))
-    .map(c=>(DB.docs||[]).find(d=>d.id===c.dataset.ndoc)).filter(Boolean);
-  if(!docs.length){ stEl.style.color='var(--warn)'; stEl.textContent = T('Seleccioná al menos un documento.'); return; }
-  if(!ragActivo()){ stEl.style.color='var(--warn)'; stEl.textContent = T('Activá la búsqueda documental en Configuración.'); return; }
-  btn.disabled = true;
-  const r = await ragIndexarLista(docs, stEl);
-  btn.disabled = false;
-  stEl.style.color = r.mal ? 'var(--warn)' : 'var(--ok)';
-  stEl.textContent = (r.mal?'⚠ ':'✔ ')+r.ok+' '+T('documento(s) enviados al índice')+
-    (r.mal? ', '+r.mal+' '+T('no se pudieron procesar.')+ragResumenFallos(r.errores) : '.')+' '+
-    T('Google tarda unos minutos en procesarlos: esperá y volvé a redactar.');
 });
 
 $('btnRagList').addEventListener('click', async ()=>{
@@ -7343,15 +7272,16 @@ function openEvalModal(){
   $('evalDocsBox').innerHTML = docs.length
     ? '<label>'+T('Documentos del paciente a analizar')+'</label>'+docs.map(d=>
         '<div class="doc-line"><input type="checkbox" checked data-doc="'+d.id+'" style="width:16px;height:16px"> <div class="dinfo">'+esc(DOC_TIPOS[d.tipo]||d.tipo)+' — '+esc(d.filename)+(d.version?' <span class="muted small">('+esc(d.version)+')</span>':'')+
-        (ragActivo() ? (d.ragIndexado ? ' <span class="chip ok">'+T('indexado')+'</span>' : ' <span class="chip warn">'+T('sin indexar')+'</span>') : '')+'</div></div>'
+        '</div></div>'
       ).join('')
     : '<div class="muted small" style="margin-bottom:6px">Este paciente no tiene documentos adjuntos. Podés pegar texto abajo, o guardar el paciente y adjuntar su historia clínica.</div>';
   $('evalPaste').value='';
   $('evalStatus').textContent='';
-  if($('evalRagBox')) $('evalRagBox').classList.toggle('hidden', !ragActivo());
-  $('evalModeInfo').innerHTML = aiConfigured()
-    ? '<b>Modo IA activado:</b> los documentos pasan por el servicio seguro del sitio. Las sugerencias quedan auditadas y siempre las confirma el investigador.'
-    : '<b>Modo evidencia:</b> se busca en los documentos el texto relacionado con cada criterio y se muestra como ayuda, sin marcar respuestas.';
+  $('evalModeInfo').innerHTML = (ragActivo()&&ragEstricto())
+    ? '<b>Modo estricto:</b> Vertex consulta solo el protocolo para obtener citas. Los documentos del paciente se procesan localmente y no se envían a otro motor; las respuestas se marcan manualmente.'
+    : (aiConfigured()
+      ? '<b>Modo seguro asistido:</b> Vertex aporta las citas del protocolo y el servicio del sitio recibe únicamente texto clínico anonimizado. Las sugerencias quedan como borrador y siempre las confirma el investigador.'
+      : '<b>Modo evidencia:</b> se busca localmente el texto relacionado con cada criterio y se muestra como ayuda, sin marcar respuestas.');
   /* si los criterios del estudio están mal importados, evaluar no tiene sentido */
   const prev = $('evalBadCrit'); if(prev) prev.remove();
   const todos = (st.criteriosInclusion||[]).concat(st.criteriosExclusion||[]);
@@ -7365,15 +7295,28 @@ function openEvalModal(){
   $('evalModal').classList.remove('hidden');
 }
 
-async function aiEvalCriteria(st, text, imagenes){
+function patientEvidenceIdentifiers(){
+  const p=getPatient($('paId').value)||{};
+  return [p.codigo,p.iniciales,$('paCodigo').value,$('paIniciales').value].filter(Boolean);
+}
+
+function patientEvidenceSafeText(text){
+  return ZondaPatientEligibility.deidentifyText(text,patientEvidenceIdentifiers()).text;
+}
+
+async function aiEvalCriteria(st, text, citasProtocolo){
   const inc = st.criteriosInclusion||[], exc = st.criteriosExclusion||[];
   const MAXC = aiCtxMax() - 6000;
-  let doc = text;
+  let doc = patientEvidenceSafeText(text);
   if(doc.length > MAXC) doc = doc.slice(0, MAXC) + '\n[TEXTO TRUNCADO POR LONGITUD]';
+  const conFuente=(clave,criterio)=>{
+    const cita=(citasProtocolo||{})[clave];
+    return clave+'. '+criterio+(cita?' [Fuente: '+cita.documento+', pág. '+cita.pagina+']':' [SIN FUENTE VERIFICADA]');
+  };
   const prompt =
     'Sos un asistente de un equipo de investigación clínica. Evaluá cada criterio de elegibilidad del protocolo usando ÚNICAMENTE la documentación del paciente que se incluye más abajo. No uses ninguna otra fuente de información.\n\n'+
-    'CRITERIOS DE INCLUSIÓN:\n'+(inc.map((c,i)=>'i'+i+'. '+c).join('\n')||'(ninguno)')+'\n\n'+
-    'CRITERIOS DE EXCLUSIÓN:\n'+(exc.map((c,i)=>'e'+i+'. '+c).join('\n')||'(ninguno)')+'\n\n'+
+    'CRITERIOS DE INCLUSIÓN:\n'+(inc.map((c,i)=>conFuente('i'+i,c)).join('\n')||'(ninguno)')+'\n\n'+
+    'CRITERIOS DE EXCLUSIÓN:\n'+(exc.map((c,i)=>conFuente('e'+i,c)).join('\n')||'(ninguno)')+'\n\n'+
     'DOCUMENTACIÓN DEL PACIENTE:\n<<<\n'+doc+'\n>>>\n\n'+
     'Respondé ÚNICAMENTE con un array JSON válido, con un objeto por cada criterio listado:\n'+
     '[{"clave":"i0","respuesta":"si|no|pendiente","justificacion":"cita TEXTUAL del documento (máximo 25 palabras)","falta":"qué dato concreto haría falta (solo si respuesta es pendiente)"}]\n\n'+
@@ -7389,16 +7332,10 @@ async function aiEvalCriteria(st, text, imagenes){
     '- Escribí "justificacion" y "falta" en '+AI_LANG_NAME()+'.';
   /* espacio de salida proporcional a la cantidad de criterios */
   const maxTok = Math.min(16000, Math.max(1500, (inc.length+exc.length)*140 + 400));
-  /* si se pidió lectura visual, las páginas van como imagen antes del texto:
-     así la IA ve las tablas de laboratorio con sus columnas en su lugar */
-  const contenido = (imagenes && imagenes.length)
-    ? [{ t:'text', text:'IMÁGENES DE LOS DOCUMENTOS DEL PACIENTE (leelas como parte de la documentación, sobre todo las tablas):' }]
-        .concat(imagenes, [{ t:'text', text:prompt }])
-    : prompt;
   const resp = await aiChat({
     purpose:'elegibilidad_criterios',
     system: 'Respondés exclusivamente con un array JSON válido, sin texto antes ni después, sin explicaciones y sin bloques de código. Empezá la respuesta con "[" y terminala con "]".',
-    content: contenido, maxTokens: maxTok
+    content: prompt, maxTokens: maxTok
   });
   let txt = resp.text.replace(/```json|```/g,'').trim();
   const truncado = resp.cut;
@@ -7427,19 +7364,21 @@ function parseAiArray(txt){
   return out;
 }
 
-function applyEvalResults(res){
+function applyEvalResults(res,citasProtocolo){
   if(!Array.isArray(res)) throw new Error('Respuesta de IA inválida.');
-  let resp=0, pend=0;
-  for(const r of res){
+  let resp=0, pend=0, sinCita=0;
+  for(const r of ZondaPatientEligibility.applyCitationGate(res,citasProtocolo||{})){
     const k = String(r.clave||'').trim().toLowerCase();
     if(!/^[ie]\d{1,2}$/.test(k)) continue;
     const v = String(r.respuesta||'').toLowerCase().replace('í','i');
     if(v!=='si' && v!=='no' && v!=='pendiente') continue;
     PA_CRIT[k] = v;
-    PA_JUST[k] = { ai:true, just:String(r.justificacion||'').slice(0,300), falta:String(r.falta||'').slice(0,300) };
+    PA_JUST[k] = { ai:true, just:String(r.justificacion||'').slice(0,300), falta:String(r.falta||'').slice(0,300),
+                   protocolo:r.citaProtocolo||null, confiable:r.confiable===true };
+    if(!r.confiable) sinCita++;
     if(v==='pendiente') pend++; else resp++;
   }
-  return { resp, pend };
+  return { resp, pend, sinCita };
 }
 
 function stripAcc(s){ return String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,''); }
@@ -7466,6 +7405,12 @@ function buildEvidence(st, text){
   doList(st.criteriosExclusion,'e');
 }
 
+function attachProtocolCitations(citas){
+  for(const [clave,cita] of Object.entries(citas||{})){
+    PA_JUST[clave]=Object.assign({},PA_JUST[clave]||{ai:false,snips:[]},{protocolo:cita,confiable:true});
+  }
+}
+
 $('btnRunEval').addEventListener('click', async ()=>{
   const stEl = $('evalStatus'), btn = $('btnRunEval');
   btn.disabled = true;
@@ -7473,64 +7418,45 @@ $('btnRunEval').addEventListener('click', async ()=>{
     stEl.style.color='var(--muted)'; stEl.textContent=T('Leyendo documentos...');
     let text = '';
     const checks = Array.from(document.querySelectorAll('#evalDocsBox input[type=checkbox]:checked'));
+    let docN=0;
     for(const c of checks){
       const doc = (DB.docs||[]).find(d=>d.id===c.dataset.doc);
       if(!doc) continue;
       const b = await docBlob(doc);
       if(!b) continue;
-      try{ text += '\n=== '+doc.filename+' ===\n' + await extractTextTablas(b, doc.filename); }
+      try{ text += '\n=== DOCUMENTO CLÍNICO '+(++docN)+' ===\n' + await extractTextTablas(b, doc.filename); }
       catch(e){ /* documento ilegible: se ignora */ }
     }
-    if($('evalPaste').value.trim()) text += '\n=== Texto pegado ===\n' + $('evalPaste').value.trim();
+    if($('evalPaste').value.trim()) text += '\n=== TEXTO CLÍNICO PEGADO ===\n' + $('evalPaste').value.trim();
     if(text.trim().length < 30) throw new Error('No hay texto para analizar. Seleccioná documentos con texto legible o pegá los datos del paciente.');
     const study = getStudy($('paEstudio').value);
-    /* con búsqueda documental se consulta el índice del paciente */
+    let citasProtocolo={};
     if(ragActivo()){
-      const pidR = $('paId').value;
       try{
-        stEl.textContent = T('Consultando el índice de búsqueda documental...');
-        const rEv = await ragEvalCriterios(study, pidR, $('paEstudio').value);
-        const res = rEv.items;
-        if(res.length){
-          const nR = applyEvalResults(res);
-          renderPaCriterios();
-          $('paAiNotice').innerHTML = '<div class="banner warn">🔎 '+T('Respuestas sugeridas por búsqueda documental a partir de los documentos indexados del paciente')+
-            ' ('+nR.resp+' '+T('respondidas')+', '+nR.pend+' '+T('pendientes')+'). '+
-            T('Confirmá cada criterio antes de guardar: la decisión final es siempre del investigador.')+'</div>';
-          $('evalModal').classList.add('hidden');
-          toast(T('Criterios evaluados con búsqueda documental.'));
-          return;
-        }
-        if(ragEstricto() && !aiConfigured()) throw new Error(T('El índice no devolvió respuestas en el formato esperado.')+
-          (rEv.crudo ? ' '+T('Respondió')+': «'+rEv.crudo.slice(0,220)+'…»' : ' '+T('No devolvió nada: puede que los documentos sigan procesándose.')));
-        stEl.textContent = T('El índice todavía no devolvió respuestas; se analiza el texto de los documentos...');
+        stEl.textContent = T('Buscando las citas de cada criterio en el protocolo...');
+        citasProtocolo=(await ragCitasCriterios(study,$('paEstudio').value)).porClave;
       }catch(eR){
-        if(ragEstricto() && !aiConfigured()) throw eR;
-        stEl.textContent = T('Búsqueda documental no disponible')+' ('+eR.message+'). '+T('Se lee el texto...');
+        stEl.textContent = T('No se obtuvieron citas verificables del protocolo; los criterios quedarán pendientes.');
       }
     } else if(ragEstricto()){
       throw new Error(T('El modo estricto exige búsqueda documental, pero no está activada.'));
     }
-    if(aiConfigured()){
-      let imgs = [];
-      if($('evalVisual') && $('evalVisual').checked){
-        stEl.textContent = T('Convirtiendo las páginas a imagen...');
-        const elegidos = checks.map(c=>(DB.docs||[]).find(d=>d.id===c.dataset.doc)).filter(Boolean);
-        imgs = await docsImagenes(elegidos, 8);
-      }
+    if(aiConfigured() && !ragEstricto()){
       stEl.textContent = T('Consultando a la IA (puede tardar unos segundos)...');
-      const res = await aiEvalCriteria(study, text, imgs);
-      const n = applyEvalResults(res);
+      const res = await aiEvalCriteria(study, text, citasProtocolo);
+      const n = applyEvalResults(res,citasProtocolo);
       renderPaCriterios();
-      $('paAiNotice').innerHTML = '<div class="banner warn">🤖 Respuestas sugeridas por IA a partir de los documentos ('+n.resp+' respondidas, '+n.pend+' quedaron pendientes). Confirmá cada criterio antes de guardar: la decisión final es siempre del investigador.</div>';
+      $('paAiNotice').innerHTML = '<div class="banner warn">🤖 Borrador sobre texto clínico anonimizado: '+n.resp+' respuestas sugeridas y '+n.pend+' pendientes'+
+        (n.sinCita?' ('+n.sinCita+' sin cita verificable del protocolo)':'')+'. Confirmá cada criterio antes de guardar: la decisión final es siempre del investigador.</div>';
       $('evalModal').classList.add('hidden');
       toast('Criterios evaluados. Revisá y confirmá las sugerencias.');
     } else {
       stEl.textContent = T('Buscando evidencia en el texto...');
-      buildEvidence(study, text);
+      buildEvidence(study, patientEvidenceSafeText(text));
+      attachProtocolCitations(citasProtocolo);
       renderPaCriterios();
       const nEv = Object.keys(PA_JUST).length;
-      $('paAiNotice').innerHTML = '<div class="banner gray">🔎 Evidencia encontrada para '+nEv+' criterio(s), mostrada debajo de cada uno. Marcá las respuestas manualmente.</div>';
+      $('paAiNotice').innerHTML = '<div class="banner gray">🔎 Evidencia local y citas del protocolo encontradas para '+nEv+' criterio(s). No se enviaron datos del paciente a otro motor; marcá las respuestas manualmente.</div>';
       $('evalModal').classList.add('hidden');
       toast('Evidencia agregada debajo de cada criterio.');
     }
@@ -7836,15 +7762,12 @@ function openNarrModal(){
     ? '<label>'+T('Documentos del paciente a usar')+'</label>'+docs.map(d=>
         '<div class="doc-line"><input type="checkbox" checked data-ndoc="'+d.id+'" style="width:16px;height:16px"> '+
         '<div class="dinfo">'+esc(DOC_TIPOS[d.tipo]||d.tipo)+' — '+esc(d.filename)+
-        (d.version?' <span class="muted small">('+esc(d.version)+')</span>':'')+
-        (ragActivo() ? (d.ragIndexado ? ' <span class="chip ok">'+T('indexado')+'</span>' : ' <span class="chip warn">'+T('sin indexar')+'</span>') : '')+'</div></div>').join('')
+        (d.version?' <span class="muted small">('+esc(d.version)+')</span>':'')+'</div></div>').join('')
     : '<div class="banner warn">'+T('Este paciente no tiene documentos adjuntos. Adjuntá su historia clínica y laboratorios: la fundamentación se redacta a partir de ellos.')+'</div>';
-  $('narrIntro').innerHTML = (aiConfigured() || ragActivo())
-    ? T('Para cada criterio se redacta un párrafo con el dato concreto de este paciente y la cita del documento que lo respalda. Sirve como documento fuente del screening. Lo que no esté documentado queda declarado como pendiente: revisá y editá antes de firmar.')+
-      (ragActivo() ? ' <span class="chip acc">'+T('búsqueda documental activa')+'</span>' : '')
-    : '<b>'+T('Necesitás activar la búsqueda documental o iniciar una sesión online para usar IA.')+'</b>';
-  if($('narrRagBox')) $('narrRagBox').classList.toggle('hidden', !ragActivo());
-  $('btnNarrRun').disabled = (!aiConfigured() && !ragActivo()) || !docs.length;
+  $('narrIntro').innerHTML = aiConfigured() && !ragEstricto()
+    ? T('Para cada criterio se redacta un borrador usando texto clínico anonimizado. Los documentos del paciente no se indexan ni se envían como imágenes. Revisá y editá antes de firmar.')
+    : '<b>'+T('En modo estricto la fundamentación automática no envía datos del paciente a otro motor. Registrá la fundamentación manualmente.')+'</b>';
+  $('btnNarrRun').disabled = !aiConfigured() || ragEstricto() || !docs.length;
   $('narrStatus').textContent = '';
   $('narrOut').classList.add('hidden');
   $('btnNarrPrint').classList.add('hidden');
@@ -7870,17 +7793,17 @@ function openNarrModal(){
    oración llegue completa, y además deja avanzar aunque una tanda falle. */
 const NARR_LOTE = 8;
 
-async function aiNarrarLote(items, st, texto, p, imagenes){
+async function aiNarrarLote(items, st, texto, p){
   const resp = p.criterios || {};
   const yaResp = items.map(it=>it.clave+'='+(resp[it.clave]||'pendiente')).join(', ');
   const sexo = p.sexo==='F' ? 'femenino' : (p.sexo==='M' ? 'masculino' : 'no consignado');
   const MAXC = aiCtxMax() - 8000;
-  let doc = texto;
+  let doc = patientEvidenceSafeText(texto);
   if(doc.length > MAXC) doc = doc.slice(0, MAXC) + '\n[TEXTO TRUNCADO POR LONGITUD]';
 
   const prompt =
     'Sos un asistente de un equipo de investigación clínica. Para CADA criterio de elegibilidad listado, redactá una fundamentación breve referida a ESTE paciente, usando ÚNICAMENTE la documentación que se incluye más abajo.\n\n'+
-    'PACIENTE: código '+(p.codigo||'')+', sexo '+sexo+'.\n'+
+    'PARTICIPANTE: sexo '+sexo+'. No incluyas ningún identificador.\n'+
     'RESPUESTAS YA REGISTRADAS POR EL INVESTIGADOR (respetalas): '+(yaResp||'ninguna')+'\n\n'+
     'CRITERIOS:\n'+items.map(it=>it.clave+'. ['+(it.tipo==='inclusion'?'INCLUSIÓN':'EXCLUSIÓN')+' '+it.n+'] '+it.criterio).join('\n')+'\n\n'+
     'DOCUMENTACIÓN DEL PACIENTE:\n<<<\n'+doc+'\n>>>\n\n'+
@@ -7898,14 +7821,10 @@ async function aiNarrarLote(items, st, texto, p, imagenes){
     '- Si el texto trae una sección «TABLAS RECONSTRUIDAS», cada renglón es una fila y las columnas van separadas por «|». En un laboratorio el orden habitual es analito | resultado | unidad | referencia: el valor del paciente es la PRIMERA cifra.\n'+
     '- Escribí "texto" en '+AI_LANG_NAME()+'.';
 
-  const contenido = (imagenes && imagenes.length)
-    ? [{ t:'text', text:'IMÁGENES DE LOS DOCUMENTOS DEL PACIENTE (leelas como parte de la documentación, sobre todo las tablas):' }]
-        .concat(imagenes, [{ t:'text', text:prompt }])
-    : prompt;
   const r = await aiChat({
     purpose:'elegibilidad_narrativa',
     system: 'Respondés exclusivamente con un array JSON válido, sin texto antes ni después, sin explicaciones y sin bloques de código. Empezá con "[" y terminá con "]".',
-    content: contenido, maxTokens: Math.max(3000, items.length*320)
+    content: prompt, maxTokens: Math.max(3000, items.length*320)
   });
   const arr = parseAiArray(r.text.replace(/```json|```/g,'').trim());
   const porClave = {};
@@ -7914,7 +7833,7 @@ async function aiNarrarLote(items, st, texto, p, imagenes){
 }
 
 let NARR_CRUDO = '';
-async function aiNarrarCriterios(st, texto, p, imagenes, st_el){
+async function aiNarrarCriterios(st, texto, p, st_el){
   NARR_CRUDO = '';
   const items = narrCriterios(st);
   const lotes = [];
@@ -7926,24 +7845,12 @@ async function aiNarrarCriterios(st, texto, p, imagenes, st_el){
     if(st_el) st_el.textContent = T('Redactando')+' '+(i*NARR_LOTE+1)+'–'+Math.min(items.length,(i+1)*NARR_LOTE)+
                                   ' '+T('de')+' '+items.length+' '+T('criterios')+'...';
     try{
-      if(ragActivo()){
-        try{
-          const rL = await ragNarrarLote(lotes[i], p, p.estudioId || '');
-          Object.assign(porClave, rL.porClave);
-          if(!Object.keys(rL.porClave).length && rL.crudo) NARR_CRUDO = rL.crudo;
-        }
-        catch(eR){
-          if(ragEstricto() && !aiConfigured()) throw eR;
-          Object.assign(porClave, await aiNarrarLote(lotes[i], st, texto, p, imagenes));
-        }
-      } else if(ragEstricto()){
-        throw new Error(T('El modo estricto exige búsqueda documental, pero no está activada.'));
+      if(ragEstricto()){
+        throw new Error(T('El modo estricto no envía documentación del paciente a otro motor.'));
       } else {
-        Object.assign(porClave, await aiNarrarLote(lotes[i], st, texto, p, imagenes));
+        Object.assign(porClave, await aiNarrarLote(lotes[i], st, texto, p));
       }
     }catch(e){ fallados++; }
-    /* las imágenes se mandan solo en la primera tanda: repetirlas multiplica el costo */
-    if(imagenes && imagenes.length) imagenes = null;
   }
   if(!Object.keys(porClave).length)
     throw new Error(T('No se obtuvo ninguna fundamentación interpretable.')+
@@ -8232,15 +8139,8 @@ $('btnNarrRun').addEventListener('click', async ()=>{
       id: $('paId').value,
       criterios: PA_CRIT, estudioId: $('paEstudio').value, sexo: ($('paSexo')||{}).value || ''
     });
-    let imgs = [];
-    if($('narrVisual').checked){
-      stEl.textContent = T('Convirtiendo las páginas a imagen...');
-      const elegidos = Array.from(document.querySelectorAll('#narrDocsBox input[type=checkbox]:checked'))
-        .map(c=>(DB.docs||[]).find(d=>d.id===c.dataset.ndoc)).filter(Boolean);
-      imgs = await docsImagenes(elegidos, 8);
-    }
     stEl.textContent = T('Redactando la fundamentación (puede tardar un momento)...');
-    const r = await aiNarrarCriterios(st, texto, p, imgs, stEl);
+    const r = await aiNarrarCriterios(st, patientEvidenceSafeText(texto), p, stEl);
     const items = r.items;
     NARR = { items, fecha:new Date().toISOString(), modelo:aiModelName(), obsoleta:false, critFirma:critFirma(st) };
     renderNarr();
@@ -8259,7 +8159,7 @@ $('btnNarrRun').addEventListener('click', async ()=>{
     auditar('paciente','fundamentacion_criterios', pac?pac.id:'', (pac&&pac.codigo)||'');
   }catch(e){
     stEl.style.color='var(--bad)'; stEl.textContent = '⚠ '+e.message;
-  }finally{ btn.disabled = !(aiConfigured() || ragActivo()); }
+  }finally{ btn.disabled = !aiConfigured() || ragEstricto(); }
 });
 
 $('btnNarrPrint').addEventListener('click', ()=>{
