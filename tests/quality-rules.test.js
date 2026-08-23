@@ -7,9 +7,10 @@ const patient = { id:'p1', estudioId:'s1', fechaBasal:'2026-08-01' };
 const targetFor = ()=>({from:'2026-08-01',to:'2026-08-03',target:'2026-08-01'});
 const consent = {id:'c1',pacienteId:'p1',fecha:'2026-07-31',reconsent:'Consentimiento inicial',version:'2.0'};
 
-test('bloquea procedimientos sin consentimiento previo',()=>{
+test('advierte sin bloquear la evolución cuando falta consentimiento previo',()=>{
   const issues=Q.visit({visit:{id:'x',fecha:'2026-08-01',visitaId:'v1',tareas:[]},patient,study,today:'2026-08-10',eligibility:'elegible',consents:[],completedVisits:[],targetFor});
-  assert.ok(issues.some(x=>x.code==='CONSENT_BEFORE_PROCEDURE'&&x.level==='block'));
+  assert.ok(issues.some(x=>x.code==='CONSENT_BEFORE_PROCEDURE'&&x.level==='warning'));
+  assert.ok(!issues.some(x=>x.code==='CONSENT_BEFORE_PROCEDURE'&&x.level==='block'));
 });
 
 test('bloquea una visita duplicada',()=>{
@@ -34,6 +35,11 @@ test('exige motivo para un procedimiento no realizado',()=>{
 test('bloquea randomización sin elegibilidad favorable',()=>{
   const issues=Q.randomization({record:{id:'r1',pacienteId:'p1',fecha:'2026-08-01'},patient,today:'2026-08-10',eligibility:'pendiente',consents:[consent],randomizations:[]});
   assert.ok(issues.some(x=>x.code==='RANDOMIZATION_NOT_ELIGIBLE'&&x.level==='block'));
+});
+
+test('mantiene bloqueada la randomización sin consentimiento previo',()=>{
+  const issues=Q.randomization({record:{id:'r1',pacienteId:'p1',fecha:'2026-08-01'},patient,today:'2026-08-10',eligibility:'elegible',consents:[],randomizations:[]});
+  assert.ok(issues.some(x=>x.code==='RANDOMIZATION_WITHOUT_CONSENT'&&x.level==='block'));
 });
 
 test('bloquea randomización sin la versión vigente del consentimiento',()=>{

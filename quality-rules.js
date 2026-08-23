@@ -27,7 +27,7 @@
 
     const signed=consentBefore(x.consents,v.fecha);
     if(!signed)
-      out.push(issue('block','CONSENT_BEFORE_PROCEDURE','No hay un consentimiento inicial registrado antes o en la fecha de la visita.'));
+      out.push(issue('warning','CONSENT_BEFORE_PROCEDURE','No hay un consentimiento inicial registrado antes o en la fecha de la visita. La evolución puede guardarse, pero este aviso requiere revisión.'));
     else if(x.currentIcfVersion && !(x.consents||[]).some(c=>isIso(c.fecha)&&c.fecha<=v.fecha&&String(c.version||'').trim()===String(x.currentIcfVersion).trim()))
       out.push(issue('warning','CURRENT_CONSENT_VERSION_MISSING','No consta la firma de la versión vigente del consentimiento ('+x.currentIcfVersion+').'));
 
