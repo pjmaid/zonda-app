@@ -2395,6 +2395,10 @@ async function syncAuditQueue(){
     AUDIT.forEach(e=>{ if(ids.has(e.id)) e.sincronizado=true; });
     saveJSON(LS_AUDIT,AUDIT);
     syncStatus('audit','ok','✓ Auditoría sincronizada.');
+    /* El tablero puede estar mostrando el contador anterior. Actualizarlo en
+       cuanto el servidor confirme la cola evita que quede una alerta falsa. */
+    if(CURRENT_USER && $('appShell') && !$('appShell').classList.contains('hidden') &&
+       typeof renderDashboard==='function') renderDashboard();
   }catch(e){
     syncStatus('audit','error','⚠ '+e.message+' No cierres esta sesión hasta recuperar la conexión.');
   }finally{
@@ -2908,6 +2912,10 @@ async function enterApp(){
   mb.title = Store.online() ? T('Sitio')+': '+(miOrgNombre()||'—')+(esSuper()?' · '+T('superadministrador'):'') : T('Modo local');
   mb.className = 'badge-mode ' + (Store.online() ? 'online' : 'local');
   initConfigUI();
+  /* Un evento puede haber quedado pendiente al cerrar la pestaña o perder la
+     conexión. Al recuperar una sesión válida, reanudar la cola sin esperar a
+     que ocurra otro cambio o a que el navegador emita un nuevo evento online. */
+  await syncAuditQueue();
   renderAll();
   showView('view-dashboard');
   applyLang();
