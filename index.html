@@ -9,6 +9,7 @@
 <script src="clinical-rag-policy.js"></script>
 <script src="patient-eligibility-policy.js"></script>
 <script src="billing-ai-policy.js"></script>
+<script src="visit-evolution-policy.js"></script>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -794,6 +795,9 @@ details>summary{color:var(--acc-dark)}
     <div class="card">
       <h3>Tareas / procedimientos de la visita</h3>
       <div class="muted small" style="margin-bottom:6px">Destildá lo que no se hizo y anotá el motivo. Podés agregar un comentario a cualquier tarea.</div>
+      <label>Comentario descriptivo general de los procedimientos</label>
+      <div class="muted small" style="margin-bottom:6px">Se integrará al inicio del apartado de procedimientos. Usalo para describir la secuencia de la visita, tolerancia, horarios o incidencias, sin repetir resultados que no estén documentados.</div>
+      <textarea id="viProcComentario" rows="3" placeholder="Ej: La visita se desarrolló según lo previsto, sin incidencias. Se respetaron el ayuno y los horarios indicados para las evaluaciones."></textarea>
       <div id="viTareasBox"></div>
     </div>
 
@@ -3758,7 +3762,7 @@ $('btnNewVisit').addEventListener('click', ()=>openVisitForm(null));
 let VI_TASKS = [];
 let VI_RETURN_DRAFT = null;
 function captureVisitDraft(){
-  const ids=['viId','viPaciente','viVisita','viFecha','viTA','viFC','viFR','viTemp','viPeso','viSat','viEA','viMedCon','viObs','viNombreLibre','viFum','viEmb','viAnti','viAntiM','viAntiComo','viTraslado','viProxima'];
+  const ids=['viId','viPaciente','viVisita','viFecha','viProcComentario','viTA','viFC','viFR','viTemp','viPeso','viSat','viEA','viMedCon','viObs','viNombreLibre','viFum','viEmb','viAnti','viAntiM','viAntiComo','viTraslado','viProxima'];
   const values={}; ids.forEach(id=>{const el=$(id); if(el) values[id]=el.value;});
   return {logId:values.viId||'',patientId:values.viPaciente||'',visitId:values.viVisita||'',values,tasks:JSON.parse(JSON.stringify(VI_TASKS||[]))};
 }
@@ -3840,6 +3844,7 @@ function openVisitForm(logId, presetPatientId, presetVisitId){
   $('viTemp').value = log ? (log.sv&&log.sv.temp||'') : '';
   $('viPeso').value = log ? (log.sv&&log.sv.peso||'') : '';
   $('viSat').value = log ? (log.sv&&log.sv.sat||'') : '';
+  $('viProcComentario').value = log ? (log.procedimientosComentario||'') : '';
   $('viEA').value = log ? (log.ea||'') : '';
   $('viMedCon').value = log ? (log.medcon||'') : '';
   $('viObs').value = log ? (log.obs||'') : '';
@@ -4110,6 +4115,7 @@ $('btnSaveVisit').addEventListener('click', async ()=>{
     pacienteId: p.id, estudioId: p.estudioId,
     visitaId, nombreVisita, dia, fecha,
     tareas: JSON.parse(JSON.stringify(VI_TASKS)),
+    procedimientosComentario: $('viProcComentario').value.trim(),
     sv: { ta:$('viTA').value.trim(), fc:$('viFC').value.trim(), fr:$('viFR').value.trim(),
           temp:$('viTemp').value.trim(), peso:$('viPeso').value.trim(), sat:$('viSat').value.trim() },
     ea: $('viEA').value.trim(),
@@ -4423,6 +4429,7 @@ function buildEvolution(log){
   const labHechas = hechas.filter(t=>!t.tablet && clasifDe(String(t.nombre||''))==='lab');
   const otrasHechas = hechas.filter(t=>!t.tablet && clasifDe(String(t.nombre||''))!=='lab');
   L.push(T('PROCEDIMIENTOS REALIZADOS EN LA VISITA:'));
+  L.push(ZondaVisitEvolution.resumenVisita(log.nombreVisita, hechas, log.procedimientosComentario));
   /* El consentimiento se documenta primero, como procedimiento independiente. */
   const cons = ciDeVisita(log);
   for(const r of cons){
@@ -4435,9 +4442,7 @@ function buildEvolution(log){
   }
   if(otrasHechas.length){
     for(const t of otrasHechas){
-      const nombre = String(t.nombre||T('Procedimiento')).trim();
-      const detalle = String(t.comentario||'').trim();
-      L.push(detalle ? nombre+': '+detalle : nombre+'.');
+      L.push(ZondaVisitEvolution.describirProcedimiento(t));
     }
   }
   if(tabletPacienteHechas.length || tabletMedicoHechas.length){
