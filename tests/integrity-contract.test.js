@@ -50,6 +50,11 @@ test('la auditoría local no se trunca ni ignora errores', () => {
   assert.match(html, /event_id:ev\.id/);
 });
 
+test('la auditoría pendiente se reintenta al recuperar una sesión válida', () => {
+  assert.match(html, /initConfigUI\(\);\s*\/\*[\s\S]*?await syncAuditQueue\(\);\s*renderAll\(\);/);
+  assert.match(html, /syncStatus\('audit','ok',[^\n]+\);[\s\S]*?typeof renderDashboard==='function'\) renderDashboard\(\);/);
+});
+
 test('la migración agrega revisión y hace escritura más auditoría en una transacción', () => {
   assert.match(migration, /add column if not exists rev bigint not null default 1/i);
   assert.match(migration, /create or replace function ec_save_record/i);
