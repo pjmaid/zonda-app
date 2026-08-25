@@ -1034,9 +1034,7 @@ details>summary{color:var(--acc-dark)}
         <b>Leer las páginas como imagen</b> — para criterios en tablas o PDF escaneados. Más preciso, consume más créditos.
       </label>
       <div class="toolbar" style="margin:8px 0 0">
-        <button id="btnNlmPrompt">📋 Copiar consulta y abrir NotebookLM</button>
-        <button id="btnNlmPaste">📥 Pegar respuesta desde el portapapeles</button>
-        <span class="muted small">NotebookLM se usa solo con el protocolo. Al volver, importá la respuesta con un clic y revisala antes de aplicarla.</span>
+        <span class="muted small"><b>Análisis automático:</b> Zonda consulta primero el índice seguro del protocolo y usa el otro motor solamente como respaldo autorizado.</span>
       </div>
       <div class="grow hidden" id="impFileBox"><label>Archivo (PDF, Word .docx o TXT)</label><input type="file" id="impFile" accept=".pdf,.docx,.txt"></div>
       <div><button class="primary" id="btnAnalyze">Analizar</button></div>
@@ -5277,10 +5275,23 @@ async function ragCitasCriterios(st, estudioId){
 }
 
 async function ragExtraerCriterios(estudioId){
-  const pedir = async (tipo) => {
+  const consultas = {
+    inclusion:[
+      'Transcribí la sección formal completa de criterios de inclusión y todos sus criterios numerados.',
+      'Buscá requisitos de inclusión sobre edad, consentimiento, diagnóstico, actividad o duración de la enfermedad, tratamientos previos y valores de laboratorio. Transcribí cada criterio completo que encuentres.',
+      'Buscá criterios de inclusión adicionales, subcriterios, notas, excepciones, requisitos reproductivos o anticonceptivos que no hayan aparecido en una lista breve. Transcribilos completos.'
+    ],
+    exclusion:[
+      'Transcribí la sección formal completa de criterios de exclusión y todos sus criterios numerados.',
+      'Buscá exclusiones por enfermedades concomitantes, infecciones, tuberculosis, neoplasias, embarazo, lactancia, alteraciones de laboratorio o función de órganos. Transcribí cada criterio completo que encuentres.',
+      'Buscá exclusiones adicionales por medicamentos, vacunas, períodos de lavado, tratamientos o ensayos previos, hipersensibilidad, cirugías y otras restricciones. Incluí subcriterios, notas y excepciones completas.'
+    ]
+  };
+  const pedirUna = async (tipo, enfoque) => {
     const cual = tipo==='inclusion' ? 'INCLUSIÓN' : 'EXCLUSIÓN';
     const preg =
-      'Listá TODOS los criterios de '+cual+' del protocolo, sin omitir ninguno.\n'+
+      enfoque+'\n'+
+      'Trabajá solamente con criterios de '+cual+' del protocolo y no omitas elementos recuperados.\n'+
       'Respondé solo con una lista numerada, un criterio por línea, completo y sin resumir.\n'+
       'La salida debe estar siempre en español: si la fuente está en otro idioma, traducí fielmente cada criterio '+
       'sin cambiar umbrales, unidades, plazos, negaciones, nombres de medicamentos ni condiciones.\n'+
@@ -5297,7 +5308,17 @@ async function ragExtraerCriterios(estudioId){
     return { texto: r.a, citas: r.citas };
   };
 
-  const [inc, exc] = await Promise.all([pedir('inclusion'), pedir('exclusion')]);
+  const pedirTipo = async tipo => {
+    const respuestas = [], errores = [];
+    for(const enfoque of consultas[tipo]){
+      try{ respuestas.push(await pedirUna(tipo, enfoque)); }
+      catch(e){ errores.push(e); }
+    }
+    if(!respuestas.length) throw (errores[0] || new Error('La búsqueda no devolvió criterios.'));
+    return respuestas;
+  };
+
+  const [inc, exc] = await Promise.all([pedirTipo('inclusion'), pedirTipo('exclusion')]);
 
   /* se reutiliza el parser de listas: acepta numeración, viñetas y líneas partidas */
   const lista = txt => {
@@ -5317,8 +5338,20 @@ async function ragExtraerCriterios(estudioId){
               .filter((x,i,a)=>a.indexOf(x)===i);
   };
 
-  return { incl: lista(inc.texto), excl: lista(exc.texto),
-           citas: (inc.citas||[]).concat(exc.citas||[]).length };
+  const combinar = respuestas => {
+    const out = [], claves = new Set();
+    for(const r of respuestas){
+      for(const criterio of lista(r.texto)){
+        const clave = criterio.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase()
+          .replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim();
+        if(!clave || claves.has(clave)) continue;
+        claves.add(clave); out.push(criterio);
+      }
+    }
+    return out;
+  };
+  return { incl: combinar(inc), excl: combinar(exc),
+           citas: inc.concat(exc).reduce((n,r)=>n+(r.citas||[]).length,0), consultas:inc.length+exc.length };
 }
 
 /* Medicación concomitante: se conserva la restricción y su fuente para que el
@@ -5484,9 +5517,11 @@ function openImportModal(){
     ? docs.map(d=>'<option value="'+d.id+'">'+esc(DOC_TIPOS[d.tipo]||d.tipo)+' — '+esc(d.filename)+'</option>').join('')
     : '<option value="">(este estudio no tiene documentos adjuntos)</option>';
   $('impSource').value = docs.length ? 'doc' : 'file';
-  $('impIntro').innerHTML = aiConfigured()
-    ? '<b>Análisis asistido por IA:</b> el protocolo pasa por el servicio seguro del sitio. El resultado es un borrador, queda auditado y debe revisarse antes de aplicarlo.'
-    : 'Analiza el texto con reglas simples. El servicio de IA requiere una sesión online activa.';
+  $('impIntro').innerHTML = ragActivo()
+    ? '<b>Búsqueda documental segura:</b> Zonda consulta automáticamente el índice del protocolo por secciones, conserva citas y deja un borrador para revisar.'
+    : aiConfigured()
+      ? '<b>Motor de respaldo:</b> el protocolo pasa por el servicio seguro del sitio. El resultado es un borrador, queda auditado y debe revisarse antes de aplicarlo.'
+      : 'Analiza el texto con reglas simples. El servicio online no está disponible.';
   onImpSource();
   $('impStatus').textContent='';
   $('impResults').classList.add('hidden');
@@ -5672,10 +5707,21 @@ async function ragBorrar(doc){
 async function ragPreguntar(pregunta, filtros){
   const scope = ZondaClinicalRag.clinicalQueryPayload(Object.assign({ accion:'preguntar', pregunta,
     preambulo:'Respondé en español, usando únicamente los fragmentos recuperados y sin agregar información externa.' }, filtros||{}));
-  const j = ZondaClinicalRag.requireCitedClinicalAnswer(await ragLlamar(scope), clinicalDocsOf(scope.estudio_id));
-  if(j.sinRespuesta && !j.respuesta)
-    throw new Error(T('El buscador no encontró contenido para responder. Puede que los documentos todavía se estén indexando.'));
-  return { a: j.respuesta || T('Sin respuesta.'), citas: j.citas || [] };
+  let ultimoError = null;
+  for(let intento=0; intento<3; intento++){
+    try{
+      const j = ZondaClinicalRag.requireCitedClinicalAnswer(await ragLlamar(scope), clinicalDocsOf(scope.estudio_id));
+      if(j.sinRespuesta && !j.respuesta)
+        throw new Error(T('El buscador no encontró contenido para responder. Puede que los documentos todavía se estén indexando.'));
+      return { a: j.respuesta || T('Sin respuesta.'), citas: j.citas || [] };
+    }catch(e){
+      ultimoError = e;
+      const transitorio = /429|500|502|503|504|timeout|temporar|high demand|unavailable|conexi[oó]n/i.test(String(e&&e.message||e));
+      if(!transitorio || intento===2) break;
+      await new Promise(resolve=>setTimeout(resolve, 700*Math.pow(2,intento)));
+    }
+  }
+  throw ultimoError || new Error(T('No se pudo consultar la búsqueda documental.'));
 }
 
 /* ---------- configuración ---------- */
@@ -5759,39 +5805,9 @@ $('btnRagIndexAll').addEventListener('click', async ()=>{
                   ' '+T('Google tarda unos minutos en procesarlos antes de poder consultarlos.');
 });
 
-/* ================= PUENTE CON GEMINI NOTEBOOK =================
-   La API Preview de Gemini Notebook Enterprise administra notebooks y fuentes,
-   pero no publica un método de conversación/RAG equivalente a la interfaz.
-   Por eso Zonda no simula una dependencia directa ni envía datos de pacientes.
-   Lo que sí se puede es sacarle provecho sin depender de la IA de Zonda:
-   la app arma la consulta con el formato exacto que necesita, se pega en
-   NotebookLM —que ya tiene el protocolo cargado y lo lee mejor que nadie— y
-   la respuesta vuelve por «Pegar texto». El texto pegado se interpreta con un
-   parser determinista, sin IA de por medio: lo que escribió NotebookLM es
-   exactamente lo que queda cargado. */
-
-const NLM_PROMPT =
-'Del protocolo cargado, listá TODOS los criterios de elegibilidad.\n\n'+
-'Respondé EXACTAMENTE con este formato, sin comentarios ni texto adicional:\n\n'+
-'### INCLUSION\n'+
-'1. [enunciado completo del primer criterio de inclusión]\n'+
-'2. [enunciado completo del segundo criterio de inclusión]\n'+
-'(y así con todos)\n\n'+
-'### EXCLUSION\n'+
-'1. [enunciado completo del primer criterio de exclusión]\n'+
-'2. [enunciado completo del segundo criterio de exclusión]\n'+
-'(y así con todos)\n\n'+
-'Reglas:\n'+
-'- Transcribí cada criterio COMPLETO y textual, sin resumir ni abreviar.\n'+
-'- Un criterio va en UNA sola línea numerada, aunque en el protocolo ocupe varios renglones. Si tiene una "Nota:" aclaratoria, incluila en la misma línea.\n'+
-'- No incluyas los subtítulos temáticos que agrupan criterios (por ejemplo "Afecciones médicas e infecciones"): solo los criterios en sí.\n'+
-'- No agregues encabezados, introducciones, conclusiones ni notas al pie.\n'+
-'- Respetá los dos encabezados "### INCLUSION" y "### EXCLUSION" tal cual, en mayúsculas y sin tilde.';
-
-const NLM_URL = 'https://notebook.google.com/';
-
-/* interpreta la respuesta de NotebookLM sin usar IA */
-function parseNotebookLM(txt){
+/* Interpreta localmente una respuesta estructurada pegada por el usuario.
+   Es una alternativa manual de emergencia y nunca envía su contenido a IA. */
+function parseRespuestaEstructurada(txt){
   const t = String(txt||'').replace(/\r/g,'');
   /* el encabezado tiene que estar SOLO en su línea (admite ### y **): si las
      palabras aparecen sueltas dentro de un párrafo, no es una respuesta con el
@@ -5821,7 +5837,7 @@ function parseNotebookLM(txt){
     }
     if(actual) out.push(actual);
     return out.map(x=>x.replace(/\*{1,2}/g,'')          /* negrita de markdown */
-                       .replace(/\[\d+\]/g,'')             /* marcadores de cita de NotebookLM */
+                       .replace(/\[\d+\]/g,'')             /* marcadores de cita */
                        .replace(/\s+/g,' ').trim())
               .filter(x=>x.length>=8)
               .filter((x,i,a)=>a.indexOf(x)===i);
@@ -5829,8 +5845,8 @@ function parseNotebookLM(txt){
   return { incl: items(bIn), excl: items(bEx) };
 }
 
-function importarRespuestaNotebookLM(text){
-  const nlm = parseNotebookLM(text);
+function importarRespuestaEstructurada(text){
+  const nlm = parseRespuestaEstructurada(text);
   if(!nlm || (!nlm.incl.length && !nlm.excl.length))
     throw new Error('La respuesta no tiene las secciones ### INCLUSION y ### EXCLUSION con criterios numerados.');
   $('impSource').value = 'paste';
@@ -5846,48 +5862,10 @@ function importarRespuestaNotebookLM(text){
   $('impResults').classList.remove('hidden');
   const st = $('impStatus');
   st.style.color='var(--ok)';
-  st.textContent = '✔ '+T('Respuesta de NotebookLM interpretada')+': '+nlm.incl.length+' '+
+  st.textContent = '✔ '+T('Respuesta estructurada interpretada')+': '+nlm.incl.length+' '+
     T('criterios de inclusión y')+' '+nlm.excl.length+' '+T('de exclusión, transcritos tal cual (sin IA de por medio). Revisá y aplicá.');
   return nlm;
 }
-
-$('btnNlmPrompt').addEventListener('click', async ()=>{
-  /* La apertura nace del clic del usuario para que el navegador no la bloquee.
-     NotebookLM no expone un endpoint de chat: Zonda no automatiza ni inspecciona
-     su sesión; solamente prepara la consulta del protocolo. */
-  window.open(NLM_URL, '_blank', 'noopener,noreferrer');
-  try{
-    await navigator.clipboard.writeText(NLM_PROMPT);
-    toast(T('Consulta copiada y NotebookLM abierto. Pegala allí; al volver usá «Pegar respuesta desde el portapapeles».'));
-  }catch(e){
-    /* si el navegador no deja copiar, se muestra para copiar a mano */
-    const back = document.createElement('div'); back.className='modal-back';
-    back.innerHTML = '<div class="modal" style="max-width:640px">'+
-      '<h3>'+T('Consulta para NotebookLM')+'</h3>'+
-      '<div class="muted small" style="margin-bottom:8px">'+T('Copiá este texto y pegalo en NotebookLM, con el protocolo cargado como fuente.')+'</div>'+
-      '<textarea rows="14" id="nlmTxt"></textarea>'+
-      '<div class="toolbar" style="margin-top:10px;margin-bottom:0"><button class="primary" id="nlmOk">'+T('Cerrar')+'</button></div></div>';
-    document.body.appendChild(back);
-    back.querySelector('#nlmTxt').value = NLM_PROMPT;
-    back.querySelector('#nlmTxt').select();
-    back.querySelector('#nlmOk').addEventListener('click', ()=>back.remove());
-  }
-});
-
-$('btnNlmPaste').addEventListener('click', async ()=>{
-  try{
-    const text = await navigator.clipboard.readText();
-    if(!String(text||'').trim()) throw new Error('El portapapeles está vacío.');
-    importarRespuestaNotebookLM(text);
-  }catch(e){
-    $('impSource').value = 'paste';
-    $('impSource').dispatchEvent(new Event('change'));
-    $('impPaste').focus();
-    const st = $('impStatus');
-    st.style.color='var(--warn)';
-    st.textContent = '⚠ '+T(e.message || 'No se pudo leer el portapapeles. Pegá la respuesta en el cuadro y presioná Analizar.');
-  }
-});
 
 $('btnCloseImport').addEventListener('click', ()=>$('importModal').classList.add('hidden'));
 
@@ -5916,14 +5894,14 @@ $('btnAnalyze').addEventListener('click', async ()=>{
       throw new Error('El documento no tiene texto legible (puede ser un PDF escaneado). Tildá «Leer las páginas como imagen» o pegá el texto.');
     /* La sección delimitada evita mezclar inclusión y exclusión o tomar el
        índice. El proveedor concreto queda encapsulado en el servidor. */
-    const extraerConIaPorSeccion = src === 'doc' && aiConfigured();
+    const extraerConIaPorSeccion = src === 'doc' && aiConfigured() && !ragActivo();
     if(extraerConIaPorSeccion){
       st.textContent = 'Verificando las secciones de inclusión y exclusión con el servicio de IA...';
     }
-    if(ragActivo() && src === 'doc' && !extraerConIaPorSeccion){
+    if(ragActivo() && src === 'doc'){
       const stIdRag = $('stId').value;
       try{
-        st.textContent = T('Consultando el índice de búsqueda documental...');
+        st.textContent = T('Consultando el índice del protocolo por secciones para evitar omisiones...');
         const rr = await ragExtraerCriterios(stIdRag);
         try{ IMP_VISITS = await ragExtraerVisitas(stIdRag); }catch(eV){ IMP_VISITS = []; }
         if(rr.incl.length || rr.excl.length || IMP_VISITS.length){
@@ -5935,22 +5913,24 @@ $('btnAnalyze').addEventListener('click', async ()=>{
           st.style.color = (rr.incl.length && rr.excl.length) ? 'var(--ok)' : 'var(--warn)';
           st.textContent = ((rr.incl.length && rr.excl.length)?'✔ ':'⚠ ')+
             rr.incl.length+' '+T('criterios de inclusión')+', '+rr.excl.length+' '+T('de exclusión y')+
-            ' '+IMP_VISITS.length+' '+T('visitas')+' — '+T('búsqueda documental')+'. '+
+            ' '+IMP_VISITS.length+' '+T('visitas')+' — '+T('búsqueda documental automática')+
+            (rr.consultas ? ' ('+rr.consultas+' consultas complementarias)' : '')+'. '+
             (!rr.incl.length || !rr.excl.length ? T('Falta una de las dos secciones: puede que el documento se esté indexando todavía. ') : '')+
             T('Revisá y aplicá.');
           return;
         }
         st.textContent = T('El índice no devolvió criterios; se intenta leyendo el documento...');
       }catch(eR){
+        if(ragEstricto()) throw new Error(T('Búsqueda documental')+': '+eR.message);
         st.textContent = T('Búsqueda documental no disponible')+' ('+eR.message+'). '+T('Se lee el documento...');
       }
     }
 
-    /* si el texto pegado tiene el formato de NotebookLM, se usa tal cual:
-       es la transcripción que hizo NotebookLM, no hace falta reinterpretarla */
-    const nlm = (src==='paste') ? parseNotebookLM(text) : null;
+    /* Si el texto pegado ya tiene secciones estructuradas, se usa tal cual sin
+       enviarlo a un segundo motor que pueda desvirtuarlo. */
+    const nlm = (src==='paste') ? parseRespuestaEstructurada(text) : null;
     if(nlm && (nlm.incl.length || nlm.excl.length)){
-      importarRespuestaNotebookLM(text);
+      importarRespuestaEstructurada(text);
       return;
     }
     let crit, usoIA = false;
