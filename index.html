@@ -1034,8 +1034,9 @@ details>summary{color:var(--acc-dark)}
         <b>Leer las páginas como imagen</b> — para criterios en tablas o PDF escaneados. Más preciso, consume más créditos.
       </label>
       <div class="toolbar" style="margin:8px 0 0">
-        <button id="btnNlmPrompt">📋 Copiar consulta para NotebookLM</button>
-        <span class="muted small">Pegala en NotebookLM (con el protocolo cargado) y traé la respuesta con «Pegar texto».</span>
+        <button id="btnNlmPrompt">📋 Copiar consulta y abrir NotebookLM</button>
+        <button id="btnNlmPaste">📥 Pegar respuesta desde el portapapeles</button>
+        <span class="muted small">NotebookLM se usa solo con el protocolo. Al volver, importá la respuesta con un clic y revisala antes de aplicarla.</span>
       </div>
       <div class="grow hidden" id="impFileBox"><label>Archivo (PDF, Word .docx o TXT)</label><input type="file" id="impFile" accept=".pdf,.docx,.txt"></div>
       <div><button class="primary" id="btnAnalyze">Analizar</button></div>
@@ -5787,6 +5788,8 @@ const NLM_PROMPT =
 '- No agregues encabezados, introducciones, conclusiones ni notas al pie.\n'+
 '- Respetá los dos encabezados "### INCLUSION" y "### EXCLUSION" tal cual, en mayúsculas y sin tilde.';
 
+const NLM_URL = 'https://notebook.google.com/';
+
 /* interpreta la respuesta de NotebookLM sin usar IA */
 function parseNotebookLM(txt){
   const t = String(txt||'').replace(/\r/g,'');
@@ -5826,10 +5829,36 @@ function parseNotebookLM(txt){
   return { incl: items(bIn), excl: items(bEx) };
 }
 
+function importarRespuestaNotebookLM(text){
+  const nlm = parseNotebookLM(text);
+  if(!nlm || (!nlm.incl.length && !nlm.excl.length))
+    throw new Error('La respuesta no tiene las secciones ### INCLUSION y ### EXCLUSION con criterios numerados.');
+  $('impSource').value = 'paste';
+  $('impDocBox').classList.add('hidden');
+  $('impFileBox').classList.add('hidden');
+  $('impPasteBox').classList.remove('hidden');
+  $('impPaste').value = text;
+  $('impIncl').value = nlm.incl.join('\n');
+  $('impExcl').value = nlm.excl.join('\n');
+  renderImpCriteriaPreview();
+  IMP_VISITS = [];
+  renderImpVisits();
+  $('impResults').classList.remove('hidden');
+  const st = $('impStatus');
+  st.style.color='var(--ok)';
+  st.textContent = '✔ '+T('Respuesta de NotebookLM interpretada')+': '+nlm.incl.length+' '+
+    T('criterios de inclusión y')+' '+nlm.excl.length+' '+T('de exclusión, transcritos tal cual (sin IA de por medio). Revisá y aplicá.');
+  return nlm;
+}
+
 $('btnNlmPrompt').addEventListener('click', async ()=>{
+  /* La apertura nace del clic del usuario para que el navegador no la bloquee.
+     NotebookLM no expone un endpoint de chat: Zonda no automatiza ni inspecciona
+     su sesión; solamente prepara la consulta del protocolo. */
+  window.open(NLM_URL, '_blank', 'noopener,noreferrer');
   try{
     await navigator.clipboard.writeText(NLM_PROMPT);
-    toast(T('Consulta copiada. Pegala en NotebookLM y traé la respuesta con «Pegar texto».'));
+    toast(T('Consulta copiada y NotebookLM abierto. Pegala allí; al volver usá «Pegar respuesta desde el portapapeles».'));
   }catch(e){
     /* si el navegador no deja copiar, se muestra para copiar a mano */
     const back = document.createElement('div'); back.className='modal-back';
@@ -5842,6 +5871,21 @@ $('btnNlmPrompt').addEventListener('click', async ()=>{
     back.querySelector('#nlmTxt').value = NLM_PROMPT;
     back.querySelector('#nlmTxt').select();
     back.querySelector('#nlmOk').addEventListener('click', ()=>back.remove());
+  }
+});
+
+$('btnNlmPaste').addEventListener('click', async ()=>{
+  try{
+    const text = await navigator.clipboard.readText();
+    if(!String(text||'').trim()) throw new Error('El portapapeles está vacío.');
+    importarRespuestaNotebookLM(text);
+  }catch(e){
+    $('impSource').value = 'paste';
+    $('impSource').dispatchEvent(new Event('change'));
+    $('impPaste').focus();
+    const st = $('impStatus');
+    st.style.color='var(--warn)';
+    st.textContent = '⚠ '+T(e.message || 'No se pudo leer el portapapeles. Pegá la respuesta en el cuadro y presioná Analizar.');
   }
 });
 
@@ -5906,15 +5950,7 @@ $('btnAnalyze').addEventListener('click', async ()=>{
        es la transcripción que hizo NotebookLM, no hace falta reinterpretarla */
     const nlm = (src==='paste') ? parseNotebookLM(text) : null;
     if(nlm && (nlm.incl.length || nlm.excl.length)){
-      $('impIncl').value = nlm.incl.join('\n');
-      $('impExcl').value = nlm.excl.join('\n');
-      renderImpCriteriaPreview();
-      IMP_VISITS = [];
-      renderImpVisits();
-      $('impResults').classList.remove('hidden');
-      st.style.color='var(--ok)';
-      st.textContent = '✔ '+T('Respuesta de NotebookLM interpretada')+': '+nlm.incl.length+' '+
-        T('criterios de inclusión y')+' '+nlm.excl.length+' '+T('de exclusión, transcritos tal cual (sin IA de por medio). Revisá y aplicá.');
+      importarRespuestaNotebookLM(text);
       return;
     }
     let crit, usoIA = false;
