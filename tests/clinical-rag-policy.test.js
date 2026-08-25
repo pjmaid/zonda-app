@@ -58,17 +58,28 @@ test('no acepta una respuesta clínica sin documento y página verificables', ()
   const ok = policy.requireCitedClinicalAnswer({ respuesta:'Sí', citas:[{documento:'IMVT Protocol.pdf',pagina:42,cita:'texto'}] }, docs);
   assert.equal(ok.citas[0].pagina, 42);
   assert.match(ragFunction, /if\(!respuesta\|\|!citas\.length\)return\{respuesta:"",citas:\[\],sinRespuesta:true,confiable:false\}/);
-  assert.match(ragFunction, /pagina:pageFrom\(reference\)/);
+  assert.match(ragFunction, /pagina:pageFrom\(item\)\|\|pageFrom\(reference\)/);
 });
 
 test('lee título, página y texto desde el esquema vigente de citas de Vertex', () => {
-  assert.match(ragFunction, /function referenceTitle\(reference:any\)/);
+  assert.match(ragFunction, /function referenceTitle\(reference:any/);
+  assert.match(ragFunction, /trustedById\.get\(referenceResourceId\(reference\)\)/);
   assert.match(ragFunction, /metadata\?\.structData\?\.title\|\|info\?\.structData\?\.title\|\|structured\?\.structData\?\.title/);
   assert.match(ragFunction, /metadata\?\.title\|\|info\?\.title\|\|info\?\.documentTitle\|\|structured\?\.title/);
-  assert.match(ragFunction, /info\.chunkContents/);
-  assert.match(ragFunction, /chunks\.find\(\(c:any\)=>String\(c\?\.content/);
+  assert.match(ragFunction, /const info=reference\?\.unstructuredDocumentInfo/);
+  assert.match(ragFunction, /"chunkContents","documentContexts","extractiveSegments","extractiveAnswers"/);
   assert.match(ragFunction, /deepValues\(reference,\/page\(\?:Identifier\|Number\)\?\$\/i\)/);
-  assert.match(ragFunction, /documento:referenceTitle\(reference\),pagina:pageFrom\(reference\),cita:referenceText\(reference\)/);
+  assert.match(ragFunction, /referenceChunks\(reference\)\.map\(chunk=>\(\{documento,\.\.\.chunk\}\)\)/);
+});
+
+test('resuelve la fuente técnica de Vertex contra documentos clínicos reales del estudio', () => {
+  assert.match(ragFunction, /data-%3E%3EestudioId=/);
+  assert.match(ragFunction, /allowedTypes\.has\(String\(row\.data\.tipo/);
+  assert.match(ragFunction, /!row\.data\.pacienteId/);
+  assert.match(ragFunction, /trustedById\.set\(await scopedDocId\(auth\.member\.org_id,sourceIndexId\(doc\.id\)\),title\)/);
+  assert.match(ragFunction, /trustedTitles\.add\(title\.toLowerCase\(\)\)/);
+  assert.match(ragFunction, /function sourceIndexId\(sourceDocId:unknown\)/);
+  assert.doesNotMatch(ragFunction, /scopedDocId\(auth\.member\.org_id,input\?\.doc_id\)/);
 });
 
 test('criterios, medicamentos y tareas siguen siendo borradores antes del guardado', () => {
@@ -95,3 +106,4 @@ test('la indexación distingue descarga, extracción y envío sin exponer errore
   assert.match(html, /ragResumenFallos\(r\.errores\)/);
   assert.doesNotMatch(html, /ragResumenFallos[\s\S]{0,800}e\.message/);
 });
+

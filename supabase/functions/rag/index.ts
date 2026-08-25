@@ -50,8 +50,15 @@ async function clinicalDocument(auth:Auth,studyId:string,sourceDocId:unknown){
   if(!rows[0]||data.estudioId!==studyId||!allowedTypes.has(String(data.tipo||""))||data.pacienteId)throw new Error("CLINICAL_DOCUMENT_ACCESS_REQUIRED");
   return{id,data};
 }
+async function studyClinicalDocuments(auth:Auth,studyId:string){
+  const filter=encodeURIComponent(`eq.${studyId}`);
+  const response=await fetch(`${auth.supabaseUrl}/rest/v1/ec_docs?select=id,data&data-%3E%3EestudioId=${filter}`,{headers:{Authorization:auth.authorization,apikey:auth.anonKey}});
+  const rows=response.ok?await response.json():[];
+  return (Array.isArray(rows)?rows:[]).filter((row:any)=>row?.id&&row?.data?.estudioId===studyId&&allowedTypes.has(String(row.data.tipo||""))&&!row.data.pacienteId);
+}
 async function shortHash(value:string){const d=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(value));return Array.from(new Uint8Array(d).slice(0,10)).map(b=>b.toString(16).padStart(2,"0")).join("");}
 async function scopedDocId(orgId:string,docId:unknown){return `org-${await shortHash(orgId)}-${validId(docId,"INVALID_DOCUMENT_ID")}`.slice(0,128);}
+function sourceIndexId(sourceDocId:unknown){return `doc-${validId(sourceDocId,"SOURCE_DOCUMENT_REQUIRED").replace(/[^A-Za-z0-9_-]/g,"").slice(0,50)}`;}
 
 function config(){
   const project=env("RAG_PROJECT_ID","GCP_PROJECT"),location=resolveEnv(readEnv,"RAG_LOCATION","GCP_LOCATION")||"global",dataStore=env("RAG_DATA_STORE_ID","GCP_DATASTORE"),engine=env("RAG_ENGINE_ID","GCP_ENGINE");
@@ -74,33 +81,47 @@ function clinicalFilter(orgId:string,studyId:string){const types=ALLOWED_TYPES.m
 
 function deepValues(value:unknown,re:RegExp,out:unknown[]=[]){if(!value||typeof value!=="object")return out;for(const[k,v]of Object.entries(value as Record<string,unknown>)){if(re.test(k))out.push(v);deepValues(v,re,out);}return out;}
 function pageFrom(reference:unknown){for(const v of deepValues(reference,/page(?:Identifier|Number)?$/i)){const p=Number.parseInt(String(v||"").replace(/\D+/g,""),10);if(p>0)return p;}for(const t of deepValues(reference,/content|text/i).map(String)){const m=t.match(/\[PÁGINA\s+(\d+)\]/i);if(m)return Number.parseInt(m[1],10);}return null;}
-function referenceText(reference:any){const info=reference?.unstructuredDocumentInfo||{},chunks=Array.isArray(info.chunkContents)?info.chunkContents:[],contexts=Array.isArray(info.documentContexts)?info.documentContexts:[];return String(reference?.chunkInfo?.content||chunks.find((c:any)=>String(c?.content||"").trim())?.content||contexts.find((c:any)=>String(c?.content||"").trim())?.content||"").slice(0,800);}
-function referenceTitle(reference:any){const metadata=reference?.chunkInfo?.documentMetadata||{},info=reference?.unstructuredDocumentInfo||{},structured=reference?.structuredDocumentInfo||{};return String(metadata?.structData?.title||info?.structData?.title||structured?.structData?.title||metadata?.title||info?.title||info?.documentTitle||structured?.title||"").slice(0,200);}
-function verifiedCitations(answer:any){
+function referenceResourceId(reference:any){for(const value of deepValues(reference,/^(?:document|chunk)$/i).map(String)){const match=value.match(/\/documents\/([^/]+)/);if(match)return decodeURIComponent(match[1]);}return "";}
+function referenceTitle(reference:any,trustedById:Map<string,string>,trustedTitles:Set<string>){
+  const trusted=trustedById.get(referenceResourceId(reference));if(trusted)return trusted;
+  const metadata=reference?.chunkInfo?.documentMetadata||{},info=reference?.unstructuredDocumentInfo||{},structured=reference?.structuredDocumentInfo||{};
+  const candidate=String(metadata?.structData?.title||info?.structData?.title||structured?.structData?.title||metadata?.title||info?.title||info?.documentTitle||structured?.title||"").slice(0,300);
+  return trustedTitles.has(candidate.toLowerCase())?candidate:"";
+}
+function referenceChunks(reference:any){
+  const info=reference?.unstructuredDocumentInfo||{},items:any[]=[];
+  if(reference?.chunkInfo?.content)items.push(reference.chunkInfo);
+  for(const key of ["chunkContents","documentContexts","extractiveSegments","extractiveAnswers"]){for(const item of(Array.isArray(info[key])?info[key]:[]))if(item?.content)items.push(item);}
+  if(!items.length){const content=String(deepValues(reference,/content|text/i).find(v=>String(v||"").trim())||"");if(content)items.push({content});}
+  return items.map(item=>({pagina:pageFrom(item)||pageFrom(reference),cita:String(item.content||"").slice(0,800)})).filter(item=>item.pagina&&item.cita);
+}
+function verifiedCitations(answer:any,trustedById:Map<string,string>,trustedTitles:Set<string>){
   const refs=Array.isArray(answer?.references)?answer.references:[],used=new Set<string>();
   for(const c of(Array.isArray(answer?.citations)?answer.citations:[]))for(const s of(Array.isArray(c?.sources)?c.sources:[]))used.add(String(s?.referenceId));
-  return refs.map((reference:any,index:number)=>({reference,index})).filter(({index})=>!used.size||used.has(String(index))||used.has(String(index+1))).map(({reference})=>({
-    documento:referenceTitle(reference),pagina:pageFrom(reference),cita:referenceText(reference)
-  })).filter((c:any)=>c.documento&&c.pagina&&c.cita);
+  return refs.map((reference:any,index:number)=>({reference,index})).filter(({index})=>!used.size||used.has(String(index))||used.has(String(index+1))).flatMap(({reference})=>{
+    const documento=referenceTitle(reference,trustedById,trustedTitles);return documento?referenceChunks(reference).map(chunk=>({documento,...chunk})):[];
+  });
 }
 
 async function indexDocument(auth:Auth,input:any){
   const studyId=validId(input?.estudio_id,"STUDY_SCOPE_REQUIRED");await assertStudyAccess(auth,studyId);
   if(input?.paciente_id)throw new Error("PATIENT_DATA_NOT_ALLOWED");const source=await clinicalDocument(auth,studyId,input?.source_doc_id),type=String(source.data.tipo);
   const text=prepareText(String(input?.texto||""));if(text.trim().length<50)throw new Error("DOCUMENT_TEXT_REQUIRED");
-  const id=await scopedDocId(auth.member.org_id,input?.doc_id),cfg=config(),name=`${cfg.root}/dataStores/${cfg.dataStore}/branches/default_branch/documents/${id}`;
+  const id=await scopedDocId(auth.member.org_id,sourceIndexId(source.id)),cfg=config(),name=`${cfg.root}/dataStores/${cfg.dataStore}/branches/default_branch/documents/${id}`;
   await googleFetch(`${name}?allowMissing=true`,{method:"PATCH",body:JSON.stringify({name,id,structData:{org_id:auth.member.org_id,estudio_id:studyId,tipo:type,title:String(source.data.filename||input?.titulo||"").slice(0,300)},content:{mimeType:"text/plain",rawBytes:b64text(text)}})});return{ok:true};
 }
 async function ask(auth:Auth,input:any){
   const studyId=validId(input?.estudio_id,"STUDY_SCOPE_REQUIRED");await assertStudyAccess(auth,studyId);if(input?.paciente_id)throw new Error("PATIENT_DATA_NOT_ALLOWED");
   const question=String(input?.pregunta||"").trim();if(!question)throw new Error("QUESTION_REQUIRED");const cfg=config();
   const result=await googleFetch(`${cfg.root}/engines/${cfg.engine}/servingConfigs/default_search:answer`,{method:"POST",body:JSON.stringify({query:{text:question},answerGenerationSpec:{includeCitations:true,answerLanguageCode:"es",ignoreLowRelevantContent:true,promptSpec:{preamble:String(input?.preambulo||"").slice(0,4000)}},searchSpec:{searchParams:{maxReturnResults:clampResults(input?.max_fragmentos),filter:clinicalFilter(auth.member.org_id,studyId)}}})});
-  const citas=verifiedCitations(result?.answer),respuesta=String(result?.answer?.answerText||"").trim();if(!respuesta||!citas.length)return{respuesta:"",citas:[],sinRespuesta:true,confiable:false};return{respuesta,citas,sinRespuesta:false,confiable:true};
+  const docs=await studyClinicalDocuments(auth,studyId),trustedById=new Map<string,string>(),trustedTitles=new Set<string>();
+  for(const doc of docs){const title=String(doc.data.filename||"").trim();if(!title)continue;trustedById.set(await scopedDocId(auth.member.org_id,sourceIndexId(doc.id)),title);trustedTitles.add(title.toLowerCase());}
+  const citas=verifiedCitations(result?.answer,trustedById,trustedTitles),respuesta=String(result?.answer?.answerText||"").trim();if(!respuesta||!citas.length)return{respuesta:"",citas:[],sinRespuesta:true,confiable:false};return{respuesta,citas,sinRespuesta:false,confiable:true};
 }
 async function deleteDocument(auth:Auth,input:any){
   const studyId=validId(input?.estudio_id,"STUDY_SCOPE_REQUIRED");await assertStudyAccess(auth,studyId);
   await clinicalDocument(auth,studyId,input?.source_doc_id);
-  const cfg=config(),id=await scopedDocId(auth.member.org_id,input?.doc_id),name=`${cfg.root}/dataStores/${cfg.dataStore}/branches/default_branch/documents/${id}`;
+  const cfg=config(),id=await scopedDocId(auth.member.org_id,sourceIndexId(input?.source_doc_id)),name=`${cfg.root}/dataStores/${cfg.dataStore}/branches/default_branch/documents/${id}`;
   const doc=await googleFetch(name);
   if(doc?.structData?.org_id!==auth.member.org_id||doc?.structData?.estudio_id!==studyId||!allowedTypes.has(String(doc?.structData?.tipo||"")))throw new Error("DOCUMENT_ACCESS_REQUIRED");
   await googleFetch(name,{method:"DELETE"});return{ok:true};
@@ -113,3 +134,4 @@ Deno.serve(async(req)=>{if(req.method==="OPTIONS")return new Response("ok",{head
   if(action==="borrar")return json(await deleteDocument(auth,input));
   if(action==="listar")return json({total:0,documentos:[],mensaje:"El listado global está deshabilitado para evitar exponer metadatos entre protocolos."});return json({error:"INVALID_ACTION"},400);
 }catch(error){const message=error instanceof Error?error.message:"INTERNAL_ERROR";const status=/AUTH_REQUIRED|MEMBERSHIP_REQUIRED/.test(message)?401:/STUDY_ACCESS_REQUIRED/.test(message)?403:/REQUIRED|INVALID|NOT_ALLOWED/.test(message)?400:500;return json({error:message},status);}});
+
