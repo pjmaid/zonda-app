@@ -62,11 +62,13 @@ test('no acepta una respuesta clínica sin documento y página verificables', ()
 });
 
 test('lee título, página y texto desde el esquema vigente de citas de Vertex', () => {
-  assert.match(ragFunction, /unstructuredDocumentInfo\?\.title/);
+  assert.match(ragFunction, /function referenceTitle\(reference:any\)/);
+  assert.match(ragFunction, /metadata\?\.structData\?\.title\|\|info\?\.structData\?\.title\|\|structured\?\.structData\?\.title/);
+  assert.match(ragFunction, /metadata\?\.title\|\|info\?\.title\|\|info\?\.documentTitle\|\|structured\?\.title/);
   assert.match(ragFunction, /info\.chunkContents/);
   assert.match(ragFunction, /chunks\.find\(\(c:any\)=>String\(c\?\.content/);
   assert.match(ragFunction, /deepValues\(reference,\/page\(\?:Identifier\|Number\)\?\$\/i\)/);
-  assert.match(ragFunction, /cita:referenceText\(reference\)/);
+  assert.match(ragFunction, /documento:referenceTitle\(reference\),pagina:pageFrom\(reference\),cita:referenceText\(reference\)/);
 });
 
 test('criterios, medicamentos y tareas siguen siendo borradores antes del guardado', () => {
