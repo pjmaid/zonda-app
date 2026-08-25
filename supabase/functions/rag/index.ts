@@ -74,11 +74,12 @@ function clinicalFilter(orgId:string,studyId:string){const types=ALLOWED_TYPES.m
 
 function deepValues(value:unknown,re:RegExp,out:unknown[]=[]){if(!value||typeof value!=="object")return out;for(const[k,v]of Object.entries(value as Record<string,unknown>)){if(re.test(k))out.push(v);deepValues(v,re,out);}return out;}
 function pageFrom(reference:unknown){for(const v of deepValues(reference,/page(?:Identifier|Number)?$/i)){const p=Number.parseInt(String(v||"").replace(/\D+/g,""),10);if(p>0)return p;}for(const t of deepValues(reference,/content|text/i).map(String)){const m=t.match(/\[PÁGINA\s+(\d+)\]/i);if(m)return Number.parseInt(m[1],10);}return null;}
+function referenceText(reference:any){const info=reference?.unstructuredDocumentInfo||{},chunks=Array.isArray(info.chunkContents)?info.chunkContents:[],contexts=Array.isArray(info.documentContexts)?info.documentContexts:[];return String(reference?.chunkInfo?.content||chunks.find((c:any)=>String(c?.content||"").trim())?.content||contexts.find((c:any)=>String(c?.content||"").trim())?.content||"").slice(0,800);}
 function verifiedCitations(answer:any){
   const refs=Array.isArray(answer?.references)?answer.references:[],used=new Set<string>();
   for(const c of(Array.isArray(answer?.citations)?answer.citations:[]))for(const s of(Array.isArray(c?.sources)?c.sources:[]))used.add(String(s?.referenceId));
   return refs.map((reference:any,index:number)=>({reference,index})).filter(({index})=>!used.size||used.has(String(index))||used.has(String(index+1))).map(({reference})=>({
-    documento:String(reference?.chunkInfo?.documentMetadata?.title||reference?.unstructuredDocumentInfo?.documentTitle||"").slice(0,200),pagina:pageFrom(reference),cita:String(reference?.chunkInfo?.content||reference?.unstructuredDocumentInfo?.documentContexts?.[0]?.content||"").slice(0,800)
+    documento:String(reference?.chunkInfo?.documentMetadata?.title||reference?.unstructuredDocumentInfo?.title||reference?.unstructuredDocumentInfo?.documentTitle||"").slice(0,200),pagina:pageFrom(reference),cita:referenceText(reference)
   })).filter((c:any)=>c.documento&&c.pagina&&c.cita);
 }
 

@@ -61,6 +61,14 @@ test('no acepta una respuesta clínica sin documento y página verificables', ()
   assert.match(ragFunction, /pagina:pageFrom\(reference\)/);
 });
 
+test('lee título, página y texto desde el esquema vigente de citas de Vertex', () => {
+  assert.match(ragFunction, /unstructuredDocumentInfo\?\.title/);
+  assert.match(ragFunction, /info\.chunkContents/);
+  assert.match(ragFunction, /chunks\.find\(\(c:any\)=>String\(c\?\.content/);
+  assert.match(ragFunction, /deepValues\(reference,\/page\(\?:Identifier\|Number\)\?\$\/i\)/);
+  assert.match(ragFunction, /cita:referenceText\(reference\)/);
+});
+
 test('criterios, medicamentos y tareas siguen siendo borradores antes del guardado', () => {
   assert.match(html, /borrador, queda auditado y debe revisarse antes de aplicarlo/);
   assert.match(html, /EDIT_MEDS_PROHIBIDOS = actuales\.concat\(nuevos\)/);
