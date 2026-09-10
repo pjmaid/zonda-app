@@ -7,8 +7,8 @@
  */
 window.ZONDA_RUNTIME_CONFIG = Object.freeze({
   environment: 'production',
-  appVersion: '0.9.2',
-  releaseId: '52563fda9f5b3a101b7347efe53278d805a9502b',
+  appVersion: '0.9.3',
+  releaseId: 'fc7edeab79bb3102dc63bf30ae1380b602eb8523',
   supaUrl: 'https://aqinxboxjklsyvesdcyr.supabase.co',
   supaKey: 'sb_publishable_ypqDPv6T3S4cDuNFi2Yq2A_Lt5rJ68m'
 });
