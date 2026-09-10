@@ -2084,28 +2084,50 @@ function supaHeaders(){
   const tok = SESSION && SESSION.access_token ? SESSION.access_token : CFG.supaKey;
   return { 'apikey': CFG.supaKey, 'Authorization': 'Bearer '+tok, 'Content-Type': 'application/json' };
 }
+function assertSameSession(session){
+  if(SESSION===session) return;
+  const err = new Error('La sesión cambió mientras se procesaba la operación. Recargá los datos antes de continuar.');
+  err.sessionChanged = true;
+  throw err;
+}
 async function supaFetch(path, opts, retry){
   opts = opts || {}; if(retry===undefined) retry=true;
+  const session = SESSION, accessToken = session && session.access_token;
   const r = await fetch(supaBase()+path, Object.assign({}, opts, { headers: Object.assign(supaHeaders(), opts.headers||{}) }));
-  if(r.status===401 && retry && SESSION && SESSION.refresh_token){
-    const ok = await supaRefresh();
-    if(ok) return supaFetch(path, opts, false);
+  assertSameSession(session);
+  if(r.status===401 && retry && session && SESSION===session && session.refresh_token){
+    /* Otra solicitud pudo renovar la misma sesión mientras esta esperaba.
+       Nunca reintentar una operación usando una cuenta que ingresó después. */
+    const ok = session.access_token!==accessToken || await supaRefresh();
+    if(ok && SESSION===session) return supaFetch(path, opts, false);
   }
   return r;
 }
+let SUPA_REFRESH_PENDING = null;
 async function supaRefresh(){
-  try{
-    const r = await fetch(supaBase()+'/auth/v1/token?grant_type=refresh_token', {
-      method:'POST', headers:{ 'apikey':CFG.supaKey, 'Content-Type':'application/json' },
-      body: JSON.stringify({ refresh_token: SESSION.refresh_token })
-    });
-    if(!r.ok) return false;
-    const j = await r.json();
-    SESSION = { access_token:j.access_token, refresh_token:j.refresh_token, email:(j.user&&j.user.email)||SESSION.email,
-                claveTemp: SESSION.claveTemp };
-    saveJSON(LS.SES, SESSION);
-    return true;
-  }catch(e){ return false; }
+  const session = SESSION;
+  if(!session || !session.refresh_token) return false;
+  if(SUPA_REFRESH_PENDING && SUPA_REFRESH_PENDING.session===session) return SUPA_REFRESH_PENDING.promise;
+  const pending = { session, promise:null };
+  pending.promise = (async ()=>{
+    try{
+      const r = await fetch(supaBase()+'/auth/v1/token?grant_type=refresh_token', {
+        method:'POST', headers:{ 'apikey':CFG.supaKey, 'Content-Type':'application/json' },
+        body: JSON.stringify({ refresh_token:session.refresh_token })
+      });
+      if(!r.ok) return false;
+      const j = await r.json();
+      if(SESSION!==session || !j.access_token || !j.refresh_token) return false;
+      /* Conservar la identidad de la sesión permite distinguir una renovación
+         de un cierre de sesión o del ingreso de otro usuario. */
+      Object.assign(session, { access_token:j.access_token, refresh_token:j.refresh_token,
+        email:(j.user&&j.user.email)||session.email });
+      saveJSON(LS.SES, session);
+      return true;
+    }catch(e){ return false; }
+  })().finally(()=>{ if(SUPA_REFRESH_PENDING===pending) SUPA_REFRESH_PENDING=null; });
+  SUPA_REFRESH_PENDING = pending;
+  return pending.promise;
 }
 
 const Store = {
@@ -2118,6 +2140,30 @@ const Store = {
       this.snapshots[kind] = new Map();
     }
   },
+  async loadRows(kind){
+    const rows = [], seen = new Set();
+    const session = SESSION;
+    let cursor = '';
+    for(;;){
+      /* El ID es estable aunque se editen o eliminen filas entre páginas.
+         Continuar hasta una página vacía: el servidor puede devolver menos
+         filas que las solicitadas por su propio límite de respuesta. */
+      const filter = cursor ? '&id=gt.'+encodeURIComponent(JSON.stringify(cursor)) : '';
+      const r = await supaFetch('/rest/v1/'+KIND_TABLE[kind]+'?select=id,data,rev,updated_at&order=id.asc&limit=1000'+filter, {method:'GET'});
+      if(!r.ok) throw new Error('Error al leer '+KIND_TABLE[kind]+' ('+r.status+'). No se reemplazaron los datos confirmados.');
+      const page = await r.json();
+      assertSameSession(session);
+      if(!Array.isArray(page)) throw new Error('Respuesta inválida al leer '+KIND_TABLE[kind]+'.');
+      if(!page.length) break;
+      for(const row of page){
+        if(!row || typeof row.id!=='string' || !row.id || seen.has(row.id))
+          throw new Error('No se pudo completar la carga de '+KIND_TABLE[kind]+'. Recargá los datos.');
+        seen.add(row.id); rows.push(row);
+      }
+      cursor = page[page.length-1].id;
+    }
+    return rows.sort((a,b)=>String(a.updated_at||'').localeCompare(String(b.updated_at||'')));
+  },
   async loadAll(){
     if(!this.online()){
       const d = loadJSON(LS.DB);
@@ -2128,20 +2174,21 @@ const Store = {
       if(typeof hidratarConfiguracionCompartida==='function') hidratarConfiguracionCompartida();
       return;
     }
-    this.resetMeta();
-    const out = {};
+    const out = {}, revisions = {}, snapshots = {}, session = SESSION;
     for(const kind of Object.keys(KIND_TABLE)){
-      const r = await supaFetch('/rest/v1/'+KIND_TABLE[kind]+'?select=id,data,rev,updated_at&order=updated_at.asc', { method:'GET' });
-      if(!r.ok) throw new Error('Error al leer '+KIND_TABLE[kind]+' ('+r.status+'). ¿Ejecutaste el script SQL?');
-      const rows = await r.json();
+      const rows = await this.loadRows(kind);
+      assertSameSession(session);
+      revisions[kind] = new Map(); snapshots[kind] = new Map();
       out[kind] = rows.map(x=>{
         if(x && x.id && x.data){
-          this.revisions[kind].set(x.id, Number(x.rev||1));
-          this.snapshots[kind].set(x.id, cloneData(x.data));
+          revisions[kind].set(x.id, Number(x.rev||1));
+          snapshots[kind].set(x.id, cloneData(x.data));
         }
         return x.data;
       }).filter(Boolean);
     }
+    /* Datos y revisiones cambian juntos, únicamente al terminar toda la carga. */
+    this.revisions = revisions; this.snapshots = snapshots;
     DB = { studies:out.studies, patients:out.patients, visits:out.visits, docs:out.docs, users:out.users||[],
            records:out.records||[], checklists:out.checklists||[], settings:out.settings||[] };
     if(typeof hidratarDatosCompartidos==='function') hidratarDatosCompartidos();
@@ -2155,9 +2202,11 @@ const Store = {
     } else if(i>=0) DB[kind].splice(i,1);
   },
   async refreshOne(kind,id){
+    const session = SESSION;
     const r=await supaFetch('/rest/v1/'+KIND_TABLE[kind]+'?select=id,data,rev,updated_at&id=eq.'+encodeURIComponent(id), {method:'GET'});
     if(!r.ok) throw new Error('No se pudo recargar el registro en conflicto.');
     const rows=await r.json(), row=rows&&rows[0];
+    assertSameSession(session);
     if(!row){
       DB[kind]=DB[kind].filter(x=>x.id!==id);
       this.revisions[kind].delete(id); this.snapshots[kind].delete(id);
@@ -2169,17 +2218,21 @@ const Store = {
     this.snapshots[kind].set(id,cloneData(row.data));
   },
   async rpc(path, payload){
+    const requestBody = JSON.stringify(payload), session = SESSION;
     let r;
     try{
-      r = await supaFetch('/rest/v1/rpc/'+path, { method:'POST', body:JSON.stringify(payload) });
+      r = await supaFetch('/rest/v1/rpc/'+path, { method:'POST', body:requestBody });
     }catch(firstError){
+      assertSameSession(session);
       try{
-        r = await supaFetch('/rest/v1/rpc/'+path, { method:'POST', body:JSON.stringify(payload) });
+        r = await supaFetch('/rest/v1/rpc/'+path, { method:'POST', body:requestBody });
       }catch(secondError){
+        assertSameSession(session);
         throw new Error('No hay conexión con el servidor. No se pudo confirmar el cambio.');
       }
     }
     const raw = await r.text().catch(()=>'');
+    assertSameSession(session);
     let body = {}; try{ body=raw?JSON.parse(raw):{}; }catch(e){ body={ message:raw }; }
     if(!r.ok){
       const msg = String(body.message||body.hint||'');
@@ -2196,6 +2249,9 @@ const Store = {
   async upsert(kind, obj, audit){
     assertDeploymentWritable();
     if(!obj || !obj.id || !KIND_TABLE[kind]) throw new Error('Registro inválido.');
+    /* Aislar lo enviado de los cambios posteriores del formulario. */
+    obj = cloneData(obj); audit = cloneData(audit);
+    const session = SESSION;
     if(!this.revisions[kind]) this.resetMeta();
     const expected = this.revisions[kind].has(obj.id) ? this.revisions[kind].get(obj.id) : null;
     const eventId = uid();
@@ -2206,17 +2262,25 @@ const Store = {
         p_event_id:eventId, p_action:(audit&&audit.accion)||'',
         p_detail:(audit&&audit.detalle)||'', p_motivo:(audit&&audit.motivo)||''
       });
-      const arr = DB[kind]; const i = arr.findIndex(x=>x.id===obj.id);
-      if(i>=0) arr[i]=obj; else arr.push(obj);
-      this.revisions[kind].set(obj.id, Number(result.rev));
-      this.snapshots[kind].set(obj.id, cloneData(obj));
+      assertSameSession(session);
+      if(result.replayed){
+        /* La RPC puede devolver la revisión de una edición posterior. Leer
+           su contenido antes de aceptar esa revisión para el próximo guardado. */
+        await this.refreshOne(kind,obj.id);
+      } else {
+        const arr = DB[kind]; const i = arr.findIndex(x=>x.id===obj.id);
+        if(i>=0) arr[i]=obj; else arr.push(obj);
+        this.revisions[kind].set(obj.id, Number(result.rev));
+        this.snapshots[kind].set(obj.id, cloneData(obj));
+      }
       if(typeof recordarAuditoriaConfirmada==='function')
         recordarAuditoriaConfirmada(kind, (audit&&audit.accion)||(expected===null?'alta':'modificación'), obj.id,
           (audit&&audit.detalle)||'', (audit&&audit.motivo)||'', eventId, result.updated_at);
       syncStatus('storage','ok','✓ Cambio guardado y auditado.');
       return result;
     }catch(e){
-      if(e.conflict){ try{ await this.refreshOne(kind,obj.id); }catch(refreshError){ this.restore(kind,obj.id); } }
+      if(e.sessionChanged) throw e;
+      if(e.conflict){ try{ await this.refreshOne(kind,obj.id); }catch(refreshError){ if(refreshError.sessionChanged) throw refreshError; this.restore(kind,obj.id); } }
       else this.restore(kind,obj.id);
       syncStatus('storage','error','⚠ '+e.message);
       throw e;
@@ -2224,6 +2288,7 @@ const Store = {
   },
   async remove(kind, id, audit){
     assertDeploymentWritable();
+    const session = SESSION;
     if(!this.revisions[kind] || !this.revisions[kind].has(id)) throw new Error('El registro no tiene una versión confirmada. Recargá los datos.');
     const eventId=uid();
     syncStatus('storage','saving','Eliminando y registrando auditoría…');
@@ -2232,6 +2297,7 @@ const Store = {
         p_kind:kind, p_id:id, p_expected_rev:this.revisions[kind].get(id), p_event_id:eventId,
         p_detail:(audit&&audit.detalle)||'', p_motivo:(audit&&audit.motivo)||''
       });
+      assertSameSession(session);
       DB[kind] = DB[kind].filter(x=>x.id!==id);
       this.revisions[kind].delete(id); this.snapshots[kind].delete(id);
       if(typeof recordarAuditoriaConfirmada==='function')
@@ -2239,7 +2305,8 @@ const Store = {
       syncStatus('storage','ok','✓ Registro eliminado y auditado.');
       return result;
     }catch(e){
-      if(e.conflict){ try{ await this.refreshOne(kind,id); }catch(refreshError){ this.restore(kind,id); } }
+      if(e.sessionChanged) throw e;
+      if(e.conflict){ try{ await this.refreshOne(kind,id); }catch(refreshError){ if(refreshError.sessionChanged) throw refreshError; this.restore(kind,id); } }
       else this.restore(kind,id);
       syncStatus('storage','error','⚠ '+e.message);
       throw e;
@@ -10357,6 +10424,7 @@ function renderFactGasto(tipo){
 function renderFactGastos(){ Object.keys(FACT_GASTOS).forEach(renderFactGasto); }
 async function factGuardarGasto(tipo){
   const def=FACT_GASTOS[tipo], k=def.key, stId=$('factStudy').value, btn=$('btnFactGasto'+k);
+  if(btn.disabled) return;
   const fecha=$('factGasto'+k+'Fecha').value, referencia=$('factGasto'+k+'Referencia').value.trim();
   const detalle=$('factGasto'+k+'Detalle').value.trim(), monto=$('factGasto'+k+'Monto').value.trim();
   const moneda=$('factGasto'+k+'Moneda').value.trim(), file=$('factGasto'+k+'File').files[0];
@@ -10364,6 +10432,7 @@ async function factGuardarGasto(tipo){
   if(!fecha || !detalle || monto==='' || isNaN(+monto) || +monto<0 || !moneda){ toast(T('Completá fecha, descripción, importe y moneda.')); return; }
   if(file && file.size>20*1048576){ toast(T('El comprobante supera 20 MB.')); return; }
   const gasto={ id:uid(), recordType:tipo, estudioId:stId, fecha, referencia, detalle, monto:+monto, moneda, creado:new Date().toISOString() };
+  let attachmentError = '';
   btn.disabled=true; btn.textContent=T('Guardando...');
   try{
     await Store.upsert('records',gasto,{accion:'alta',detalle:def.titulo+': '+detalle,motivo:''});
@@ -10377,9 +10446,12 @@ async function factGuardarGasto(tipo){
         await Store.upsert('docs',doc);
         gasto.comprobanteDocId=doc.id;
         await Store.upsert('records',gasto,{accion:'modificación',detalle:def.titulo+' con comprobante',motivo:''});
-      }catch(eDoc){ toast('⚠ Gasto guardado, pero no se pudo adjuntar el comprobante: '+eDoc.message); }
+      }catch(eDoc){ attachmentError=eDoc.message; }
     }
-    renderFactGasto(tipo); toast(T('Gasto registrado.'));
+    renderFactGasto(tipo);
+    if(attachmentError)
+      alert(T('El gasto quedó guardado, pero no se pudo adjuntar el comprobante. No vuelvas a agregar el mismo gasto.')+'\n'+attachmentError);
+    else toast(T('Gasto registrado.'));
   }catch(e){ alert(T('No se pudo guardar el gasto: ')+e.message); }
   finally{ btn.disabled=false; btn.textContent=T('Agregar gasto'); }
 }

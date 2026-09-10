@@ -2,6 +2,7 @@ const test=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
+const vm=require('node:vm');
 const release=require('../release-tools.js');
 
 const root=path.resolve(__dirname,'..');
@@ -41,7 +42,11 @@ test('la aplicación declara entorno y versión visibles',()=>{
   assert.match(html,/id="versionBadge"/);
   assert.match(html,/id="environmentBanner"/);
   assert.match(html,/ZONDA_RUNTIME_CONFIG/);
-  assert.match(runtime,/environment:\s*'unconfigured'/);
+  const context={window:{}};
+  vm.runInNewContext(runtime,context);
+  const config=context.window.ZONDA_RUNTIME_CONFIG;
+  assert.ok(['unconfigured','test','production'].includes(config.environment));
+  assert.equal(config.appVersion,fs.readFileSync(path.join(root,'VERSION'),'utf8').trim());
   assert.match(html,/function assertDeploymentWritable\(\)/);
   assert.match(html,/async upsert\(kind, obj, audit\)\{\s*assertDeploymentWritable\(\)/);
   assert.match(html,/async remove\(kind, id, audit\)\{\s*assertDeploymentWritable\(\)/);

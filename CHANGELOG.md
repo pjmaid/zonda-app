@@ -1,5 +1,13 @@
 # Registro de cambios
 
+## 0.9.2 — 2026-09-10
+
+- Carga paginada de todas las colecciones, incluso cuando el servidor limita cada respuesta; los datos y sus revisiones se reemplazan juntos al completar la carga.
+- El guardado conserva una copia del contenido enviado. Los reintentos usan exactamente la misma solicitud y recargan la versión vigente cuando el servidor confirma un evento ya procesado.
+- Las solicitudes simultáneas comparten la renovación de sesión. Una respuesta de la sesión anterior no puede reintentar escrituras con otra cuenta.
+- Facturación conserva el aviso cuando el gasto se guarda pero falla su comprobante, y evita envíos simultáneos del mismo formulario.
+- El control de versión admite configuraciones válidas de prueba y producción y conserva el bloqueo de escrituras con un entorno sin configurar.
+
 ## 0.9.1-rc.1 — 2026-08-16
 
 - Configuración deja de mostrar la plantilla general del proceso de consentimiento.
