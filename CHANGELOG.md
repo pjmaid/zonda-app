@@ -1,6 +1,6 @@
 # Registro de cambios
 
-## Pendiente de publicación — 2026-09-10
+## 0.9.2 — 2026-09-10
 
 - Carga paginada de todas las colecciones, incluso cuando el servidor limita cada respuesta; los datos y sus revisiones se reemplazan juntos al completar la carga.
 - El guardado conserva una copia del contenido enviado. Los reintentos usan exactamente la misma solicitud y recargan la versión vigente cuando el servidor confirma un evento ya procesado.
