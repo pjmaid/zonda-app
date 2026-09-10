@@ -42,7 +42,9 @@ test('carga todos los registros aunque el servidor limite cada respuesta', async
     assert.ok(++calls < 10, 'La paginación debe avanzar y terminar.');
     const params = new URL(url).searchParams;
     const after = params.get('id');
-    const cursor = after ? JSON.parse(after.slice(3)) : '';
+    // PostgREST conserva literalmente el valor de un filtro simple gt.
+    // No interpreta como JSON ni retira comillas (pSingleVal en QueryParams.hs).
+    const cursor = after ? after.slice(3) : '';
     return reply(rows.filter(row => row.id > cursor).slice(0, 400));
   });
   await ctx.store.loadAll();
@@ -50,6 +52,38 @@ test('carga todos los registros aunque el servidor limite cada respuesta', async
   assert.equal(new Set(ctx.DB.records.map(row => row.id)).size, 1205);
   assert.equal(ctx.store.revisions.records.get('r01204'), 1205);
   assert.equal(ctx.store.snapshots.records.get('r01204').detalle, 'Ficticio 1204');
+});
+
+test('el ingreso termina la carga cuando el estudio tiene un ID UUID', async () => {
+  const id = 'c99ca55a-65e1-459c-ac15-cfa6b7bbd015';
+  let pages = 0;
+  const ctx = app(async url => {
+    if (!url.includes('/ec_studies?')) return reply([]);
+    pages++;
+    const filter = new URL(url).searchParams.get('id');
+    // Modelo del valor escalar que recibe PostgreSQL: las comillas, si las
+    // hubiera, forman parte del valor. Eso repetía la primera página.
+    const cursor = filter ? filter.slice(3) : '';
+    return reply(id > cursor ? [{id, data: {id, nombre: 'Estudio ficticio'}, rev: 1}] : []);
+  });
+  await ctx.store.loadAll();
+  assert.equal(ctx.DB.studies.length, 1);
+  assert.equal(pages, 2);
+});
+
+test('el cursor conserva caracteres especiales sin agregar delimitadores al ID', async () => {
+  const id = 'config:uno.dos&x=(tres),"cuatro"\\cinco';
+  let pages = 0;
+  const ctx = app(async url => {
+    if (!url.includes('/ec_settings?')) return reply([]);
+    const params = new URL(url).searchParams;
+    if (++pages === 1) return reply([{id, data: {id}, rev: 1}]);
+    assert.equal(params.get('id'), 'gt.' + id);
+    assert.equal(params.has('x'), false);
+    return reply([]);
+  });
+  await ctx.store.loadAll();
+  assert.equal(ctx.DB.settings[0].id, id);
 });
 
 test('una carga fallida conserva los datos y revisiones confirmados juntos', async () => {

@@ -2148,7 +2148,9 @@ const Store = {
       /* El ID es estable aunque se editen o eliminen filas entre páginas.
          Continuar hasta una página vacía: el servidor puede devolver menos
          filas que las solicitadas por su propio límite de respuesta. */
-      const filter = cursor ? '&id=gt.'+encodeURIComponent(JSON.stringify(cursor)) : '';
+      /* En filtros escalares gt, PostgREST recibe el valor literal: serializarlo
+         como JSON agregaría comillas al ID y repetiría la primera página. */
+      const filter = cursor ? '&id=gt.'+encodeURIComponent(cursor) : '';
       const r = await supaFetch('/rest/v1/'+KIND_TABLE[kind]+'?select=id,data,rev,updated_at&order=id.asc&limit=1000'+filter, {method:'GET'});
       if(!r.ok) throw new Error('Error al leer '+KIND_TABLE[kind]+' ('+r.status+'). No se reemplazaron los datos confirmados.');
       const page = await r.json();

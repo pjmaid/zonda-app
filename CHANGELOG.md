@@ -1,5 +1,10 @@
 # Registro de cambios
 
+## 0.9.3 — 2026-09-10
+
+- Corrige el bloqueo del ingreso introducido en 0.9.2: el cursor de la carga inicial enviaba comillas adicionales en un filtro escalar de PostgREST y podía repetir la primera página.
+- El cursor ahora transmite el ID literal, codificado como parámetro de URL. Las pruebas reproducen la semántica real de PostgREST, incluidos UUID e identificadores con caracteres especiales.
+
 ## 0.9.2 — 2026-09-10
 
 - Carga paginada de todas las colecciones, incluso cuando el servidor limita cada respuesta; los datos y sus revisiones se reemplazan juntos al completar la carga.
