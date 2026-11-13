@@ -1,5 +1,13 @@
 # Registro de cambios
 
+## 0.9.4 — 2026-11-13
+
+- Completa el flujo de recuperación de clave y elimina el alta pública sin asignación de sitio.
+- Evita borrados parciales de documentos, informa fallos de Storage y restaura el archivo si falla el registro.
+- Hace visibles los fallos de persistencia clínica y audita de forma obligatoria las operaciones de acceso.
+- Permite a un administrador depurar el índice histórico no permitido y limpiar archivos huérfanos con vista previa y confirmación.
+- Restringe las funciones de seguridad a usuarios autenticados, optimiza políticas RLS y agrega integridad SRI a la dependencia externa de lectura DOCX.
+
 ## 0.9.3 — 2026-09-10
 
 - Corrige el bloqueo del ingreso introducido en 0.9.2: el cursor de la carga inicial enviaba comillas adicionales en un filtro escalar de PostgREST y podía repetir la primera página.

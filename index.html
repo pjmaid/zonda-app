@@ -185,12 +185,22 @@ details>summary{color:var(--acc-dark)}
       </div>
       <div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap">
         <button class="primary" id="btnLogin" style="flex:1">Ingresar</button>
-        <button id="btnSignupToggle" class="hidden">Crear cuenta</button>
       </div>
       <div style="margin-top:8px"><a href="#" id="lnkForgot" class="small">¿Olvidaste la clave?</a></div>
       <div id="loginMsg"></div>
       <div class="muted small" id="loginHint" style="margin-top:8px"></div>
       <div id="loginBuild"></div>
+    </div>
+    <div id="recoveryBox" class="hidden">
+      <h3>Definir una nueva clave</h3>
+      <div class="muted small" style="margin-bottom:10px">El enlace fue validado. Elegí una clave nueva para tu cuenta.</div>
+      <label>Nueva clave</label>
+      <input type="password" id="recoveryPass" autocomplete="new-password">
+      <label>Repetir nueva clave</label>
+      <input type="password" id="recoveryPass2" autocomplete="new-password">
+      <div class="muted small" id="recoveryReq" style="margin-top:4px"></div>
+      <button class="primary" id="btnRecoverySave" style="width:100%;margin-top:14px">Guardar nueva clave</button>
+      <div id="recoveryMsg" style="margin-top:8px"></div>
     </div>
   </div>
 </div>
@@ -945,6 +955,7 @@ details>summary{color:var(--acc-dark)}
       <div class="toolbar" style="margin-bottom:0">
         <button class="primary" id="btnExport">⬇ Exportar respaldo (JSON)</button>
         <button id="btnImportClick">↺ Restaurar respaldo validado</button>
+        <button id="btnStorageCleanup">Limpiar archivos huérfanos</button>
         <input type="file" id="importFile" accept=".json" class="hidden">
       </div>
     </div>
@@ -970,6 +981,7 @@ details>summary{color:var(--acc-dark)}
         <button id="btnRagTest">Probar conexión</button>
         <button id="btnRagIndexAll">⬆ Indexar los documentos de este estudio</button>
         <button id="btnRagList">📋 Ver qué hay indexado</button>
+        <button id="btnRagPurge" style="color:var(--bad)">Depurar índice histórico</button>
       </div>
       <div id="ragMsg" class="small" style="margin-top:6px"></div>
     </div>
@@ -2747,16 +2759,14 @@ function initLoginScreen(){
   $('loginPass').value='';
   if(online){
     $('lblUser').textContent='Email';
-    $('btnSignupToggle').classList.remove('hidden');
     $('loginPass2Box').classList.add('hidden');
     $('btnLogin').textContent='Ingresar';
-    $('loginHint').textContent='Ingresá con tu cuenta del equipo. Si es tu primera vez, usá «Crear cuenta». El administrador te asigna el rol y los protocolos.';
+    $('loginHint').textContent='Ingresá con la cuenta asignada por el administrador de tu sitio.';
     if(SESSION && SESSION.email) $('loginUser').value = SESSION.email;
   } else {
     $('lblUser').textContent='Email';
     $('loginUser').type = 'email';
     $('loginUser').autocomplete = 'email';
-    $('btnSignupToggle').classList.add('hidden');
     const auth = localAuth();
     if(!auth){
       $('loginPass2Box').classList.remove('hidden');
@@ -2785,7 +2795,7 @@ $('lnkForgot').addEventListener('click', async e=>{
     try{
       const r = await fetch(supaBase()+'/auth/v1/recover', {
         method:'POST', headers:{ 'apikey':CFG.supaKey, 'Content-Type':'application/json' },
-        body: JSON.stringify({ email:em })
+        body: JSON.stringify({ email:em, redirect_to:location.origin+location.pathname })
       });
       if(!r.ok){ const j = await r.json().catch(()=>({})); loginMsg(j.msg||j.error_description||T('No se pudo enviar el email.')); return; }
       loginMsg(T('Te enviamos un email para restablecer la clave. Revisá tu casilla.'), true);
@@ -2902,29 +2912,37 @@ async function doLogin(){
   }
 }
 
-async function doSignup(){
-  const user = $('loginUser').value.trim(), pass = $('loginPass').value;
-  if(!user || !pass){ loginMsg(T('Completá email y clave para crear la cuenta.')); return; }
-  const pc = passCheck(pass);
-  if(!pc.ok){ loginMsg(T('La clave no cumple los requisitos. Falta')+': '+pc.faltan.map(f=>T(f)).join(', ')+'.'); return; }
-  $('btnSignupToggle').disabled = true;
+let RECOVERY_TOKEN = '';
+async function consumeRecoveryLink(){
+  if(!Store.online()) return false;
+  const p = new URLSearchParams(location.hash.replace(/^#/,''));
+  if(p.get('error_description')){ loginMsg(p.get('error_description')); return false; }
+  if(p.get('type')!=='recovery' || !p.get('access_token')) return false;
+  const token = p.get('access_token');
   try{
-    const r = await fetch(supaBase()+'/auth/v1/signup', {
-      method:'POST', headers:{ 'apikey':CFG.supaKey, 'Content-Type':'application/json' },
-      body: JSON.stringify({ email:user, password:pass })
-    });
-    const j = await r.json().catch(()=>({}));
-    if(!r.ok){ loginMsg(j.error_description||j.msg||'No se pudo crear la cuenta.'); return; }
-    if(j.access_token){
-      SESSION = { access_token:j.access_token, refresh_token:j.refresh_token, email:user };
-      saveJSON(LS.SES, SESSION); CURRENT_USER=user;
-      await enterApp();
-    } else {
-      loginMsg('Cuenta creada. Revisá tu email para confirmarla y después ingresá.', true);
-    }
-  } catch(e){ loginMsg('Error de conexión: '+e.message); }
-  finally{ $('btnSignupToggle').disabled = false; }
+    const r = await fetch(supaBase()+'/auth/v1/user',{headers:{apikey:CFG.supaKey,Authorization:'Bearer '+token}});
+    if(!r.ok) throw new Error('El enlace venció o ya fue utilizado. Solicitá uno nuevo.');
+    RECOVERY_TOKEN = token;
+    $('loginFields').classList.add('hidden'); $('recoveryBox').classList.remove('hidden');
+    return true;
+  }catch(e){ loginMsg(e.message); return false; }
 }
+$('recoveryPass').addEventListener('input',()=>{ $('recoveryReq').innerHTML=passHint($('recoveryPass').value); });
+$('btnRecoverySave').addEventListener('click',async()=>{
+  const p1=$('recoveryPass').value,p2=$('recoveryPass2').value,m=$('recoveryMsg');
+  const pc=passCheck(p1);
+  if(!pc.ok||p1.length<12){ m.className='err'; m.textContent='La clave debe tener 12+ caracteres, mayúscula, minúscula, número y símbolo.'; return; }
+  if(p1!==p2){ m.className='err'; m.textContent='Las claves no coinciden.'; return; }
+  $('btnRecoverySave').disabled=true;
+  try{
+    const r=await fetch(supaBase()+'/auth/v1/user',{method:'PUT',headers:{apikey:CFG.supaKey,Authorization:'Bearer '+RECOVERY_TOKEN,'Content-Type':'application/json'},body:JSON.stringify({password:p1})});
+    const j=await r.json().catch(()=>({})); if(!r.ok) throw new Error(j.msg||j.error_description||'No se pudo actualizar la clave.');
+    RECOVERY_TOKEN=''; history.replaceState(null,'',location.pathname+location.search);
+    $('recoveryBox').classList.add('hidden'); $('loginFields').classList.remove('hidden');
+    initLoginScreen(); loginMsg('Clave actualizada. Ya podés ingresar.',true);
+  }catch(e){ m.className='err'; m.textContent=e.message; }
+  finally{$('btnRecoverySave').disabled=false;}
+});
 
 async function enterApp(){
   /* modo online: primero el servidor dice a qué sitio pertenezco y con qué rol */
@@ -3046,7 +3064,6 @@ function doLogout(){
 }
 
 $('btnLogin').addEventListener('click', doLogin);
-$('btnSignupToggle').addEventListener('click', doSignup);
 $('loginPass').addEventListener('keydown', e=>{ if(e.key==='Enter') doLogin(); });
 $('loginUser').addEventListener('keydown', e=>{ if(e.key==='Enter') doLogin(); });
 $('btnLogout').addEventListener('click', doLogout);
@@ -3055,6 +3072,7 @@ $('btnLogout').addEventListener('click', doLogout);
 (async function boot(){
   initLoginScreen();
   applyLang();
+  if(await consumeRecoveryLink()) return;
   if(Store.online() && SESSION && SESSION.refresh_token){
     const ok = await supaRefresh();
     if(ok){ CURRENT_USER = SESSION.email||''; await enterApp(); }
@@ -4650,8 +4668,8 @@ async function sincronizarEvolucionesClinicas(pacienteId){
   for(const log of visitasDe(pacienteId)){
     const texto=log.editadoManual ? refrescarSeccionesClinicas(log.evolucionTexto||'',log) : buildEvolution(log);
     if(texto!==log.evolucionTexto){
-      log.evolucionTexto=texto;
-      try{ await Store.upsert('visits',log); }catch(e){}
+      const actualizado=Object.assign({},log,{evolucionTexto:texto});
+      await Store.upsert('visits',actualizado);
     }
   }
 }
@@ -4769,7 +4787,10 @@ async function storagePut(path, blob){
   }
 }
 async function storageGet(path){ const r = await supaFetch('/storage/v1/object/ec-docs/'+storagePrefijo()+path, { method:'GET' }); return r.ok ? r.blob() : null; }
-async function storageDel(path){ try{ await supaFetch('/storage/v1/object/ec-docs/'+storagePrefijo()+path, { method:'DELETE' }); }catch(e){} }
+async function storageDel(path){
+  const r=await supaFetch('/storage/v1/object/ec-docs/'+storagePrefijo()+path,{method:'DELETE'});
+  if(!r.ok){ const j=await r.json().catch(()=>({})); throw new Error('No se pudo eliminar el archivo ('+(j.message||r.status)+').'); }
+}
 
 async function docBlob(doc){
   try{ return doc.storage==='supabase' ? await storageGet(doc.path) : await idbGet(doc.id); }
@@ -4850,20 +4871,31 @@ async function downloadDoc(id){
   a.href = URL.createObjectURL(b); a.download = doc.filename||'documento'; a.click();
   setTimeout(()=>URL.revokeObjectURL(a.href), 60000);
 }
-function deleteDoc(id){
+async function deleteDoc(id){
   const doc = (DB.docs||[]).find(d=>d.id===id); if(!doc) return;
   if(!confirm('¿Eliminar el documento «'+(doc.filename||'')+'»?')) return;
-  (async ()=>{
-    try{ if(doc.storage==='supabase') await storageDel(doc.path); else await idbDel(doc.id); }catch(e){}
+  let respaldo=null,archivoEliminado=false;
+  try{
+    respaldo=await docBlob(doc);
+    if(doc.ragIndexado) await ragBorrar(doc);
+    if(doc.storage==='supabase') await storageDel(doc.path); else await idbDel(doc.id);
+    archivoEliminado=true;
     await removeEntity('docs', id, T('Documento eliminado.'));
     renderDocsList(); renderCiPanel();
-  })();
+  }catch(e){
+    if(archivoEliminado&&respaldo){
+      try{ if(doc.storage==='supabase') await storagePut(doc.path,respaldo); else await idbPut(doc.id,respaldo); }
+      catch(restaurar){ throw new Error(e.message+' Además, no se pudo restaurar el archivo: '+restaurar.message); }
+    }
+    alert('No se pudo eliminar el documento; el archivo fue conservado o restaurado. '+e.message);
+  }
 }
 
 /* ================= IMPORTAR CRITERIOS Y VISITAS DESDE DOCUMENTO ================= */
-function loadScript(src){
+function loadScript(src,integrity){
   return new Promise((res,rej)=>{
     const s=document.createElement('script'); s.src=src;
+    if(integrity){ s.integrity=integrity; s.crossOrigin='anonymous'; }
     s.onload=()=>res(); s.onerror=()=>rej(new Error('No se pudo cargar la librería de lectura (se necesita conexión a internet la primera vez).'));
     document.head.appendChild(s);
   });
@@ -4875,7 +4907,7 @@ async function ensurePdfJs(){
 }
 async function ensureMammoth(){
   if(window.mammoth) return;
-  await loadScript('https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js');
+  await loadScript('https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js','sha384-nFoSjZIoH3CCp8W639jJyQkuPHinJ2NHe7on1xvlUA7SuGfJAfvMldrsoAVm6ECz');
 }
 
 /* Texto de UNA página respetando la rotación del PDF y conservando las columnas.
@@ -5768,8 +5800,7 @@ async function ragIndexarLista(docs, elEstado){
 }
 
 async function ragBorrar(doc){
-  if(!ragActivo()) return;
-  try{ await ragLlamar({ accion:'borrar', doc_id:ragDocId(doc), source_doc_id:doc.id, estudio_id:doc.estudioId||'' }); }catch(e){}
+  await ragLlamar({ accion:'borrar', doc_id:ragDocId(doc), source_doc_id:doc.id, estudio_id:doc.estudioId||'' });
 }
 
 /* consulta con recuperación: devuelve { a, citas } como el resto del panel */
@@ -5872,6 +5903,28 @@ $('btnRagIndexAll').addEventListener('click', async ()=>{
   m.textContent = (r.mal?'⚠ ':'✔ ')+r.ok+' '+T('documento(s) enviados al índice')+
                   (r.mal? ', '+r.mal+' '+T('no se pudieron procesar.')+ragResumenFallos(r.errores) : '.')+
                   ' '+T('Google tarda unos minutos en procesarlos antes de poder consultarlos.');
+});
+
+$('btnRagPurge').addEventListener('click',async()=>{
+  const m=$('ragMsg');
+  if(!ME||ME.rol!=='admin'){ m.style.color='var(--bad)'; m.textContent='Solo un administrador puede depurar el índice.'; return; }
+  const permitidos=new Set(['protocolo','manual','enmienda','ci']);
+  const docs=(DB.docs||[]).filter(d=>d.ragIndexado&&(d.pacienteId||!permitidos.has(String(d.tipo||''))));
+  if(!docs.length){ m.style.color='var(--ok)'; m.textContent='✔ No hay documentos clínicos no permitidos marcados como indexados.'; return; }
+  if(!confirm('Se eliminarán del índice externo '+docs.length+' documento(s) históricos no permitidos. Los archivos originales se conservan en Zonda. ¿Continuar?')) return;
+  let ok=0; const fallos=[]; $('btnRagPurge').disabled=true;
+  try{
+    for(const doc of docs){
+      m.style.color='var(--muted)'; m.textContent='Depurando '+(ok+fallos.length+1)+'/'+docs.length+'...';
+      try{
+        await ragLlamar({accion:'purgar_legacy',source_doc_id:doc.id});
+        const limpio=Object.assign({},doc); delete limpio.ragIndexado;
+        await Store.upsert('docs',limpio); ok++;
+      }catch(e){ fallos.push(e.message); }
+    }
+    m.style.color=fallos.length?'var(--warn)':'var(--ok)';
+    m.textContent=(fallos.length?'⚠ ':'✔ ')+ok+' documento(s) depurados'+(fallos.length?'; '+fallos.length+' fallaron: '+fallos[0]:'.');
+  }finally{$('btnRagPurge').disabled=false;}
 });
 
 /* Interpreta localmente una respuesta estructurada pegada por el usuario.
@@ -7678,7 +7731,7 @@ async function critRemapearPacientes(prev, nuevo){
     const viejasR = p.criterios || {};
     const viejasJ = p.critJust || {};
     if(!Object.keys(viejasR).length && !Object.keys(viejasJ).length){
-      p.critFirma = firma; continue;
+      await Store.upsert('patients',Object.assign({},p,{critFirma:firma})); tocados++; continue;
     }
     const nuevasR = {}, nuevasJ = {};
     const perdidasDe = [];
@@ -7696,16 +7749,14 @@ async function critRemapearPacientes(prev, nuevo){
         respPerdidas++;
       }
     }
-    p.criterios = nuevasR;
-    p.critJust = nuevasJ;
-    p.critFirma = firma;
+    const actualizado=Object.assign({},p,{criterios:nuevasR,critJust:nuevasJ,critFirma:firma});
     /* la fundamentación redactada quedó escrita contra los criterios anteriores */
-    if(p.critNarrativa) p.critNarrativa.obsoleta = true;
-    p.critHistorial = (p.critHistorial||[]).concat([{
+    if(p.critNarrativa) actualizado.critNarrativa=Object.assign({},p.critNarrativa,{obsoleta:true});
+    actualizado.critHistorial = (p.critHistorial||[]).concat([{
       fecha: new Date().toISOString(), usuario: CURRENT_USER,
       exactas, aproximadas, perdidas: perdidasDe
     }]);
-    try{ await Store.upsert('patients', p); tocados++; }catch(e){}
+    await Store.upsert('patients', actualizado); tocados++;
     auditar('paciente','remapeo_criterios', p.id,
       p.codigo+': '+respMovidas+' conservadas, '+perdidasDe.length+' descartadas');
   }
@@ -8256,7 +8307,7 @@ $('btnNarrRun').addEventListener('click', async ()=>{
       ' '+T('Editá lo que haga falta; se guarda con el paciente.');
     /* queda guardada en la ficha del paciente */
     const pac = getPatient($('paId').value);
-    if(pac){ pac.critNarrativa = NARR; try{ await Store.upsert('patients', pac); }catch(e){} }
+    if(pac){ await Store.upsert('patients',Object.assign({},pac,{critNarrativa:NARR})); }
     auditar('paciente','fundamentacion_criterios', pac?pac.id:'', (pac&&pac.codigo)||'');
   }catch(e){
     stEl.style.color='var(--bad)'; stEl.textContent = '⚠ '+e.message;
@@ -9725,7 +9776,10 @@ function renderLog(){
         anuladoEn:new Date().toISOString()
       });
       if(!await guardarLog(LOG_TIPO, anulado, 'anulación', motivo.trim())) return;
-      if((LOG_TIPO==='ea' || LOG_TIPO==='conmed') && anulado.pacienteId) await sincronizarEvolucionesClinicas(anulado.pacienteId);
+      if((LOG_TIPO==='ea' || LOG_TIPO==='conmed') && anulado.pacienteId){
+        try{ await sincronizarEvolucionesClinicas(anulado.pacienteId); }
+        catch(e){ toast('⚠ Registro anulado, pero no se pudieron actualizar las evoluciones: '+e.message); }
+      }
       renderLog(); renderTools(); toast(T('Registro anulado.'));
       return;
     }
@@ -9929,7 +9983,10 @@ function logForm(id,preset){
       if(!motivoCambio.trim()){ toast(T('El cambio requiere un motivo.')); return; }
     }
     if(!await guardarLog(LOG_TIPO, obj, LOG_EDIT?'modificación':'alta', motivoCambio.trim())) return;
-    if((LOG_TIPO==='ea' || LOG_TIPO==='conmed') && obj.pacienteId) await sincronizarEvolucionesClinicas(obj.pacienteId);
+    if((LOG_TIPO==='ea' || LOG_TIPO==='conmed') && obj.pacienteId){
+      try{ await sincronizarEvolucionesClinicas(obj.pacienteId); }
+      catch(e){ toast('⚠ Registro guardado, pero no se pudieron actualizar las evoluciones: '+e.message); }
+    }
     box.classList.add('hidden'); LOG_EDIT=null;
     renderLog(); renderTools();
     toast(T('Registro guardado.'));
@@ -10351,12 +10408,21 @@ function factContratoSeleccionado(){
 async function factEliminarContrato(doc){
   if(!doc || !canFact()) return;
   if(!confirm('¿Eliminar el contrato o adenda «'+(doc.filename||'')+'»?')) return;
+  let respaldo=null,archivoEliminado=false;
   try{
-    if(ragActivo()) await ragBorrar(doc);
+    respaldo=await docBlob(doc);
+    if(doc.ragIndexado) await ragBorrar(doc);
     if(doc.storage==='supabase') await storageDel(doc.path); else await idbDel(doc.id);
+    archivoEliminado=true;
     await removeEntity('docs', doc.id, T('Contrato o adenda eliminado.'));
     FACT_CHAT=[]; FACT_CHAT_KEY=''; renderFact();
-  }catch(e){ alert('No se pudo eliminar el contrato o adenda: '+e.message); }
+  }catch(e){
+    if(archivoEliminado&&respaldo){
+      try{ if(doc.storage==='supabase') await storagePut(doc.path,respaldo); else await idbPut(doc.id,respaldo); }
+      catch(restaurar){ alert('Falló la eliminación y también la restauración del archivo: '+restaurar.message); return; }
+    }
+    alert('No se pudo eliminar el contrato o adenda; el archivo fue conservado o restaurado. '+e.message);
+  }
 }
 function renderFactChat(){
   const box = $('factChatLog');
@@ -12360,6 +12426,18 @@ async function downloadOperationalBackup(prefix){
 $('btnExport').addEventListener('click', async ()=>{
   await downloadOperationalBackup('respaldo_zonda');
   toast('Respaldo exportado.');
+});
+$('btnStorageCleanup').addEventListener('click',async()=>{
+  if(!Store.online()||!ME||ME.rol!=='admin'){ toast('Solo un administrador online puede ejecutar esta limpieza.'); return; }
+  const btn=$('btnStorageCleanup'); btn.disabled=true;
+  try{
+    const previa=await ragLlamar({accion:'storage_orphans',ejecutar:false});
+    if(!previa.total){ toast('✔ No hay archivos huérfanos.'); return; }
+    if(!confirm('Se encontraron '+previa.total+' archivo(s) sin registro, con '+fmtSize(previa.bytes)+'. Se eliminarán únicamente esos objetos; los documentos registrados se conservan. ¿Continuar?')) return;
+    const r=await ragLlamar({accion:'storage_orphans',ejecutar:true});
+    toast('✔ Se eliminaron '+r.eliminados+' archivo(s) huérfanos.');
+  }catch(e){ toast('⚠ No se pudo completar la limpieza: '+e.message); }
+  finally{btn.disabled=false;}
 });
 $('btnImportClick').addEventListener('click', ()=>$('importFile').click());
 $('importFile').addEventListener('change', async e=>{

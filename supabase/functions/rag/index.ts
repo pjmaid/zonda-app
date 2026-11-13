@@ -36,7 +36,7 @@ async function authenticate(req:Request){
   const user=await userRes.json();
   const memberRes=await fetch(`${supabaseUrl}/rest/v1/ec_members?select=org_id,rol,activo&user_id=eq.${encodeURIComponent(user.id)}&activo=eq.true&limit=1`,{headers:{Authorization:`Bearer ${serviceKey}`,apikey:serviceKey}});
   const members=memberRes.ok?await memberRes.json():[];if(!members[0])throw new Error("MEMBERSHIP_REQUIRED");
-  return{supabaseUrl,anonKey,authorization,member:members[0]};
+  return{supabaseUrl,serviceKey,anonKey,authorization,user,member:members[0]};
 }
 type Auth=Awaited<ReturnType<typeof authenticate>>;
 async function assertStudyAccess(auth:Auth,studyId:string){
@@ -69,6 +69,15 @@ function config(){
 async function googleFetch(path:string,init:RequestInit={}){
   const response=await fetch(`https://${config().endpoint}/v1/${path}`,{...init,headers:{...(init.headers||{}),Authorization:`Bearer ${await googleToken()}`,"Content-Type":"application/json"}});
   const body=await response.json().catch(()=>({}));if(!response.ok)throw new Error(String(body?.error?.message||`GOOGLE_RAG_HTTP_${response.status}`).slice(0,500));return body;
+}
+async function googleDeleteIfPresent(path:string){
+  const response=await fetch(`https://${config().endpoint}/v1/${path}`,{method:"DELETE",headers:{Authorization:`Bearer ${await googleToken()}`,"Content-Type":"application/json"}});
+  if(response.ok||response.status===404)return;
+  const body=await response.json().catch(()=>({}));throw new Error(String(body?.error?.message||`GOOGLE_RAG_HTTP_${response.status}`).slice(0,500));
+}
+async function audit(auth:Auth,action:string,refId:string,detail:string){
+  const response=await fetch(`${auth.supabaseUrl}/rest/v1/ec_audit`,{method:"POST",headers:{Authorization:`Bearer ${auth.serviceKey}`,apikey:auth.serviceKey,"Content-Type":"application/json",Prefer:"return=minimal"},body:JSON.stringify({org_id:auth.member.org_id,usuario:auth.user?.email||auth.user?.id,rol:auth.member.rol,entidad:"documentos",accion:action,ref_id:refId,detalle:detail,motivo:"Protección de datos"})});
+  if(!response.ok)throw new Error("AUDIT_WRITE_FAILED");
 }
 function prepareText(text:string){
   const parts=String(text||"").replace(/\r/g,"").split(/=== PÁGINA (\d+) ===/);if(parts.length<3)return truncateUtf8(String(text||""));
@@ -122,9 +131,51 @@ async function deleteDocument(auth:Auth,input:any){
   const studyId=validId(input?.estudio_id,"STUDY_SCOPE_REQUIRED");await assertStudyAccess(auth,studyId);
   await clinicalDocument(auth,studyId,input?.source_doc_id);
   const cfg=config(),id=await scopedDocId(auth.member.org_id,sourceIndexId(input?.source_doc_id)),name=`${cfg.root}/dataStores/${cfg.dataStore}/branches/default_branch/documents/${id}`;
-  const doc=await googleFetch(name);
-  if(doc?.structData?.org_id!==auth.member.org_id||doc?.structData?.estudio_id!==studyId||!allowedTypes.has(String(doc?.structData?.tipo||"")))throw new Error("DOCUMENT_ACCESS_REQUIRED");
-  await googleFetch(name,{method:"DELETE"});return{ok:true};
+  await googleDeleteIfPresent(name);return{ok:true};
+}
+async function purgeLegacyDocument(auth:Auth,input:any){
+  if(auth.member.rol!=="admin")throw new Error("ADMIN_REQUIRED");
+  const id=validId(input?.source_doc_id,"SOURCE_DOCUMENT_REQUIRED");
+  const response=await fetch(`${auth.supabaseUrl}/rest/v1/ec_docs?select=id,org_id,data&id=eq.${encodeURIComponent(id)}&org_id=eq.${encodeURIComponent(auth.member.org_id)}&limit=1`,{headers:{Authorization:`Bearer ${auth.serviceKey}`,apikey:auth.serviceKey}});
+  const rows=response.ok?await response.json():[],row=rows[0],data=row?.data||{};
+  if(!row||!data.ragIndexado)throw new Error("DOCUMENT_NOT_MARKED_INDEXED");
+  if(!data.pacienteId&&allowedTypes.has(String(data.tipo||"")))throw new Error("LEGACY_PURGE_NOT_ALLOWED");
+  await audit(auth,"depuración solicitada",id,"Eliminación de documento histórico no permitido del índice externo");
+  const cfg=config(),legacy=sourceIndexId(id),scoped=await scopedDocId(auth.member.org_id,legacy),base=`${cfg.root}/dataStores/${cfg.dataStore}/branches/default_branch/documents/`;
+  await googleDeleteIfPresent(base+legacy);await googleDeleteIfPresent(base+scoped);
+  await audit(auth,"depuración completada",id,"Documento histórico no permitido eliminado del índice externo");
+  return{ok:true};
+}
+async function storageObjects(auth:Auth,prefix:string):Promise<any[]>{
+  const all:any[]=[];
+  for(let offset=0;;offset+=1000){
+    const response=await fetch(`${auth.supabaseUrl}/storage/v1/object/list/ec-docs`,{method:"POST",headers:{Authorization:`Bearer ${auth.serviceKey}`,apikey:auth.serviceKey,"Content-Type":"application/json"},body:JSON.stringify({prefix,limit:1000,offset,sortBy:{column:"name",order:"asc"}})});
+    const rows=response.ok?await response.json():null;if(!Array.isArray(rows))throw new Error("STORAGE_LIST_FAILED");
+    for(const row of rows){
+      const name=`${prefix}${prefix&&row.name?"/":""}${row.name||""}`.replace(/\/+/g,"/");
+      if(row.id)all.push({...row,fullName:name});else if(row.name)all.push(...await storageObjects(auth,name));
+    }
+    if(rows.length<1000)break;
+  }
+  return all;
+}
+async function storageOrphans(auth:Auth,input:any){
+  if(auth.member.rol!=="admin")throw new Error("ADMIN_REQUIRED");
+  const prefix=auth.member.org_id;
+  const docsResponse=await fetch(`${auth.supabaseUrl}/rest/v1/ec_docs?select=data&org_id=eq.${encodeURIComponent(prefix)}`,{headers:{Authorization:`Bearer ${auth.serviceKey}`,apikey:auth.serviceKey}});
+  const rows=docsResponse.ok?await docsResponse.json():null;if(!Array.isArray(rows))throw new Error("DOCUMENT_LIST_FAILED");
+  const expected=new Set(rows.map((row:any)=>row?.data?.path?`${prefix}/${String(row.data.path).replace(/^\/+/,"")}`:"").filter(Boolean));
+  const objects=await storageObjects(auth,prefix),orphans=objects.filter(o=>!expected.has(o.fullName));
+  const bytes=orphans.reduce((n,o)=>n+Number(o?.metadata?.size||0),0);
+  if(!input?.ejecutar)return{total:orphans.length,bytes};
+  if(!orphans.length)return{total:0,bytes:0,eliminados:0};
+  await audit(auth,"limpieza solicitada","storage",`${orphans.length} archivo(s) huérfanos; ${bytes} bytes`);
+  for(let i=0;i<orphans.length;i+=100){
+    const response=await fetch(`${auth.supabaseUrl}/storage/v1/object/ec-docs`,{method:"DELETE",headers:{Authorization:`Bearer ${auth.serviceKey}`,apikey:auth.serviceKey,"Content-Type":"application/json"},body:JSON.stringify({prefixes:orphans.slice(i,i+100).map(o=>o.fullName)})});
+    if(!response.ok)throw new Error("STORAGE_DELETE_FAILED");
+  }
+  await audit(auth,"limpieza completada","storage",`${orphans.length} archivo(s) huérfanos eliminados; ${bytes} bytes`);
+  return{total:orphans.length,bytes,eliminados:orphans.length};
 }
 
 Deno.serve(async(req)=>{if(req.method==="OPTIONS")return new Response("ok",{headers:corsHeaders});if(req.method!=="POST")return json({error:"METHOD_NOT_ALLOWED"},405);try{
@@ -132,6 +183,8 @@ Deno.serve(async(req)=>{if(req.method==="OPTIONS")return new Response("ok",{head
   if(action==="estado")return json({ok:true,dataStore:config().dataStore,location:config().location,engine:config().engine,maxReturnResults:MAX_RETURN_RESULTS});
   if(action==="indexar")return json(await indexDocument(auth,input));if(action==="preguntar")return json(await ask(auth,input));
   if(action==="borrar")return json(await deleteDocument(auth,input));
+  if(action==="purgar_legacy")return json(await purgeLegacyDocument(auth,input));
+  if(action==="storage_orphans")return json(await storageOrphans(auth,input));
   if(action==="listar")return json({total:0,documentos:[],mensaje:"El listado global está deshabilitado para evitar exponer metadatos entre protocolos."});return json({error:"INVALID_ACTION"},400);
-}catch(error){const message=error instanceof Error?error.message:"INTERNAL_ERROR";const status=/AUTH_REQUIRED|MEMBERSHIP_REQUIRED/.test(message)?401:/STUDY_ACCESS_REQUIRED/.test(message)?403:/REQUIRED|INVALID|NOT_ALLOWED/.test(message)?400:500;return json({error:message},status);}});
+}catch(error){const message=error instanceof Error?error.message:"INTERNAL_ERROR";const status=/AUTH_REQUIRED|MEMBERSHIP_REQUIRED/.test(message)?401:/STUDY_ACCESS_REQUIRED|ADMIN_REQUIRED/.test(message)?403:/REQUIRED|INVALID|NOT_ALLOWED|NOT_MARKED/.test(message)?400:500;return json({error:message},status);}});
 

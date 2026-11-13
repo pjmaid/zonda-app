@@ -92,7 +92,7 @@ async function targetMember(ctx: Awaited<ReturnType<typeof requireAdministrator>
 }
 
 async function audit(ctx: Awaited<ReturnType<typeof requireAdministrator>>, action: string, refId: string, detail: string) {
-  await fetch(`${ctx.supabaseUrl}/rest/v1/ec_audit`, {
+  const response = await fetch(`${ctx.supabaseUrl}/rest/v1/ec_audit`, {
     method: "POST",
     headers: serviceHeaders(ctx.serviceKey, { Prefer: "return=minimal" }),
     body: JSON.stringify({
@@ -106,12 +106,15 @@ async function audit(ctx: Awaited<ReturnType<typeof requireAdministrator>>, acti
       motivo: "Administración de acceso",
     }),
   });
+  if (!response.ok) throw new Error("AUDIT_WRITE_FAILED");
 }
 
 async function createUser(ctx: Awaited<ReturnType<typeof requireAdministrator>>, input: Record<string, unknown>) {
   const email = validEmail(input.email);
   const role = validRole(input.rol);
   const password = input.claveTemporal ? validTemporaryPassword(input.claveTemporal) : "";
+  const profileId = crypto.randomUUID();
+  await audit(ctx, "alta solicitada", profileId, `Usuario ${email}; rol ${role}`);
   const authResponse = await fetch(`${ctx.supabaseUrl}/auth/v1/${password ? "admin/users" : "invite"}`, {
     method: "POST",
     headers: serviceHeaders(ctx.serviceKey),
@@ -123,7 +126,6 @@ async function createUser(ctx: Awaited<ReturnType<typeof requireAdministrator>>,
   const authUser = authBody.user || authBody;
   if (!authResponse.ok || !authUser?.id) throw new Error(authBody.msg || authBody.message || "USER_CREATE_FAILED");
 
-  const profileId = crypto.randomUUID();
   const profile = {
     id: profileId,
     authId: authUser.id,
@@ -167,6 +169,8 @@ async function createOrganization(ctx: Awaited<ReturnType<typeof requireAdminist
   if (name.length < 3 || name.length > 160) throw new Error("ORGANIZATION_INVALID");
   const email = validEmail(input.email);
   const password = input.claveTemporal ? validTemporaryPassword(input.claveTemporal) : "";
+  const requestId = crypto.randomUUID();
+  await audit(ctx, "alta de sitio solicitada", requestId, `Sitio ${name}; administrador ${email}`);
 
   const orgResponse = await fetch(`${ctx.supabaseUrl}/rest/v1/ec_orgs?select=id`, {
     method: "POST",
@@ -227,6 +231,7 @@ async function createOrganization(ctx: Awaited<ReturnType<typeof requireAdminist
 async function changePassword(ctx: Awaited<ReturnType<typeof requireAdministrator>>, input: Record<string, unknown>) {
   const target = await targetMember(ctx, input.authId);
   const password = validTemporaryPassword(input.claveTemporal);
+  await audit(ctx, "cambio de clave solicitado", target.user_id, "Asignación de clave temporal; contenido no registrado");
   const response = await fetch(`${ctx.supabaseUrl}/auth/v1/admin/users/${target.user_id}`, {
     method: "PUT",
     headers: serviceHeaders(ctx.serviceKey),
@@ -250,6 +255,8 @@ async function deleteUser(ctx: Awaited<ReturnType<typeof requireAdministrator>>,
     if (admins.length <= 1) throw new Error("LAST_ADMIN_FORBIDDEN");
   }
 
+  await audit(ctx, "baja solicitada", target.user_id, "Eliminación de cuenta y asignaciones; datos clínicos conservados");
+
   const response = await fetch(`${ctx.supabaseUrl}/auth/v1/admin/users/${target.user_id}`, {
     method: "DELETE",
     headers: serviceHeaders(ctx.serviceKey),
@@ -259,10 +266,11 @@ async function deleteUser(ctx: Awaited<ReturnType<typeof requireAdministrator>>,
 
   const profileId = String(input.profileId || "");
   if (profileId) {
-    await fetch(`${ctx.supabaseUrl}/rest/v1/ec_users?id=eq.${encodeURIComponent(profileId)}&org_id=eq.${encodeURIComponent(target.org_id)}`, {
+    const profileResponse = await fetch(`${ctx.supabaseUrl}/rest/v1/ec_users?id=eq.${encodeURIComponent(profileId)}&org_id=eq.${encodeURIComponent(target.org_id)}`, {
       method: "DELETE",
       headers: serviceHeaders(ctx.serviceKey, { Prefer: "return=minimal" }),
     });
+    if (!profileResponse.ok) throw new Error("PROFILE_DELETE_FAILED");
   }
   await audit(ctx, "baja", target.user_id, "Cuenta de acceso y asignaciones eliminadas; datos clínicos conservados");
   return { mensaje: "Usuario eliminado definitivamente." };
@@ -296,6 +304,7 @@ Deno.serve(async (req) => {
       USER_OUTSIDE_SITE: "No podés administrar usuarios de otro sitio.",
       SELF_DELETE_FORBIDDEN: "No podés eliminar tu propio usuario.",
       LAST_ADMIN_FORBIDDEN: "Tiene que quedar al menos un administrador activo.",
+      AUDIT_WRITE_FAILED: "No se pudo registrar la operación en la auditoría; no se aplicaron cambios de acceso.",
     };
     const status = /AUTH_REQUIRED|MEMBERSHIP_REQUIRED/.test(code) ? 401
       : /ADMIN_REQUIRED|SUPERADMIN_REQUIRED/.test(code) ? 403
