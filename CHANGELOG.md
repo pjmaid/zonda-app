@@ -1,12 +1,23 @@
 # Registro de cambios
 
+## 0.9.5 — 2026-11-23
+
+- Corrige redirecciones de recuperación e invitación, enlaces vencidos, estados de ingreso y limpieza de sesión; conserva intactas las claves existentes.
+- Preserva historia y narrativa clínica, evita duplicados tras guardados parciales y permite reintentar remapeos de criterios sin repetir cambios confirmados.
+- Respalda documentos antes de borrarlos, comprueba la respuesta real de Storage, compensa fallos y evita operar con una cuenta distinta durante la misma acción.
+- Registra la intención de indexación antes de enviar contenido; permite retirar envíos pendientes. La revisión de archivos sin registro es de solo lectura.
+- Refuerza la administración de usuarios y la IA con validación de identidad, organización, permisos, auditoría previa y errores explícitos.
+- Aísla la cola local de auditoría por cuenta y sitio; añade plazos de red, carga inicial concurrente, navegación móvil y mejoras de accesibilidad.
+- Bloquea restauraciones de otro sitio y evita caché persistente de la configuración de despliegue.
+- Aplica el endurecimiento de funciones internas pendiente de 0.9.4. La nueva separación de permisos de Storage y el vínculo de identidad en SQL quedan preparados y probados localmente, pendientes de validación integrada y aplicación.
+
 ## 0.9.4 — 2026-11-13
 
 - Completa el flujo de recuperación de clave y elimina el alta pública sin asignación de sitio.
 - Evita borrados parciales de documentos, informa fallos de Storage y restaura el archivo si falla el registro.
 - Hace visibles los fallos de persistencia clínica y audita de forma obligatoria las operaciones de acceso.
 - Permite a un administrador depurar el índice histórico no permitido y limpiar archivos huérfanos con vista previa y confirmación.
-- Restringe las funciones de seguridad a usuarios autenticados, optimiza políticas RLS y agrega integridad SRI a la dependencia externa de lectura DOCX.
+- Prepara la restricción de funciones de seguridad y optimización RLS (aplicada el 23 de noviembre) y agrega integridad SRI a la dependencia externa de lectura DOCX.
 
 ## 0.9.3 — 2026-09-10
 

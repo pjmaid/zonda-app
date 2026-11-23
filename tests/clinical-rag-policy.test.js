@@ -102,8 +102,9 @@ test('PDF.js y su worker se sirven localmente con licencia', () => {
 test('la indexación distingue descarga, extracción y envío sin exponer errores crudos', () => {
   assert.match(html, /return ragFallo\('descarga'\)/);
   assert.match(html, /catch\(e\)\{ return ragFallo\('extraccion'\); \}/);
-  assert.match(html, /catch\(e\)\{ return ragFallo\('envio'\); \}/);
+  assert.match(html, /catch\(e\)\{ if\(e\.sessionChanged\)throw e;return ragFallo\('envio'\); \}/);
   assert.match(html, /ragResumenFallos\(r\.errores\)/);
-  assert.doesNotMatch(html, /ragResumenFallos[\s\S]{0,800}e\.message/);
+  const summary=html.slice(html.indexOf('function ragResumenFallos('),html.indexOf('/* sube un documento al índice'));
+  assert.doesNotMatch(summary, /e\.message/);
 });
 

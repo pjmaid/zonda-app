@@ -1,0 +1,163 @@
+{
+  "policies": [
+    {
+      "cmd": "ALL",
+      "qual": "((bucket_id = 'ec-docs'::text) AND ec_can_storage_object(name))",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "objects",
+      "permissive": "PERMISSIVE",
+      "policyname": "ec_docs_protocol",
+      "schemaname": "storage",
+      "with_check": "((bucket_id = 'ec-docs'::text) AND ec_can_storage_object(name))"
+    },
+    {
+      "cmd": "ALL",
+      "qual": "es_superadmin()",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "ec_orgs",
+      "permissive": "PERMISSIVE",
+      "policyname": "orgs_super",
+      "schemaname": "public",
+      "with_check": "es_superadmin()"
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "((id = current_org()) OR es_superadmin())",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "ec_orgs",
+      "permissive": "PERMISSIVE",
+      "policyname": "orgs_ver",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "DELETE",
+      "qual": "(((org_id = current_org()) AND (current_rol() = 'admin'::text) AND (user_id <> auth.uid())) OR es_superadmin())",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "ec_members",
+      "permissive": "PERMISSIVE",
+      "policyname": "mem_del",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "INSERT",
+      "qual": null,
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "ec_members",
+      "permissive": "PERMISSIVE",
+      "policyname": "mem_ins",
+      "schemaname": "public",
+      "with_check": "es_superadmin()"
+    },
+    {
+      "cmd": "UPDATE",
+      "qual": "(((org_id = current_org()) AND (current_rol() = 'admin'::text)) OR es_superadmin())",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "ec_members",
+      "permissive": "PERMISSIVE",
+      "policyname": "mem_upd",
+      "schemaname": "public",
+      "with_check": "(((org_id = current_org()) AND (current_rol() = 'admin'::text)) OR es_superadmin())"
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "((org_id = current_org()) OR es_superadmin())",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "ec_members",
+      "permissive": "PERMISSIVE",
+      "policyname": "mem_ver",
+      "schemaname": "public",
+      "with_check": null
+    }
+  ],
+  "functions": [
+    {
+      "acl": "{=X/postgres,postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "name": "current_org",
+      "definition": "CREATE OR REPLACE FUNCTION public.current_org()\n RETURNS uuid\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  select org_id from ec_members where user_id = auth.uid() and activo\r\n$function$\n",
+      "identity_args": ""
+    },
+    {
+      "acl": "{=X/postgres,postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "name": "current_rol",
+      "definition": "CREATE OR REPLACE FUNCTION public.current_rol()\n RETURNS text\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  select rol from ec_members where user_id = auth.uid() and activo\r\n$function$\n",
+      "identity_args": ""
+    },
+    {
+      "acl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "name": "ec_can_document",
+      "definition": "CREATE OR REPLACE FUNCTION public.ec_can_document(p_data jsonb)\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  select ec_can_study(ec_data_study(p_data))\r\n    and (\r\n      not (\r\n        coalesce(p_data ->> 'tipo', '') = 'contrato'\r\n        or coalesce(p_data ->> 'tipo', '') ~ '^gasto_(remis|medicamentos)_comprobante$'\r\n      )\r\n      or ec_can_facturacion()\r\n    )\r\n$function$\n",
+      "identity_args": "p_data jsonb"
+    },
+    {
+      "acl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "name": "ec_can_facturacion",
+      "definition": "CREATE OR REPLACE FUNCTION public.ec_can_facturacion()\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  select es_superadmin()\r\n    or current_rol() = 'admin'\r\n    or exists (\r\n      select 1\r\n      from ec_users u\r\n      where u.org_id = current_org()\r\n        and coalesce((u.data ->> 'activo')::boolean, true)\r\n        and coalesce((u.data ->> 'facturacion')::boolean, false)\r\n        and (\r\n          u.data ->> 'authId' = auth.uid()::text\r\n          or lower(u.data ->> 'email') = lower(coalesce(auth.jwt() ->> 'email', ''))\r\n        )\r\n    )\r\n$function$\n",
+      "identity_args": ""
+    },
+    {
+      "acl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "name": "ec_can_record",
+      "definition": "CREATE OR REPLACE FUNCTION public.ec_can_record(p_data jsonb)\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  select ec_can_study(ec_data_study(p_data))\r\n    and (\r\n      coalesce(p_data ->> 'recordType', '') not in ('gasto_remis','gasto_medicamentos')\r\n      or ec_can_facturacion()\r\n    )\r\n$function$\n",
+      "identity_args": "p_data jsonb"
+    },
+    {
+      "acl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "name": "ec_can_storage_object",
+      "definition": "CREATE OR REPLACE FUNCTION public.ec_can_storage_object(p_name text)\n RETURNS boolean\n LANGUAGE plpgsql\n STABLE SECURITY DEFINER\n SET search_path TO 'public', 'storage'\nAS $function$\r\ndeclare\r\n  v_org text := split_part(p_name, '/', 1);\r\n  v_scope text := split_part(p_name, '/', 2);\r\n  v_doc_id text := nullif(split_part(p_name, '/', 3), '');\r\n  v_doc_data jsonb;\r\nbegin\r\n  if v_org <> current_org()::text then return false; end if;\r\n\r\n  if v_doc_id is not null then\r\n    select d.data into v_doc_data\r\n      from ec_docs d\r\n      where d.org_id = current_org() and d.id = v_doc_id\r\n      limit 1;\r\n  end if;\r\n\r\n  if v_doc_data is null then\r\n    select d.data into v_doc_data\r\n      from ec_docs d\r\n      where d.org_id = current_org() and d.id = v_scope\r\n      limit 1;\r\n  end if;\r\n\r\n  if v_doc_data is not null then\r\n    return ec_can_document(v_doc_data);\r\n  end if;\r\n\r\n  -- Durante una carga nueva el objeto se crea antes que su ficha ec_docs.\r\n  -- La inserción posterior de la ficha vuelve a validar tipo y facturación.\r\n  if exists (select 1 from ec_studies s where s.org_id = current_org() and s.id = v_scope) then\r\n    return ec_can_study(v_scope);\r\n  end if;\r\n  return false;\r\nend $function$\n",
+      "identity_args": "p_name text"
+    },
+    {
+      "acl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "name": "ec_can_study",
+      "definition": "CREATE OR REPLACE FUNCTION public.ec_can_study(p_study_id text)\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  select es_superadmin()\r\n    or current_rol() = 'admin'\r\n    or p_study_id = any(ec_user_study_ids())\r\n$function$\n",
+      "identity_args": "p_study_id text"
+    },
+    {
+      "acl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "name": "ec_data_study",
+      "definition": "CREATE OR REPLACE FUNCTION public.ec_data_study(p_data jsonb)\n RETURNS text\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  select coalesce(\r\n    nullif(p_data ->> 'estudioId', ''),\r\n    (select nullif(p.data ->> 'estudioId', '')\r\n       from ec_patients p\r\n      where p.org_id = current_org() and p.id = p_data ->> 'pacienteId'\r\n      limit 1)\r\n  )\r\n$function$\n",
+      "identity_args": "p_data jsonb"
+    },
+    {
+      "acl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "name": "ec_is_own_user",
+      "definition": "CREATE OR REPLACE FUNCTION public.ec_is_own_user(p_data jsonb)\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  select p_data ->> 'authId' = auth.uid()::text\r\n      or lower(p_data ->> 'email') = lower(coalesce(auth.jwt() ->> 'email', ''))\r\n$function$\n",
+      "identity_args": "p_data jsonb"
+    },
+    {
+      "acl": "{=X/postgres,postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "name": "ec_members_guard",
+      "definition": "CREATE OR REPLACE FUNCTION public.ec_members_guard()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nbegin\r\n  /* sin sesion de usuario = acceso directo por SQL Editor o service_role:\r\n     es el dueno del proyecto o la Edge Function, no se restringe */\r\n  if auth.uid() is null then return new; end if;\r\n  if es_superadmin() then return new; end if;\r\n\r\n  if tg_op = 'INSERT' and new.superadmin then\r\n    raise exception 'Solo un superadministrador puede otorgar ese permiso';\r\n  end if;\r\n\r\n  if tg_op = 'UPDATE' then\r\n    if new.superadmin is distinct from old.superadmin then\r\n      raise exception 'Solo un superadministrador puede otorgar ese permiso';\r\n    end if;\r\n    if new.org_id is distinct from old.org_id then\r\n      raise exception 'No se puede mover un usuario a otra organizacion';\r\n    end if;\r\n    if new.user_id = auth.uid() and new.rol is distinct from old.rol then\r\n      raise exception 'No podes cambiar tu propio rol';\r\n    end if;\r\n  end if;\r\n\r\n  return new;\r\nend $function$\n",
+      "identity_args": ""
+    },
+    {
+      "acl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "name": "ec_user_study_ids",
+      "definition": "CREATE OR REPLACE FUNCTION public.ec_user_study_ids()\n RETURNS text[]\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  select coalesce(array_agg(distinct s.id), array[]::text[])\r\n  from ec_users u\r\n  cross join lateral jsonb_array_elements_text(coalesce(u.data -> 'estudios', '[]'::jsonb)) s(id)\r\n  where u.org_id = current_org()\r\n    and coalesce((u.data ->> 'activo')::boolean, true)\r\n    and (\r\n      u.data ->> 'authId' = auth.uid()::text\r\n      or lower(u.data ->> 'email') = lower(coalesce(auth.jwt() ->> 'email', ''))\r\n    )\r\n$function$\n",
+      "identity_args": ""
+    },
+    {
+      "acl": "{=X/postgres,postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "name": "es_superadmin",
+      "definition": "CREATE OR REPLACE FUNCTION public.es_superadmin()\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  select coalesce((select superadmin from ec_members\r\n                   where user_id = auth.uid() and activo), false)\r\n$function$\n",
+      "identity_args": ""
+    }
+  ],
+  "captured_at": "2026-11-23T22:15:01.455417+00:00"
+}

@@ -79,7 +79,7 @@ test('todos los guardados de módulos compartidos esperan confirmación del serv
   assert.match(html, /await Store\.upsert\('records'/);
   assert.match(html, /await Store\.remove\('records'/);
   assert.match(html, /await Store\.upsert\('checklists'/);
-  assert.match(html, /if\(!await guardarLog\(LOG_TIPO, obj/);
+  assert.match(html, /if\(!await guardarLog\(tipo, obj/);
   assert.match(html, /await guardarChecklist\(k/);
 });
 

@@ -28,19 +28,19 @@ function redactText(value: string, identifiers: string[]) {
 
   replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, "[EMAIL OMITIDO]");
   replace(/\b(?:DNI|CUIL|CUIT|documento|doc\.?)[\s:#-]*(?:\d[ .-]?){7,11}\b/gi, "[DOCUMENTO OMITIDO]");
-  replace(/\b(?:tel(?:e(?:fono|fono))?|cel(?:ular)?|whatsapp)[\s:+()-]*(?:\d[\s().-]?){7,15}\b/gi, "[TELÉFONO OMITIDO]");
+  replace(/\b(?:tel(?:[eé]fono)?|cel(?:ular)?|whatsapp)[\s:+()-]*(?:\d[\s().-]?){7,15}\b/gi, "[TELÉFONO OMITIDO]");
   replace(/\b(?:HC|historia\s+cl[ií]nica|n[°ºo]\s*de\s*historia)[\s:#-]*[A-Z0-9-]{5,}\b/gi, "[HISTORIA CLÍNICA OMITIDA]");
 
-  for (const raw of identifiers.slice(0, 50)) {
+  for (const raw of identifiers) {
     const identifier = String(raw || "").trim();
-    if (identifier.length < 3 || identifier.length > 100) continue;
-    replace(new RegExp(`\\b${escapeRegExp(identifier)}\\b`, "giu"), "[IDENTIFICADOR OMITIDO]");
+    if (identifier.length < 2 || identifier.length > 100) continue;
+    replace(new RegExp(`(?<![\\p{L}\\p{N}_])${escapeRegExp(identifier)}(?![\\p{L}\\p{N}_])`, "giu"), "[IDENTIFICADOR OMITIDO]");
   }
   return { text, replacements };
 }
 
 async function authenticate(req: Request) {
-  const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
+  const supabaseUrl = (Deno.env.get("SUPABASE_URL") || "").replace(/\/+$/, "");
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
   const anonKey = Deno.env.get("SUPABASE_ANON_KEY") || serviceKey;
   const authorization = req.headers.get("Authorization") || "";
@@ -61,20 +61,35 @@ async function authenticate(req: Request) {
   const members = memberResponse.ok ? await memberResponse.json() : [];
   if (!members[0]) throw new Error("MEMBERSHIP_REQUIRED");
   const member = members[0];
+  const serviceHeaders = { Authorization: `Bearer ${serviceKey}`, apikey: serviceKey };
+  const siteResponse = await fetch(`${supabaseUrl}/rest/v1/ec_orgs?select=id&id=eq.${encodeURIComponent(member.org_id)}&activo=eq.true&limit=1`, {
+    headers: serviceHeaders,
+  });
+  const sites = siteResponse.ok ? await siteResponse.json() : [];
+  if (!sites[0]) throw new Error("MEMBERSHIP_REQUIRED");
 
   // El permiso de facturación vive en la ficha ec_users. Se consulta con la
   // service role para que la autorización no dependa de datos enviados por el cliente.
-  const profilesResponse = await fetch(
-    `${supabaseUrl}/rest/v1/ec_users?select=data&org_id=eq.${encodeURIComponent(member.org_id)}`,
-    { headers: { Authorization: `Bearer ${serviceKey}`, apikey: serviceKey } },
-  );
-  const profiles = profilesResponse.ok ? await profilesResponse.json() : [];
-  const email = String(user.email || "").toLowerCase();
-  const profile = profiles.find((row: { data?: Record<string, unknown> }) => {
-    const data = row?.data || {};
-    return String(data.authId || "") === String(user.id)
-      || (!!email && String(data.email || "").toLowerCase() === email);
-  });
+  const profileBase = `${supabaseUrl}/rest/v1/ec_users?select=data&org_id=eq.${encodeURIComponent(member.org_id)}&limit=2`;
+  const profilesResponse = await fetch(`${profileBase}&data->>authId=eq.${encodeURIComponent(user.id)}`, { headers: serviceHeaders });
+  if (!profilesResponse.ok) throw new Error("PROFILE_LOOKUP_FAILED");
+  let profiles = await profilesResponse.json();
+  if (!Array.isArray(profiles)) throw new Error("PROFILE_LOOKUP_FAILED");
+  if (!profiles.length && user.email) {
+    // El email solo respalda fichas legadas que todavía no tienen authId.
+    const email = String(user.email).toLowerCase();
+    const emailPattern = `^${escapeRegExp(email)}$`;
+    const legacy = await fetch(`${profileBase}&data->>email=imatch.${encodeURIComponent(emailPattern)}&or=(data->>authId.is.null,data->>authId.eq.)`, {
+      headers: serviceHeaders,
+    });
+    if (!legacy.ok) throw new Error("PROFILE_LOOKUP_FAILED");
+    profiles = await legacy.json();
+    if (!Array.isArray(profiles)) throw new Error("PROFILE_LOOKUP_FAILED");
+    profiles = profiles.filter((row: { data?: Record<string, unknown> }) => !row.data?.authId && String(row.data?.email || "").toLowerCase() === email);
+  }
+  if (profiles.length > 1) throw new Error("PROFILE_AMBIGUOUS");
+  const profile = profiles[0];
+  if (profile?.data?.activo === false) throw new Error("MEMBERSHIP_REQUIRED");
   const billingAllowed = member.rol === "admin" || profile?.data?.facturacion === true;
   return { supabaseUrl, serviceKey, user, member, billingAllowed };
 }
@@ -98,7 +113,7 @@ async function callProvider(provider: string, model: string, key: string, system
   const soloTexto = blocks.length === 1 && blocks[0].t === "text";
   let response: Response;
   if (provider === "gemini") {
-    response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+    response = await providerFetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
       method: "POST",
       headers: { "content-type": "application/json", "x-goog-api-key": key },
       body: JSON.stringify({
@@ -109,7 +124,7 @@ async function callProvider(provider: string, model: string, key: string, system
       }),
     });
   } else if (provider === "anthropic") {
-    response = await fetch("https://api.anthropic.com/v1/messages", {
+    response = await providerFetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
       body: JSON.stringify({
@@ -122,7 +137,7 @@ async function callProvider(provider: string, model: string, key: string, system
       }),
     });
   } else {
-    response = await fetch("https://api.openai.com/v1/chat/completions", {
+    response = await providerFetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: { "content-type": "application/json", Authorization: `Bearer ${key}` },
       body: JSON.stringify({
@@ -140,8 +155,8 @@ async function callProvider(provider: string, model: string, key: string, system
 
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const detail = body?.error?.message || body?.error?.status || `AI_HTTP_${response.status}`;
-    throw new Error(String(detail).slice(0, 300));
+    // No devolver mensajes externos que pueden incluir fragmentos del material enviado.
+    throw new Error(response.status === 429 ? "AI_RATE_LIMITED" : "AI_PROVIDER_FAILED");
   }
   if (provider === "gemini") {
     const candidate = body?.candidates?.[0] || {};
@@ -163,7 +178,16 @@ async function callProvider(provider: string, model: string, key: string, system
   };
 }
 
-async function appendAudit(auth: Awaited<ReturnType<typeof authenticate>>, requestId: string, detail: object) {
+async function providerFetch(url: string, init: RequestInit) {
+  try {
+    return await fetch(url, { ...init, signal: AbortSignal.timeout(60_000) });
+  } catch (error) {
+    const name = error instanceof Error ? error.name : "";
+    throw new Error(/TimeoutError|AbortError/.test(name) ? "AI_TIMEOUT" : "AI_PROVIDER_FAILED");
+  }
+}
+
+async function appendAudit(auth: Awaited<ReturnType<typeof authenticate>>, requestId: string, detail: object, action = "generacion_asistida") {
   const response = await fetch(`${auth.supabaseUrl}/rest/v1/ec_audit`, {
     method: "POST",
     headers: {
@@ -174,16 +198,16 @@ async function appendAudit(auth: Awaited<ReturnType<typeof authenticate>>, reque
     },
     body: JSON.stringify({
       org_id: auth.member.org_id,
-      event_id: requestId,
+      event_id: crypto.randomUUID(),
       usuario: auth.user.email || auth.user.id,
       rol: auth.member.rol || "",
       entidad: "ia",
-      accion: "generacion_asistida",
+      accion: action,
       ref_id: requestId,
       detalle: JSON.stringify(detail).slice(0, 600),
       motivo: "Salida pendiente de revisión humana",
     }),
-  });
+  }).catch(() => { throw new Error("AI_AUDIT_FAILED"); });
   if (!response.ok) throw new Error("AI_AUDIT_FAILED");
 }
 
@@ -192,22 +216,29 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ error: "METHOD_NOT_ALLOWED" }, 405);
   try {
     const auth = await authenticate(req);
-    const input = await req.json();
+    const input = await req.json().catch(() => { throw new Error("INVALID_CONTENT"); });
+    if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("INVALID_CONTENT");
     const config = providerConfig();
     if (input?.action === "status") {
       return json({ configured: true, provider: config.provider, model: config.model });
     }
 
-    const purpose = String(input?.purpose || "consulta_general").replace(/[^a-z0-9_.-]/gi, "_").slice(0, 80);
+    const purpose = String(input?.purpose || "consulta_general").toLowerCase().replace(/[^a-z0-9_.-]/g, "_").slice(0, 80);
     if (/^contrato_/.test(purpose) && !auth.billingAllowed) {
       return json({ error: "BILLING_ACCESS_REQUIRED" }, 403);
     }
-    const maxTokens = Math.max(100, Math.min(30000, Number(input?.max_tokens) || 8000));
-    const identifiers = Array.isArray(input?.identifiers) ? input.identifiers.map(String) : [];
+    const requestedTokens = Number(input?.max_tokens);
+    const maxTokens = Math.max(100, Math.min(30000, Number.isFinite(requestedTokens) ? Math.floor(requestedTokens) || 8000 : 8000));
+    if (input.identifiers !== undefined && (!Array.isArray(input.identifiers)
+      || input.identifiers.some((value: unknown) => typeof value !== "string" || value.trim().length < 2 || value.trim().length > 100))) throw new Error("INVALID_CONTENT");
+    const identifiers: string[] = [...new Set<string>((input.identifiers || []).map((value: string) => value.trim()))];
+    if (identifiers.length > 500) throw new Error("IDENTIFIERS_LIMIT_EXCEEDED");
     const rawBlocks: AiBlock[] = typeof input?.content === "string"
       ? [{ t: "text", text: input.content }]
       : Array.isArray(input?.content) ? input.content : [];
     if (!rawBlocks.length || rawBlocks.length > 80) return json({ error: "INVALID_CONTENT" }, 400);
+    if (typeof input.system !== "undefined" && typeof input.system !== "string") throw new Error("INVALID_CONTENT");
+    if ((input.system || "").length > 50_000 || JSON.stringify(rawBlocks).length > 20_000_000) throw new Error("CONTENT_TOO_LARGE");
 
     const imageCount = rawBlocks.filter((block) => block?.t === "img").length;
     if (imageCount && input?.images_confirmed_deidentified !== true) {
@@ -216,10 +247,14 @@ Deno.serve(async (req) => {
     let redactions = 0;
     const blocks = rawBlocks.map((block): AiBlock => {
       if (block?.t === "img") {
-        if (!/^image\/(?:png|jpeg|webp)$/i.test(block.mime || "") || !block.data) throw new Error("INVALID_IMAGE");
-        return { t: "img", mime: block.mime, data: block.data };
+        if (typeof block.mime !== "string" || !/^image\/(?:png|jpeg|webp)$/i.test(block.mime)
+          || typeof block.data !== "string" || !block.data || block.data.length % 4 !== 0
+          || !/^[A-Za-z0-9+/]+={0,2}$/.test(block.data)) throw new Error("INVALID_IMAGE");
+        return { t: "img", mime: block.mime.toLowerCase(), data: block.data };
       }
-      const clean = redactText(String((block as TextBlock)?.text || ""), identifiers);
+      if (block?.t !== "text" || typeof block.text !== "string" || !block.text.trim()) throw new Error("INVALID_CONTENT");
+      if (block.text.length > 1_000_000) throw new Error("CONTENT_TOO_LARGE");
+      const clean = redactText(block.text, identifiers);
       redactions += clean.replacements;
       return { t: "text", text: clean.text };
     });
@@ -227,19 +262,37 @@ Deno.serve(async (req) => {
     redactions += cleanSystem.replacements;
     const system = `${cleanSystem.text} Basá todo exclusivamente en el material provisto. No uses conocimiento externo. Si falta un dato, indicá que no está. La salida es un borrador asistido por IA y requiere revisión humana.`;
     const requestId = crypto.randomUUID();
-    const result = await callProvider(config.provider, config.model, config.key, system, blocks, maxTokens);
-    await appendAudit(auth, requestId, {
+    const auditDetail = {
       purpose,
       provider: config.provider,
       model: config.model,
       redactions,
       images: imageCount,
       human_review_required: true,
-    });
+    };
+    // Registrar la intención antes de transmitir material a un proveedor externo.
+    await appendAudit(auth, requestId, auditDetail, "generacion_solicitada");
+    let result: { text: string; cut: boolean };
+    try {
+      result = await callProvider(config.provider, config.model, config.key, system, blocks, maxTokens);
+      if (typeof result.text !== "string" || !result.text.trim()) throw new Error("AI_EMPTY_RESPONSE");
+    } catch (error) {
+      await appendAudit(auth, requestId, { ...auditDetail, status: "failed" }, "generacion_fallida").catch(() => {});
+      throw error;
+    }
+    let auditPending = false;
+    try {
+      await appendAudit(auth, requestId, auditDetail);
+    } catch {
+      // Conservar el resultado y el identificador evita pagar/enviar nuevamente
+      // una generación que sí se completó. La intención ya está registrada.
+      auditPending = true;
+    }
     return json({
       ...result,
       meta: {
         request_id: requestId,
+        audit_pending: auditPending,
         provider: config.provider,
         model: config.model,
         purpose,
@@ -250,8 +303,15 @@ Deno.serve(async (req) => {
       },
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "INTERNAL_ERROR";
+    const code = error instanceof Error ? error.message : "INTERNAL_ERROR";
+    const knownCodes = new Set(["AUTH_REQUIRED", "MEMBERSHIP_REQUIRED", "AI_NOT_CONFIGURED", "AI_PROVIDER_INVALID", "AI_AUDIT_FAILED", "AI_PROVIDER_FAILED", "AI_RATE_LIMITED", "AI_TIMEOUT", "AI_EMPTY_RESPONSE", "INVALID_CONTENT", "INVALID_IMAGE", "CONTENT_TOO_LARGE", "IDENTIFIERS_LIMIT_EXCEEDED", "PROFILE_LOOKUP_FAILED", "PROFILE_AMBIGUOUS"]);
+    const message = knownCodes.has(code) ? code : "INTERNAL_ERROR";
     const status = /AUTH_REQUIRED|MEMBERSHIP_REQUIRED/.test(message) ? 401
+      : /INVALID_CONTENT|INVALID_IMAGE|IDENTIFIERS_LIMIT_EXCEEDED/.test(message) ? 400
+      : message === "CONTENT_TOO_LARGE" ? 413
+      : message === "AI_TIMEOUT" ? 504
+      : message === "AI_RATE_LIMITED" ? 429
+      : /AI_PROVIDER_FAILED|AI_EMPTY_RESPONSE/.test(message) ? 502
       : /AI_NOT_CONFIGURED/.test(message) ? 503 : 500;
     return json({ error: message }, status);
   }

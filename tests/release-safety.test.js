@@ -37,6 +37,17 @@ test('acepta respaldos antiguos y calcula una simulación sin mutar datos',()=>{
   assert.equal(release.canonicalStringify({b:2,a:1}),'{"a":1,"b":2}');
 });
 
+test('la restauración rechaza respaldos de otro sitio y destinos sin membresía',()=>{
+  assert.throws(()=>release.validateRestoreOrganization({orgId:'sitio-a'},'sitio-b'),/pertenece a otro sitio/);
+  assert.throws(()=>release.validateRestoreOrganization({orgId:'sitio-a'},''),/sitio de destino/);
+  assert.deepEqual(release.validateRestoreOrganization({orgId:'sitio-a'},'sitio-a'),{organizationVerified:true});
+});
+
+test('las copias antiguas sin sitio no se presentan como verificadas',()=>{
+  assert.deepEqual(release.validateRestoreOrganization({},'sitio-a'),{organizationVerified:false});
+  assert.deepEqual(release.validateRestoreOrganization({orgId:'  '},'sitio-a'),{organizationVerified:false});
+});
+
 test('la aplicación declara entorno y versión visibles',()=>{
   assert.match(html,/runtime-config\.js/);
   assert.match(html,/id="versionBadge"/);

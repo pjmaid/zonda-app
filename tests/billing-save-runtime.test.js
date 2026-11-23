@@ -16,13 +16,15 @@ function form({file, upsert, storagePut = async () => {}}) {
   };
   const alerts = [], toasts = [];
   const ctx = vm.createContext({
+    SESSION: {id:'session-test'},
+    assertSameSession(session){if(session!==ctx.SESSION){const error=new Error('La sesión cambió');error.sessionChanged=true;throw error;}},
     FACT_GASTOS: {gasto_remis: {key: 'Remis', titulo: 'Gasto de remís'}},
     $: id => elements[id], canFact: () => true, uid: () => 'test-id', T: s => s,
     Store: {upsert, online: () => true}, storagePut, renderFactGasto: () => {},
     alert: text => alerts.push(text), toast: text => toasts.push(text)
   });
   vm.runInContext(source, ctx);
-  return {save: () => ctx.factGuardarGasto('gasto_remis'), alerts, toasts, elements};
+  return {save: () => ctx.factGuardarGasto('gasto_remis'), alerts, toasts, elements, ctx};
 }
 
 test('el fallo del comprobante se informa sin reemplazarlo por un éxito completo', async () => {
@@ -51,4 +53,13 @@ test('dos envíos simultáneos del formulario generan un solo gasto', async () =
   await first;
   assert.equal(writes, 1);
   assert.deepEqual(app.toasts, ['Gasto registrado.']);
+});
+
+test('cambiar de sesión tras subir el comprobante no escribe sus metadatos en otra cuenta',async()=>{
+  let writes=0;
+  const app=form({file:{name:'comprobante.pdf',size:20,type:'application/pdf'},
+    upsert:async()=>{writes++;},storagePut:async()=>{app.ctx.SESSION={id:'other-session'};}});
+  await app.save();
+  assert.equal(writes,1);
+  assert.equal(app.alerts.length,0);assert.equal(app.toasts.length,0);
 });

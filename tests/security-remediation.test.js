@@ -10,16 +10,16 @@ const users=fs.readFileSync(path.join(root,'supabase/functions/crear-usuario/ind
 const migration=fs.readFileSync(path.join(root,'supabase/migrations/20261113_endurecimiento_funciones_rls.sql'),'utf8');
 
 test('la recuperación valida el enlace y permite definir una clave nueva',()=>{
-  assert.match(html,/type'\)!=='recovery'/);
+  assert.match(html,/type!=='recovery'&&type!=='invite'/);
   assert.match(html,/Authorization:'Bearer '\+RECOVERY_TOKEN/);
-  assert.match(html,/redirect_to:location\.origin\+location\.pathname/);
+  assert.match(html,/new URLSearchParams\(\{redirect_to:redirectTo\}\)/);
   assert.doesNotMatch(html,/\/auth\/v1\/signup/);
 });
 
 test('el borrado de documentos comprueba Storage y compensa el fallo de metadatos',()=>{
   assert.match(html,/async function storageDel[\s\S]*if\(!r\.ok\)/);
   assert.match(html,/archivoEliminado&&respaldo[\s\S]*storagePut\(doc\.path,respaldo\)/);
-  assert.match(html,/if\(doc\.ragIndexado\) await ragBorrar\(doc\)/);
+  assert.match(html,/if\(doc\.ragIndexado\|\|doc\.ragPendiente\) await ragBorrar\(doc\)/);
 });
 
 test('la depuración histórica exige administración y no transmite contenido clínico',()=>{

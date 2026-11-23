@@ -72,6 +72,17 @@
     return Object.values(logs||{}).reduce((n,list)=>n+(Array.isArray(list)?list.length:0),0);
   }
 
+  function validateRestoreOrganization(manifest, currentOrgId){
+    const source=String((manifest&&manifest.orgId)||'').trim();
+    const target=String(currentOrgId||'').trim();
+    if(!target) throw new Error('No se pudo verificar el sitio de destino. Volvé a ingresar antes de restaurar.');
+    if(source && source!==target)
+      throw new Error('El respaldo pertenece a otro sitio. La restauración se detuvo para evitar mezclar sus datos.');
+    // Las copias históricas no incluían orgId: el llamador debe mostrar esa
+    // limitación en la confirmación, sin atribuirles el sitio de la sesión.
+    return {organizationVerified:!!source};
+  }
+
   function restorePlan(payload,current){
     const result={collections:{},creates:0,updates:0,unchanged:0};
     for(const name of ['studies','patients','visits','docs','settings']){
@@ -98,5 +109,5 @@
     return '{'+Object.keys(value).sort().map(k=>JSON.stringify(k)+':'+canonicalStringify(value[k])).join(',')+'}';
   }
 
-  return {BACKUP_SCHEMA_VERSION,escapeHtml,normalizeBackup,validateBackup,restorePlan,canonicalStringify};
+  return {BACKUP_SCHEMA_VERSION,escapeHtml,normalizeBackup,validateBackup,validateRestoreOrganization,restorePlan,canonicalStringify};
 });

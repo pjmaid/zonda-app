@@ -24,9 +24,9 @@ function app(fetch) {
     LS: {SES: 'session'}, saved: [], status: [],
     saveJSON(key, value) { ctx.saved.push(json(value)); },
     syncStatus(...args) { ctx.status.push(args); },
-    uid: () => 'test-event', fetch, URLSearchParams
+    uid: () => 'test-event', fetch, URLSearchParams, AbortController, Response, setTimeout, clearTimeout
   });
-  vm.runInContext(tableSource + storageSource + '\nthis.store = Store; this.refresh = supaRefresh; this.request = supaFetch;', ctx);
+  vm.runInContext(tableSource + storageSource + '\nthis.store = Store; this.refresh = supaRefresh; this.request = supaFetch; this.deadline = supaTimedFetch;', ctx);
   ctx.store.resetMeta();
   return ctx;
 }
@@ -212,4 +212,67 @@ test('el guardado sigue bloqueado si el entorno no está declarado', async () =>
     await assert.rejects(ctx.store.upsert('patients', {id: 'p1'}), /El entorno no está configurado/);
     await assert.rejects(ctx.store.remove('patients', 'p1'), /El entorno no está configurado/);
   }
+});
+
+test('la carga usa hasta cuatro solicitudes simultáneas y confirma todas juntas', async () => {
+  const gate=deferred();
+  let active=0, peak=0, calls=0;
+  const ctx=app(async()=>{
+    calls++; active++; peak=Math.max(peak,active);
+    await gate.promise;
+    active--;
+    return reply([]);
+  });
+  ctx.DB.patients=[{id:'previo'}];
+  const pending=ctx.store.loadAll();
+  assert.equal(active,4);
+  assert.equal(ctx.DB.patients[0].id,'previo');
+  gate.resolve();
+  await pending;
+  assert.equal(calls,8);
+  assert.equal(peak,4);
+  assert.equal(ctx.DB.patients.length,0);
+});
+
+test('el plazo de red incluye una descarga que se interrumpe después de las cabeceras', async()=>{
+  const ctx=app(async(_url,opts)=>({
+    blob:()=>new Promise((_resolve,reject)=>opts.signal.addEventListener('abort',()=>reject(new Error('Abortado')),{once:true}))
+  }));
+  await assert.rejects(ctx.deadline('https://example.invalid',{},5),/tardó demasiado/);
+});
+
+test('una cancelación externa se conserva sin confundirse con vencimiento', async()=>{
+  const controller=new AbortController();
+  const ctx=app(async(_url,opts)=>({
+    blob:()=>new Promise((_resolve,reject)=>{
+      if(opts.signal.aborted) reject(new Error('Cancelación externa'));
+      else opts.signal.addEventListener('abort',()=>reject(new Error('Cancelación externa')),{once:true});
+    })
+  }));
+  const pending=ctx.deadline('https://example.invalid',{signal:controller.signal},1000);
+  await Promise.resolve();
+  controller.abort();
+  await assert.rejects(pending,/Cancelación externa/);
+});
+
+test('una respuesta de guardado incompleta no se acepta como versión confirmada', async()=>{
+  const ctx=app(async()=>reply({event_id:'test-event'}));
+  const previous={id:'p1',detalle:'Confirmado'};
+  ctx.DB.patients.push(previous);
+  ctx.store.revisions.patients.set('p1',4);
+  ctx.store.snapshots.patients.set('p1',json(previous));
+  await assert.rejects(ctx.store.upsert('patients',{id:'p1',detalle:'Cambio'}),/confirmación incompleta/);
+  assert.equal(ctx.DB.patients[0].detalle,'Confirmado');
+  assert.equal(ctx.store.revisions.patients.get('p1'),4);
+});
+
+test('una respuesta de borrado incompleta conserva el registro', async()=>{
+  const ctx=app(async()=>reply({event_id:'test-event'}));
+  const previous={id:'p1'};
+  ctx.DB.patients.push(previous);
+  ctx.store.revisions.patients.set('p1',4);
+  ctx.store.snapshots.patients.set('p1',json(previous));
+  await assert.rejects(ctx.store.remove('patients','p1'),/no confirmó la eliminación/);
+  assert.equal(ctx.DB.patients.length,1);
+  assert.equal(ctx.store.revisions.patients.get('p1'),4);
 });

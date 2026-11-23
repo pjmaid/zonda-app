@@ -56,6 +56,11 @@ async function requireAdministrator(req: Request) {
   const member = members[0] as Member | undefined;
   if (!member) throw new Error("MEMBERSHIP_REQUIRED");
   if (member.rol !== "admin" && !member.superadmin) throw new Error("ADMIN_REQUIRED");
+  const siteResponse = await fetch(`${supabaseUrl}/rest/v1/ec_orgs?select=id&id=eq.${encodeURIComponent(member.org_id)}&activo=eq.true&limit=1`, {
+    headers: serviceHeaders(serviceKey),
+  });
+  const sites = siteResponse.ok ? await responseJson(siteResponse) : [];
+  if (!sites[0]) throw new Error("MEMBERSHIP_REQUIRED");
   return { supabaseUrl, serviceKey, user, member };
 }
 
@@ -77,9 +82,44 @@ function validTemporaryPassword(value: unknown) {
   return password;
 }
 
+function invitationPath(redirect: unknown) {
+  const appUrl = new URL(Deno.env.get("APP_URL") || "https://zonda-app.pages.dev/");
+  let destination: URL;
+  try {
+    destination = new URL(String(redirect || appUrl.href));
+  } catch {
+    throw new Error("REDIRECT_INVALID");
+  }
+  if (destination.origin !== appUrl.origin || destination.protocol !== "https:" || destination.username || destination.password) {
+    throw new Error("REDIRECT_INVALID");
+  }
+  // No reenviar tokens, parámetros de recuperación ni fragmentos de la sesión del administrador.
+  destination.search = "";
+  destination.hash = "";
+  return `invite?redirect_to=${encodeURIComponent(destination.href)}`;
+}
+
+async function validStudies(ctx: Awaited<ReturnType<typeof requireAdministrator>>, value: unknown) {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > 100 || value.some((id) => typeof id !== "string" || !/^[a-z0-9_-]{1,160}$/i.test(id))) {
+    throw new Error("STUDIES_INVALID");
+  }
+  const ids = [...new Set(value)] as string[];
+  if (!ids.length) return ids;
+  const response = await fetch(
+    `${ctx.supabaseUrl}/rest/v1/ec_studies?select=id&org_id=eq.${encodeURIComponent(ctx.member.org_id)}&id=in.(${ids.map(encodeURIComponent).join(",")})`,
+    { headers: serviceHeaders(ctx.serviceKey) },
+  );
+  if (!response.ok) throw new Error("STUDIES_LOOKUP_FAILED");
+  const rows = await responseJson(response);
+  const found = new Set(Array.isArray(rows) ? rows.map((row: { id: string }) => row.id) : []);
+  if (ids.some((id) => !found.has(id))) throw new Error("STUDIES_INVALID");
+  return ids;
+}
+
 async function targetMember(ctx: Awaited<ReturnType<typeof requireAdministrator>>, authId: unknown) {
   const id = String(authId || "");
-  if (!/^[0-9a-f-]{36}$/i.test(id)) throw new Error("USER_INVALID");
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) throw new Error("USER_INVALID");
   const response = await fetch(
     `${ctx.supabaseUrl}/rest/v1/ec_members?select=user_id,org_id,rol,superadmin,activo&user_id=eq.${encodeURIComponent(id)}&limit=1`,
     { headers: serviceHeaders(ctx.serviceKey) },
@@ -88,6 +128,7 @@ async function targetMember(ctx: Awaited<ReturnType<typeof requireAdministrator>
   const target = rows[0] as Member | undefined;
   if (!target) throw new Error("USER_NOT_FOUND");
   if (!ctx.member.superadmin && target.org_id !== ctx.member.org_id) throw new Error("USER_OUTSIDE_SITE");
+  if (target.superadmin && !ctx.member.superadmin) throw new Error("SUPERADMIN_TARGET_FORBIDDEN");
   return target;
 }
 
@@ -105,34 +146,47 @@ async function audit(ctx: Awaited<ReturnType<typeof requireAdministrator>>, acti
       detalle: detail.slice(0, 500),
       motivo: "Administración de acceso",
     }),
-  });
+  }).catch(() => { throw new Error("AUDIT_WRITE_FAILED"); });
   if (!response.ok) throw new Error("AUDIT_WRITE_FAILED");
+}
+
+async function completed(ctx: Awaited<ReturnType<typeof requireAdministrator>>, action: string, refId: string, detail: string, mensaje: string) {
+  try {
+    await audit(ctx, action, refId, detail);
+    return { mensaje, applied: true, audit_pending: false };
+  } catch {
+    // La intención quedó registrada antes de mutar. Un fallo al registrar el
+    // resultado no revierte Auth ni debe invitar a repetir una operación aplicada.
+    return { mensaje: `${mensaje} La operación se aplicó; el registro final de auditoría quedó pendiente. No repitas la operación.`, applied: true, audit_pending: true };
+  }
 }
 
 async function createUser(ctx: Awaited<ReturnType<typeof requireAdministrator>>, input: Record<string, unknown>) {
   const email = validEmail(input.email);
   const role = validRole(input.rol);
   const password = input.claveTemporal ? validTemporaryPassword(input.claveTemporal) : "";
+  const authPath = password ? "admin/users" : invitationPath(input.redirect);
+  const studies = await validStudies(ctx, input.estudios);
   const profileId = crypto.randomUUID();
   await audit(ctx, "alta solicitada", profileId, `Usuario ${email}; rol ${role}`);
-  const authResponse = await fetch(`${ctx.supabaseUrl}/auth/v1/${password ? "admin/users" : "invite"}`, {
+  const authResponse = await fetch(`${ctx.supabaseUrl}/auth/v1/${authPath}`, {
     method: "POST",
     headers: serviceHeaders(ctx.serviceKey),
     body: JSON.stringify(password
       ? { email, password, email_confirm: true, user_metadata: { clave_temporal: true } }
-      : { email, redirect_to: String(input.redirect || ""), data: { clave_temporal: false } }),
+      : { email, data: { clave_temporal: false } }),
   });
   const authBody = await responseJson(authResponse);
   const authUser = authBody.user || authBody;
-  if (!authResponse.ok || !authUser?.id) throw new Error(authBody.msg || authBody.message || "USER_CREATE_FAILED");
+  if (!authResponse.ok || !authUser?.id) throw new Error("USER_CREATE_FAILED");
 
   const profile = {
     id: profileId,
     authId: authUser.id,
     email,
-    nombre: String(input.nombre || "").trim() || email,
+    nombre: String(input.nombre || "").trim().slice(0, 160) || email,
     rol: role,
-    estudios: Array.isArray(input.estudios) ? input.estudios.map(String) : [],
+    estudios: studies,
     facturacion: role === "admin" || input.facturacion === true,
     activo: true,
     creado: new Date().toISOString(),
@@ -152,15 +206,16 @@ async function createUser(ctx: Awaited<ReturnType<typeof requireAdministrator>>,
     });
     if (!profileResponse.ok) throw new Error("PROFILE_CREATE_FAILED");
   } catch (error) {
-    await fetch(`${ctx.supabaseUrl}/auth/v1/admin/users/${authUser.id}`, {
+    const rollback = await fetch(`${ctx.supabaseUrl}/auth/v1/admin/users/${authUser.id}`, {
       method: "DELETE",
       headers: serviceHeaders(ctx.serviceKey),
-    });
+    }).catch(() => null);
+    if (!rollback?.ok) throw new Error("ROLLBACK_INCOMPLETE");
     throw error;
   }
 
-  await audit(ctx, "alta", profileId, `Usuario ${email}; rol ${role}`);
-  return { mensaje: password ? "Usuario creado con clave temporal." : "Usuario creado; se envió la invitación por email." };
+  return completed(ctx, "alta", profileId, `Usuario ${email}; rol ${role}`,
+    password ? "Usuario creado con clave temporal." : "Usuario creado; se envió la invitación por email.");
 }
 
 async function createOrganization(ctx: Awaited<ReturnType<typeof requireAdministrator>>, input: Record<string, unknown>) {
@@ -169,6 +224,7 @@ async function createOrganization(ctx: Awaited<ReturnType<typeof requireAdminist
   if (name.length < 3 || name.length > 160) throw new Error("ORGANIZATION_INVALID");
   const email = validEmail(input.email);
   const password = input.claveTemporal ? validTemporaryPassword(input.claveTemporal) : "";
+  const authPath = password ? "admin/users" : invitationPath(input.redirect);
   const requestId = crypto.randomUUID();
   await audit(ctx, "alta de sitio solicitada", requestId, `Sitio ${name}; administrador ${email}`);
 
@@ -183,16 +239,16 @@ async function createOrganization(ctx: Awaited<ReturnType<typeof requireAdminist
 
   let authId = "";
   try {
-    const authResponse = await fetch(`${ctx.supabaseUrl}/auth/v1/${password ? "admin/users" : "invite"}`, {
+    const authResponse = await fetch(`${ctx.supabaseUrl}/auth/v1/${authPath}`, {
       method: "POST",
       headers: serviceHeaders(ctx.serviceKey),
       body: JSON.stringify(password
         ? { email, password, email_confirm: true, user_metadata: { clave_temporal: true } }
-        : { email, redirect_to: String(input.redirect || ""), data: { clave_temporal: false } }),
+        : { email, data: { clave_temporal: false } }),
     });
     const authBody = await responseJson(authResponse);
     const authUser = authBody.user || authBody;
-    if (!authResponse.ok || !authUser?.id) throw new Error(authBody.msg || authBody.message || "USER_CREATE_FAILED");
+    if (!authResponse.ok || !authUser?.id) throw new Error("USER_CREATE_FAILED");
     authId = authUser.id;
 
     const profileId = crypto.randomUUID();
@@ -204,7 +260,7 @@ async function createOrganization(ctx: Awaited<ReturnType<typeof requireAdminist
     if (!membership.ok) throw new Error("MEMBERSHIP_CREATE_FAILED");
     const profile = {
       id: profileId, authId, email,
-      nombre: String(input.nombreAdmin || "").trim() || email,
+      nombre: String(input.nombreAdmin || "").trim().slice(0, 160) || email,
       rol: "admin", estudios: [], facturacion: true, activo: true,
       creado: new Date().toISOString(),
     };
@@ -215,17 +271,18 @@ async function createOrganization(ctx: Awaited<ReturnType<typeof requireAdminist
     });
     if (!profileResponse.ok) throw new Error("PROFILE_CREATE_FAILED");
   } catch (error) {
-    if (authId) await fetch(`${ctx.supabaseUrl}/auth/v1/admin/users/${authId}`, {
+    const authRollback = authId ? await fetch(`${ctx.supabaseUrl}/auth/v1/admin/users/${authId}`, {
       method: "DELETE", headers: serviceHeaders(ctx.serviceKey),
-    });
-    await fetch(`${ctx.supabaseUrl}/rest/v1/ec_orgs?id=eq.${encodeURIComponent(orgId)}`, {
+    }).catch(() => null) : null;
+    const orgRollback = await fetch(`${ctx.supabaseUrl}/rest/v1/ec_orgs?id=eq.${encodeURIComponent(orgId)}`, {
       method: "DELETE", headers: serviceHeaders(ctx.serviceKey, { Prefer: "return=minimal" }),
-    });
+    }).catch(() => null);
+    if ((authId && !authRollback?.ok) || !orgRollback?.ok) throw new Error("ROLLBACK_INCOMPLETE");
     throw error;
   }
 
-  await audit(ctx, "alta de sitio", orgId, `Sitio ${name}; administrador ${email}`);
-  return { mensaje: password ? "Sitio creado con una clave temporal para su administrador." : "Sitio creado; se envió la invitación al administrador." };
+  return completed(ctx, "alta de sitio", orgId, `Sitio ${name}; administrador ${email}`,
+    password ? "Sitio creado con una clave temporal para su administrador." : "Sitio creado; se envió la invitación al administrador.");
 }
 
 async function changePassword(ctx: Awaited<ReturnType<typeof requireAdministrator>>, input: Record<string, unknown>) {
@@ -237,15 +294,46 @@ async function changePassword(ctx: Awaited<ReturnType<typeof requireAdministrato
     headers: serviceHeaders(ctx.serviceKey),
     body: JSON.stringify({ password, user_metadata: { clave_temporal: true } }),
   });
-  const body = await responseJson(response);
-  if (!response.ok) throw new Error(body.msg || body.message || "PASSWORD_UPDATE_FAILED");
-  await audit(ctx, "cambio de clave", target.user_id, "Clave temporal asignada; contenido no registrado");
-  return { mensaje: "Clave cambiada. El usuario deberá reemplazarla al iniciar sesión." };
+  if (!response.ok) throw new Error("PASSWORD_UPDATE_FAILED");
+  return completed(ctx, "cambio de clave", target.user_id, "Clave temporal asignada; contenido no registrado",
+    "Clave cambiada. El usuario deberá reemplazarla al iniciar sesión.");
+}
+
+async function targetProfiles(ctx: Awaited<ReturnType<typeof requireAdministrator>>, target: Member, requestedId: unknown) {
+  const base = `${ctx.supabaseUrl}/rest/v1/ec_users?select=id,data&org_id=eq.${encodeURIComponent(target.org_id)}`;
+  const response = await fetch(`${base}&data->>authId=eq.${encodeURIComponent(target.user_id)}`, {
+    headers: serviceHeaders(ctx.serviceKey),
+  });
+  if (!response.ok) throw new Error("PROFILE_LOOKUP_FAILED");
+  let profiles = await responseJson(response);
+  if (!Array.isArray(profiles)) throw new Error("PROFILE_LOOKUP_FAILED");
+  // Respaldo exclusivamente para fichas anteriores al vínculo authId.
+  if (!profiles.length) {
+    const authResponse = await fetch(`${ctx.supabaseUrl}/auth/v1/admin/users/${target.user_id}`, {
+      headers: serviceHeaders(ctx.serviceKey),
+    });
+    if (!authResponse.ok) throw new Error("PROFILE_LOOKUP_FAILED");
+    const body = await responseJson(authResponse);
+    const email = String((body.user || body).email || "").toLowerCase();
+    if (email) {
+      const emailPattern = `^${email.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`;
+      const legacy = await fetch(`${base}&data->>email=imatch.${encodeURIComponent(emailPattern)}&or=(data->>authId.is.null,data->>authId.eq.)`, {
+        headers: serviceHeaders(ctx.serviceKey),
+      });
+      if (!legacy.ok) throw new Error("PROFILE_LOOKUP_FAILED");
+      profiles = await responseJson(legacy);
+      if (!Array.isArray(profiles)) throw new Error("PROFILE_LOOKUP_FAILED");
+      profiles = profiles.filter((row: { data?: Record<string, unknown> }) => !row.data?.authId && String(row.data?.email || "").toLowerCase() === email);
+    }
+  }
+  if (requestedId && !profiles.some((row: { id: string }) => row.id === requestedId)) throw new Error("PROFILE_MISMATCH_FORBIDDEN");
+  return profiles as { id: string }[];
 }
 
 async function deleteUser(ctx: Awaited<ReturnType<typeof requireAdministrator>>, input: Record<string, unknown>) {
   const target = await targetMember(ctx, input.authId);
   if (target.user_id === ctx.user.id) throw new Error("SELF_DELETE_FORBIDDEN");
+  const profiles = await targetProfiles(ctx, target, input.profileId);
   if (target.rol === "admin" && target.activo) {
     const response = await fetch(
       `${ctx.supabaseUrl}/rest/v1/ec_members?select=user_id&org_id=eq.${encodeURIComponent(target.org_id)}&rol=eq.admin&activo=eq.true`,
@@ -261,19 +349,20 @@ async function deleteUser(ctx: Awaited<ReturnType<typeof requireAdministrator>>,
     method: "DELETE",
     headers: serviceHeaders(ctx.serviceKey),
   });
-  const body = await responseJson(response);
-  if (!response.ok) throw new Error(body.msg || body.message || "USER_DELETE_FAILED");
+  if (!response.ok) throw new Error("USER_DELETE_FAILED");
 
-  const profileId = String(input.profileId || "");
-  if (profileId) {
-    const profileResponse = await fetch(`${ctx.supabaseUrl}/rest/v1/ec_users?id=eq.${encodeURIComponent(profileId)}&org_id=eq.${encodeURIComponent(target.org_id)}`, {
+  for (const profile of profiles) {
+    const profileResponse = await fetch(`${ctx.supabaseUrl}/rest/v1/ec_users?id=eq.${encodeURIComponent(profile.id)}&org_id=eq.${encodeURIComponent(target.org_id)}`, {
       method: "DELETE",
       headers: serviceHeaders(ctx.serviceKey, { Prefer: "return=minimal" }),
-    });
-    if (!profileResponse.ok) throw new Error("PROFILE_DELETE_FAILED");
+    }).catch(() => null);
+    if (!profileResponse?.ok) {
+      const result = await completed(ctx, "baja parcial", target.user_id, "Cuenta de acceso eliminada; limpieza de ficha pendiente",
+        "La cuenta de acceso fue eliminada. Quedó pendiente la limpieza de su ficha; no repitas la baja.");
+      return { ...result, cleanup_pending: true };
+    }
   }
-  await audit(ctx, "baja", target.user_id, "Cuenta de acceso y asignaciones eliminadas; datos clínicos conservados");
-  return { mensaje: "Usuario eliminado definitivamente." };
+  return completed(ctx, "baja", target.user_id, "Cuenta de acceso y asignaciones eliminadas; datos clínicos conservados", "Usuario eliminado definitivamente.");
 }
 
 Deno.serve(async (req) => {
@@ -281,7 +370,8 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ error: "METHOD_NOT_ALLOWED" }, 405);
   try {
     const ctx = await requireAdministrator(req);
-    const input = await req.json() as Record<string, unknown>;
+    const input = await req.json().catch(() => { throw new Error("INPUT_INVALID"); }) as Record<string, unknown>;
+    if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("INPUT_INVALID");
     const action = String(input.accion || "");
     if (action === "usuario") return json(await createUser(ctx, input));
     if (action === "organizacion") return json(await createOrganization(ctx, input));
@@ -289,7 +379,8 @@ Deno.serve(async (req) => {
     if (action === "eliminar_usuario") return json(await deleteUser(ctx, input));
     return json({ error: "ACTION_INVALID" }, 400);
   } catch (error) {
-    const code = error instanceof Error ? error.message : "INTERNAL_ERROR";
+    const detail = error instanceof Error ? error.message : "";
+    const code = /^[A-Z_]{3,60}$/.test(detail) ? detail : "INTERNAL_ERROR";
     const messages: Record<string, string> = {
       AUTH_REQUIRED: "La sesión venció. Volvé a ingresar.",
       MEMBERSHIP_REQUIRED: "Tu cuenta no pertenece a un sitio activo.",
@@ -304,11 +395,21 @@ Deno.serve(async (req) => {
       USER_OUTSIDE_SITE: "No podés administrar usuarios de otro sitio.",
       SELF_DELETE_FORBIDDEN: "No podés eliminar tu propio usuario.",
       LAST_ADMIN_FORBIDDEN: "Tiene que quedar al menos un administrador activo.",
+      SUPERADMIN_TARGET_FORBIDDEN: "Solo un superadministrador puede modificar esta cuenta.",
+      PROFILE_MISMATCH_FORBIDDEN: "La ficha seleccionada no corresponde a la cuenta de acceso.",
+      REDIRECT_INVALID: "La dirección de regreso debe pertenecer a Zonda.",
+      STUDIES_INVALID: "Los estudios asignados deben existir en tu sitio.",
+      INPUT_INVALID: "La solicitud no tiene un formato válido.",
+      USER_CREATE_FAILED: "No se pudo crear la cuenta. Revisá si el email ya está registrado.",
+      PASSWORD_UPDATE_FAILED: "No se pudo actualizar la clave. Volvé a intentar.",
+      USER_DELETE_FAILED: "No se pudo eliminar la cuenta de acceso.",
+      ROLLBACK_INCOMPLETE: "El alta quedó incompleta y no se pudo revertir por completo. Revisá la cuenta y el sitio antes de reintentar.",
       AUDIT_WRITE_FAILED: "No se pudo registrar la operación en la auditoría; no se aplicaron cambios de acceso.",
     };
     const status = /AUTH_REQUIRED|MEMBERSHIP_REQUIRED/.test(code) ? 401
-      : /ADMIN_REQUIRED|SUPERADMIN_REQUIRED/.test(code) ? 403
+      : /ADMIN_REQUIRED|SUPERADMIN_REQUIRED|SUPERADMIN_TARGET_FORBIDDEN/.test(code) ? 403
       : /INVALID|WEAK|FORBIDDEN|OUTSIDE|NOT_FOUND|OWN_PASSWORD/.test(code) ? 400 : 500;
-    return json({ error: messages[code] || code }, status);
+    return json({ error: messages[code] || "No se pudo completar la operación. Volvé a intentar.", code,
+      ...(code === "ROLLBACK_INCOMPLETE" ? { applied: "partial" } : {}) }, status);
   }
 });

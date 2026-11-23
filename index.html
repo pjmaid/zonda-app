@@ -1,5 +1,8 @@
 <!DOCTYPE html>
 <html lang="es-AR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <script src="runtime-config.js"></script>
 <script src="release-tools.js"></script>
 <script src="ctcae.js"></script>
@@ -10,9 +13,7 @@
 <script src="patient-eligibility-policy.js"></script>
 <script src="billing-ai-policy.js"></script>
 <script src="visit-evolution-policy.js"></script>
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="ui-enhancements.js" defer></script>
 <title>Zonda — Asistente para sitios de investigación clínica</title>
 <style>
 :root{
@@ -161,6 +162,7 @@ details>summary{color:var(--acc-dark)}
 @media(max-width:640px){ main{padding:12px} .stcard{flex-direction:column;align-items:flex-start} }
 @media print{ #topbar,nav#tabs,.toolbar,button{display:none!important} }
 </style>
+<link rel="stylesheet" href="ui-enhancements.css">
 </head>
 <body>
 
@@ -174,39 +176,46 @@ details>summary{color:var(--acc-dark)}
     <div class="sub" id="loginSub">Asistente para sitios de investigación clínica</div>
     <div id="loginModeBadge"></div>
     <div id="loginFields">
-      <label id="lblUser">Usuario</label>
-      <input type="text" id="loginUser" autocomplete="username">
-      <label>Clave</label>
-      <input type="password" id="loginPass" autocomplete="current-password">
+      <label id="lblUser" for="loginUser">Email</label>
+      <input type="email" id="loginUser" autocomplete="username" autocapitalize="none" spellcheck="false" inputmode="email" aria-describedby="loginHint">
+      <label for="loginPass">Clave</label>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input type="password" id="loginPass" autocomplete="current-password" aria-describedby="loginCaps" style="min-width:0;flex:1">
+        <button type="button" id="btnLoginShowPass" aria-controls="loginPass" aria-pressed="false">Mostrar</button>
+      </div>
+      <div id="loginCaps" class="small warn hidden" role="status">Bloq Mayús está activado.</div>
       <div id="loginPass2Box" class="hidden">
-        <label>Repetir clave</label>
-        <input type="password" id="loginPass2">
+        <label for="loginPass2">Repetir clave</label>
+        <input type="password" id="loginPass2" autocomplete="new-password">
         <div class="muted small" id="passReq" style="margin-top:4px"></div>
       </div>
       <div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap">
         <button class="primary" id="btnLogin" style="flex:1">Ingresar</button>
       </div>
       <div style="margin-top:8px"><a href="#" id="lnkForgot" class="small">¿Olvidaste la clave?</a></div>
-      <div id="loginMsg"></div>
+      <div id="loginMsg" role="status" aria-live="polite" aria-atomic="true"></div>
       <div class="muted small" id="loginHint" style="margin-top:8px"></div>
       <div id="loginBuild"></div>
     </div>
     <div id="recoveryBox" class="hidden">
-      <h3>Definir una nueva clave</h3>
-      <div class="muted small" style="margin-bottom:10px">El enlace fue validado. Elegí una clave nueva para tu cuenta.</div>
-      <label>Nueva clave</label>
-      <input type="password" id="recoveryPass" autocomplete="new-password">
-      <label>Repetir nueva clave</label>
+      <h3 id="recoveryTitle">Definir una nueva clave</h3>
+      <div class="muted small" id="recoveryHint" style="margin-bottom:10px">El enlace fue validado. Elegí una clave nueva para tu cuenta.</div>
+      <label for="recoveryPass">Nueva clave</label>
+      <input type="password" id="recoveryPass" autocomplete="new-password" aria-describedby="recoveryReq">
+      <label for="recoveryPass2">Repetir nueva clave</label>
       <input type="password" id="recoveryPass2" autocomplete="new-password">
-      <div class="muted small" id="recoveryReq" style="margin-top:4px"></div>
+      <button type="button" id="btnRecoveryShowPass" aria-controls="recoveryPass recoveryPass2" aria-pressed="false" style="margin-top:8px">Mostrar claves</button>
+      <div class="muted small" id="recoveryReq" style="margin-top:4px">Mínimo 12 caracteres, con mayúscula, minúscula, número y símbolo.</div>
       <button class="primary" id="btnRecoverySave" style="width:100%;margin-top:14px">Guardar nueva clave</button>
-      <div id="recoveryMsg" style="margin-top:8px"></div>
+      <button type="button" id="btnRecoveryCancel" style="width:100%;margin-top:8px">Volver al ingreso</button>
+      <div id="recoveryMsg" role="status" aria-live="polite" aria-atomic="true" style="margin-top:8px"></div>
     </div>
   </div>
 </div>
 
 <!-- ============ APP ============ -->
 <div id="appShell" class="hidden">
+  <a class="skip-link" href="#mainContent">Ir al contenido</a>
   <div id="topbar">
     <span class="logo"><svg viewBox="0 0 32 32" width="22" height="22" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true" style="vertical-align:-4px;color:var(--zonda)"><path d="M3 10h14a4 4 0 1 0-4-4"/><path d="M3 16h22a4 4 0 1 1-4 4"/><path d="M3 22h11a3.5 3.5 0 1 1-3.5 3.5"/></svg> Zonda <span class="tagline">· Asistente para sitios de investigación clínica</span></span>
     <span class="badge-mode local" id="modeBadge">LOCAL</span>
@@ -216,8 +225,9 @@ details>summary{color:var(--acc-dark)}
     <button id="btnLogout">Salir</button>
   </div>
   <div id="environmentBanner" class="banner bad hidden"></div>
-  <nav id="tabs">
-    <button data-tab="dashboard" class="active">📅 Hoy</button>
+  <div id="connectionBanner" class="banner warn" role="status" aria-live="polite" hidden></div>
+  <nav id="tabs" aria-label="Secciones de Zonda">
+    <button data-tab="dashboard" class="active" aria-current="page">📅 Hoy</button>
     <button data-tab="studies">📚 Estudios</button>
     <button data-tab="patients">🧑‍⚕️ Pacientes</button>
     <button data-tab="visits">📝 Visitas y evoluciones</button>
@@ -228,7 +238,7 @@ details>summary{color:var(--acc-dark)}
     <button data-tab="tools">🧰 Herramientas</button>
     <button data-tab="config">⚙️ Configuración</button>
   </nav>
-  <main>
+  <main id="mainContent" tabindex="-1">
 
   <!-- ==== DASHBOARD ==== -->
   <section id="view-dashboard" class="view">
@@ -955,7 +965,7 @@ details>summary{color:var(--acc-dark)}
       <div class="toolbar" style="margin-bottom:0">
         <button class="primary" id="btnExport">⬇ Exportar respaldo (JSON)</button>
         <button id="btnImportClick">↺ Restaurar respaldo validado</button>
-        <button id="btnStorageCleanup">Limpiar archivos huérfanos</button>
+        <button id="btnStorageCleanup">Revisar archivos sin registro</button>
         <input type="file" id="importFile" accept=".json" class="hidden">
       </div>
     </div>
@@ -980,7 +990,7 @@ details>summary{color:var(--acc-dark)}
       <div class="toolbar" style="margin-top:8px;margin-bottom:0">
         <button id="btnRagTest">Probar conexión</button>
         <button id="btnRagIndexAll">⬆ Indexar los documentos de este estudio</button>
-        <button id="btnRagList">📋 Ver qué hay indexado</button>
+        <button id="btnRagList">📋 Ver documentos enviados</button>
         <button id="btnRagPurge" style="color:var(--bad)">Depurar índice histórico</button>
       </div>
       <div id="ragMsg" class="small" style="margin-top:6px"></div>
@@ -1236,7 +1246,7 @@ details>summary{color:var(--acc-dark)}
   </div>
 </div>
 
-<div id="toast"></div>
+<div id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
 <div id="syncStatus" role="status" aria-live="polite"></div>
 
 <script>
@@ -1972,17 +1982,17 @@ function jwtSub(){
 async function cargarMembresia(){
   MEMBRESIA = null;
   if(!Store.online()) return;
-  const sub = jwtSub(); if(!sub) return;
-  try{
-    const r = await supaFetch('/rest/v1/ec_members?select=user_id,org_id,rol,superadmin,activo&user_id=eq.'+encodeURIComponent(sub), { method:'GET' });
-    if(!r.ok) return;
-    const filas = await r.json();
-    const m = filas && filas[0];
-    if(!m || m.activo===false) return;
-    MEMBRESIA = { user_id:m.user_id, org_id:m.org_id, rol:m.rol, superadmin:!!m.superadmin, org_nombre:'' };
-    const ro = await supaFetch('/rest/v1/ec_orgs?select=id,nombre&id=eq.'+encodeURIComponent(m.org_id), { method:'GET' });
-    if(ro.ok){ const o = await ro.json(); if(o && o[0]) MEMBRESIA.org_nombre = o[0].nombre || ''; }
-  }catch(e){ /* sin membresía: la app lo informa y no deja entrar */ }
+  const sub = jwtSub(); if(!sub) throw new Error('La sesión no es válida. Volvé a ingresar.');
+  const {response:r,body:filas} = await authJsonRequest('/rest/v1/ec_members?select=user_id,org_id,rol,superadmin,activo&user_id=eq.'+encodeURIComponent(sub), {method:'GET'}, true);
+  if(!r.ok) throw new Error(r.status===401 ? 'La sesión venció. Volvé a ingresar.' : 'No se pudieron verificar los permisos del sitio ('+r.status+'). Volvé a intentar.');
+  if(!Array.isArray(filas)) throw new Error('La respuesta de permisos no es válida. Volvé a intentar.');
+  const m = filas[0];
+  if(!m || m.activo===false) return;
+  const {response:ro,body:organizaciones} = await authJsonRequest('/rest/v1/ec_orgs?select=id,nombre,activo&id=eq.'+encodeURIComponent(m.org_id), {method:'GET'}, true);
+  if(!ro.ok) throw new Error('No se pudo cargar el sitio ('+ro.status+'). Volvé a intentar.');
+  const org = Array.isArray(organizaciones) && organizaciones[0];
+  if(!org || org.activo===false) throw new Error('Tu sitio no está activo. Contactá al administrador.');
+  MEMBRESIA = { user_id:m.user_id, org_id:m.org_id, rol:m.rol, superadmin:!!m.superadmin, org_nombre:org.nombre||'' };
 }
 
 /* llamada a la función del servidor que crea cuentas (Edge Function) */
@@ -2102,10 +2112,40 @@ function assertSameSession(session){
   err.sessionChanged = true;
   throw err;
 }
+async function supaTimedFetch(url, opts, timeoutMs){
+  opts=opts||{};
+  const controller=new AbortController(), source=opts.signal;
+  let expired=false;
+  const cancel=()=>controller.abort();
+  if(source){
+    if(source.aborted) cancel();
+    else source.addEventListener('abort',cancel,{once:true});
+  }
+  const timer=setTimeout(()=>{ expired=true; controller.abort(); },timeoutMs||30000);
+  try{
+    const response=await fetch(url,Object.assign({},opts,{signal:controller.signal}));
+    /* El plazo incluye el cuerpo: recibir las cabeceras no confirma que la
+       descarga haya terminado. Blob evita convertir archivos binarios a texto. */
+    const body=await response.blob();
+    return new Response([204,205,304].includes(response.status)?null:body,{
+      status:response.status,statusText:response.statusText,headers:response.headers
+    });
+  }catch(err){
+    if(expired){
+      const timeout=new Error('El servidor tardó demasiado en responder. No se pudo confirmar la operación.');
+      timeout.timeout=true; throw timeout;
+    }
+    throw err;
+  }finally{
+    clearTimeout(timer);
+    if(source) source.removeEventListener('abort',cancel);
+  }
+}
 async function supaFetch(path, opts, retry){
   opts = opts || {}; if(retry===undefined) retry=true;
   const session = SESSION, accessToken = session && session.access_token;
-  const r = await fetch(supaBase()+path, Object.assign({}, opts, { headers: Object.assign(supaHeaders(), opts.headers||{}) }));
+  const timeoutMs=/^\/(functions|storage)\//.test(path)?120000:30000;
+  const r = await supaTimedFetch(supaBase()+path, Object.assign({}, opts, { headers: Object.assign(supaHeaders(), opts.headers||{}) }), timeoutMs);
   assertSameSession(session);
   if(r.status===401 && retry && session && SESSION===session && session.refresh_token){
     /* Otra solicitud pudo renovar la misma sesión mientras esta esperaba.
@@ -2123,10 +2163,10 @@ async function supaRefresh(){
   const pending = { session, promise:null };
   pending.promise = (async ()=>{
     try{
-      const r = await fetch(supaBase()+'/auth/v1/token?grant_type=refresh_token', {
+      const r = await supaTimedFetch(supaBase()+'/auth/v1/token?grant_type=refresh_token', {
         method:'POST', headers:{ 'apikey':CFG.supaKey, 'Content-Type':'application/json' },
         body: JSON.stringify({ refresh_token:session.refresh_token })
-      });
+      },15000);
       if(!r.ok) return false;
       const j = await r.json();
       if(SESSION!==session || !j.access_token || !j.refresh_token) return false;
@@ -2189,18 +2229,25 @@ const Store = {
       return;
     }
     const out = {}, revisions = {}, snapshots = {}, session = SESSION;
-    for(const kind of Object.keys(KIND_TABLE)){
-      const rows = await this.loadRows(kind);
-      assertSameSession(session);
-      revisions[kind] = new Map(); snapshots[kind] = new Map();
-      out[kind] = rows.map(x=>{
-        if(x && x.id && x.data){
-          revisions[kind].set(x.id, Number(x.rev||1));
-          snapshots[kind].set(x.id, cloneData(x.data));
-        }
-        return x.data;
-      }).filter(Boolean);
-    }
+    const kinds=Object.keys(KIND_TABLE);
+    /* Cuatro colecciones en paralelo acortan el ingreso sin lanzar todas las
+       páginas a la vez. Ningún resultado parcial reemplaza la base vigente. */
+    let next=0;
+    await Promise.all(Array.from({length:Math.min(4,kinds.length)},async()=>{
+      while(next<kinds.length){
+        const kind=kinds[next++], rows=await this.loadRows(kind);
+        assertSameSession(session);
+        revisions[kind]=new Map(); snapshots[kind]=new Map();
+        out[kind]=rows.map(x=>{
+          if(x && x.id && x.data){
+            revisions[kind].set(x.id,Number(x.rev||1));
+            snapshots[kind].set(x.id,cloneData(x.data));
+          }
+          return x.data;
+        }).filter(Boolean);
+      }
+    }));
+    assertSameSession(session);
     /* Datos y revisiones cambian juntos, únicamente al terminar toda la carga. */
     this.revisions = revisions; this.snapshots = snapshots;
     DB = { studies:out.studies, patients:out.patients, visits:out.visits, docs:out.docs, users:out.users||[],
@@ -2277,6 +2324,8 @@ const Store = {
         p_detail:(audit&&audit.detalle)||'', p_motivo:(audit&&audit.motivo)||''
       });
       assertSameSession(session);
+      if(!result || result.event_id!==eventId || (!result.replayed && (!Number.isSafeInteger(result.rev) || result.rev<1)))
+        throw new Error('El servidor devolvió una confirmación incompleta. Recargá los datos antes de volver a guardar.');
       if(result.replayed){
         /* La RPC puede devolver la revisión de una edición posterior. Leer
            su contenido antes de aceptar esa revisión para el próximo guardado. */
@@ -2312,6 +2361,8 @@ const Store = {
         p_detail:(audit&&audit.detalle)||'', p_motivo:(audit&&audit.motivo)||''
       });
       assertSameSession(session);
+      if(!result || result.event_id!==eventId || result.deleted!==true)
+        throw new Error('El servidor no confirmó la eliminación. Recargá los datos antes de reintentar.');
       DB[kind] = DB[kind].filter(x=>x.id!==id);
       this.revisions[kind].delete(id); this.snapshots[kind].delete(id);
       if(typeof recordarAuditoriaConfirmada==='function')
@@ -2424,8 +2475,7 @@ function resetInactividad(){
   SEC_WARN = setTimeout(()=>{ if(CURRENT_USER) toast('⏳ '+T('Tu sesión se va a cerrar por inactividad en 1 minuto.')); }, Math.max(0, ms-60000));
   SEC_TIMER = setTimeout(()=>{
     if(!CURRENT_USER) return;
-    auditar('sesion','logout_inactividad','', T('Cierre automático por inactividad'));
-    doLogout();
+    if(doLogout('inactividad')===false){ resetInactividad(); return; }
     loginMsg(T('Se cerró la sesión por inactividad.'));
   }, ms);
 }
@@ -2435,10 +2485,32 @@ function resetInactividad(){
 /* ---- pista de auditoría (append-only) ---- */
 const LS_AUDIT = 'ecx_audit';
 let AUDIT = loadJSON(LS_AUDIT) || [];
-let AUDIT_SYNCING = false;
+let AUDIT_SYNCING = null;
+let AUDIT_RETRY_TIMER = null;
+function auditCurrentScope(){
+  if(!SESSION || !SESSION.access_token || !MEMBRESIA || !MEMBRESIA.org_id || !MEMBRESIA.user_id) return null;
+  return {org_id:MEMBRESIA.org_id,auth_user_id:MEMBRESIA.user_id};
+}
+function auditInScope(event,scope){
+  return !!(scope && event.org_id===scope.org_id && event.auth_user_id===scope.auth_user_id);
+}
+function auditLocalEvents(scope=auditCurrentScope()){
+  /* Los eventos anteriores sin ámbito se conservan, pero nunca se atribuyen
+     a la cuenta que casualmente abra este navegador después. */
+  return AUDIT.filter(event=>auditInScope(event,scope));
+}
+function auditPendingEvents(scope=auditCurrentScope()){
+  return auditLocalEvents(scope).filter(event=>!event.sincronizado);
+}
+function auditContextMatches(session,scope){
+  const current=auditCurrentScope();
+  return SESSION===session && !!(current && scope && current.org_id===scope.org_id && current.auth_user_id===scope.auth_user_id);
+}
 function auditEvent(entidad, accion, id, detalle, motivo, eventId, ts){
+  const scope=auditCurrentScope();
   return {
     id:eventId||uid(), ts:ts||new Date().toISOString(),
+    org_id:scope?scope.org_id:null, auth_user_id:scope?scope.auth_user_id:null,
     usuario: (ME && (ME.email||ME.nombre)) || CURRENT_USER || '—',
     rol: (ME && ME.rol) || '',
     entidad, accion, refId:id||'',
@@ -2461,22 +2533,27 @@ function auditar(entidad, accion, id, detalle, motivo){
   return ev;
 }
 async function syncAuditQueue(){
-  if(AUDIT_SYNCING || !Store.online() || !SESSION || !SESSION.access_token) return;
-  const pendientes=AUDIT.filter(e=>!e.sincronizado).slice(0,100);
+  const session=SESSION, scope=auditCurrentScope();
+  if(!Store.online() || !scope) return;
+  if(AUDIT_SYNCING && AUDIT_SYNCING.session===session && auditInScope(AUDIT_SYNCING.scope,scope)) return;
+  clearTimeout(AUDIT_RETRY_TIMER); AUDIT_RETRY_TIMER=null;
+  const pendientes=auditPendingEvents(scope).slice(0,100);
   if(!pendientes.length){ syncStatus('audit','',''); return; }
-  AUDIT_SYNCING=true;
+  const pending={session,scope}; AUDIT_SYNCING=pending;
   syncStatus('audit','saving','Sincronizando '+pendientes.length+' evento(s) de auditoría…');
   try{
     const payload=pendientes.map(ev=>({
-      event_id:ev.id, client_ts:ev.ts, usuario:ev.usuario, rol:ev.rol, entidad:ev.entidad,
+      org_id:ev.org_id, event_id:ev.id, client_ts:ev.ts, usuario:ev.usuario, rol:ev.rol, entidad:ev.entidad,
       accion:ev.accion, ref_id:ev.refId, detalle:ev.detalle, motivo:ev.motivo
     }));
+    if(!auditContextMatches(session,scope)) return;
     const r=await supaFetch('/rest/v1/ec_audit', {
       method:'POST', headers:{'Prefer':'resolution=ignore-duplicates,return=minimal'}, body:JSON.stringify(payload)
     });
+    if(!auditContextMatches(session,scope)) return;
     if(!r.ok) throw new Error('La auditoría quedó pendiente de sincronización ('+r.status+').');
     const ids=new Set(pendientes.map(e=>e.id));
-    AUDIT.forEach(e=>{ if(ids.has(e.id)) e.sincronizado=true; });
+    AUDIT.forEach(e=>{ if(auditInScope(e,scope) && ids.has(e.id)) e.sincronizado=true; });
     saveJSON(LS_AUDIT,AUDIT);
     syncStatus('audit','ok','✓ Auditoría sincronizada.');
     /* El tablero puede estar mostrando el contador anterior. Actualizarlo en
@@ -2484,27 +2561,35 @@ async function syncAuditQueue(){
     if(CURRENT_USER && $('appShell') && !$('appShell').classList.contains('hidden') &&
        typeof renderDashboard==='function') renderDashboard();
   }catch(e){
-    syncStatus('audit','error','⚠ '+e.message+' No cierres esta sesión hasta recuperar la conexión.');
+    if(auditContextMatches(session,scope)) syncStatus('audit','error','⚠ '+e.message+' La cola se conserva para esta cuenta.');
   }finally{
-    AUDIT_SYNCING=false;
-    if(AUDIT.some(e=>!e.sincronizado)) setTimeout(syncAuditQueue,15000);
+    if(AUDIT_SYNCING===pending) AUDIT_SYNCING=null;
+    if(auditContextMatches(session,scope) && auditPendingEvents(scope).length){
+      AUDIT_RETRY_TIMER=setTimeout(()=>{ if(auditContextMatches(session,scope)) syncAuditQueue(); },15000);
+    }
   }
 }
 window.addEventListener('online', syncAuditQueue);
 /* lectura combinada: local + servidor (cuando hay) */
 async function auditRows(){
-  let filas = AUDIT.slice().map(e=>Object.assign({origen:'local'}, e));
+  const session=SESSION, scope=auditCurrentScope();
+  if(!scope) return [];
+  let filas = auditLocalEvents(scope).map(e=>Object.assign({origen:'local'}, e));
   if(typeof Store!=='undefined' && Store.online() && typeof supaFetch==='function'){
     try{
-      const r = await supaFetch('/rest/v1/ec_audit?select=*&order=ts.desc&limit=3000', { method:'GET' });
+      if(!auditContextMatches(session,scope)) return [];
+      const r = await supaFetch('/rest/v1/ec_audit?select=*&org_id=eq.'+encodeURIComponent(scope.org_id)+'&order=ts.desc&limit=3000', { method:'GET' });
+      if(!auditContextMatches(session,scope)) return [];
       if(r.ok){
         const srv = await r.json();
-        filas = filas.concat(srv.map(e=>({ origen:'servidor', id:'srv-'+e.id, ts:e.ts, usuario:e.usuario||'',
+        if(!auditContextMatches(session,scope)) return [];
+        filas = filas.concat((Array.isArray(srv)?srv:[]).filter(e=>e.org_id===scope.org_id).map(e=>({ origen:'servidor', id:'srv-'+e.id, ts:e.ts, usuario:e.usuario||'',
           rol:e.rol||'', entidad:e.entidad||'', accion:e.accion||'', refId:e.ref_id||'',
           detalle:e.detalle||'', motivo:e.motivo||'' })));
       }
     }catch(e){}
   }
+  if(!auditContextMatches(session,scope)) return [];
   const vistos = new Set();
   return filas.filter(e=>{
     const k = e.ts+'|'+e.entidad+'|'+e.accion+'|'+e.refId;
@@ -2686,14 +2771,23 @@ const TAB_OF_VIEW = {
   'view-airep':'tools', 'view-chk':'tools', 'view-fact':'fact'
 };
 function showView(id){
+  const view = $(id);
+  if(!view) return;
   $$('.view').forEach(v=>v.classList.add('hidden'));
-  $(id).classList.remove('hidden');
+  view.classList.remove('hidden');
   if(typeof applyLang==='function') setTimeout(applyLang, 0);
   const tab = id==='view-log' && window.ZONDA_LOG_PARENT_TAB
     ? window.ZONDA_LOG_PARENT_TAB
     : TAB_OF_VIEW[id];
-  $$('#tabs button').forEach(b=>b.classList.toggle('active', b.dataset.tab===tab));
+  $$('#tabs button').forEach(b=>{
+    const active = b.dataset.tab===tab;
+    b.classList.toggle('active', active);
+    if(active) b.setAttribute('aria-current','page'); else b.removeAttribute('aria-current');
+  });
   window.scrollTo(0,0);
+  const heading = view.querySelector('h1,h2,h3');
+  if(heading){ heading.setAttribute('tabindex','-1'); heading.focus({preventScroll:true}); }
+  if(window.ZondaUi) window.ZondaUi.viewChanged();
 }
 $$('#tabs button').forEach(b=>b.addEventListener('click', ()=>showView('view-'+b.dataset.tab)));
 
@@ -2749,14 +2843,66 @@ function renderBuildInfo(){
   }
 }
 
+/* Solicitudes de acceso: límite de tiempo y mensajes distintos de los errores
+   de carga. El token de una recuperación se usa solo durante ese formulario. */
+async function authJsonRequest(path, options, useSession, timeoutMs=20000){
+  const controller = new AbortController();
+  const timer = setTimeout(()=>controller.abort(),timeoutMs);
+  try{
+    const opts = Object.assign({},options||{},{signal:controller.signal});
+    if(!useSession) opts.headers=Object.assign({apikey:CFG.supaKey,'Content-Type':'application/json'},opts.headers||{});
+    const response = useSession ? await supaFetch(path,opts) : await fetch(supaBase()+path,opts);
+    const body = await response.json().catch(e=>{ if(controller.signal.aborted) throw e; return {}; });
+    return {response,body};
+  }catch(e){
+    if(controller.signal.aborted) throw new Error('La conexión tardó demasiado. Revisá internet y volvé a intentar.');
+    if(e && e.sessionChanged) throw e;
+    throw new Error('No se pudo conectar con Zonda. Revisá internet y volvé a intentar.');
+  }finally{ clearTimeout(timer); }
+}
+function authResponseMessage(response,body,fallback){
+  const code=String(body&&body.error_code||body&&body.code||'');
+  if(code==='invalid_credentials'||/invalid login credentials/i.test(String(body&&body.msg||body&&body.error_description||'')))
+    return 'Email o clave incorrectos. Si usás el autocompletado, escribí la clave actual o elegí «¿Olvidaste la clave?».';
+  if(code==='email_not_confirmed') return 'El email todavía no está confirmado. Abrí la invitación enviada por tu administrador.';
+  if(response.status===429) return 'Se alcanzó el límite de intentos. Esperá unos minutos antes de volver a intentar.';
+  if(response.status>=500) return 'El servicio de acceso no está disponible en este momento. Volvé a intentar en unos minutos.';
+  return String(body&&body.msg||body&&body.error_description||fallback);
+}
+async function sendRecoveryEmail(email){
+  const redirectTo=location.origin+location.pathname;
+  const {response,body}=await authJsonRequest('/auth/v1/recover?'+new URLSearchParams({redirect_to:redirectTo}),{
+    method:'POST',body:JSON.stringify({email:String(email||'').trim().toLowerCase()})
+  });
+  if(!response.ok) throw new Error(authResponseMessage(response,body,'No se pudo enviar el email de recuperación.'));
+}
+function toggleAuthPassword(ids,button){
+  const show=$(ids[0]).type==='password';
+  ids.forEach(id=>{$(id).type=show?'text':'password';});
+  button.setAttribute('aria-pressed',String(show));
+  button.textContent=show ? (ids.length>1?'Ocultar claves':'Ocultar') : (ids.length>1?'Mostrar claves':'Mostrar');
+}
+function authPasswordValid(password){
+  return passCheck(password).ok && password.length>=12 && /[a-záéíóúñ]/.test(password);
+}
+function clearPrivateSessionData(){
+  DB={studies:[],patients:[],visits:[],docs:[],users:[],records:[],checklists:[],settings:[]};
+  if(typeof Store.resetMeta==='function') Store.resetMeta();
+  if(typeof DOC_RECOVERY_FILES!=='undefined') DOC_RECOVERY_FILES.clear();
+}
+
 function initLoginScreen(){
   renderBuildInfo();
   const online = Store.online();
+  $('loginUser').type=online?'email':'text';
   $('loginModeBadge').innerHTML = online
     ? '<span class="badge-mode online">MODO ONLINE</span>'
     : '<span class="badge-mode local">MODO LOCAL (este navegador)</span>';
   $('loginMsg').textContent=''; $('loginMsg').className='';
   $('loginPass').value='';
+  $('loginPass').type='password'; $('btnLoginShowPass').textContent='Mostrar';
+  $('btnLoginShowPass').setAttribute('aria-pressed','false');
+  $('loginCaps').classList.add('hidden');
   if(online){
     $('lblUser').textContent='Email';
     $('loginPass2Box').classList.add('hidden');
@@ -2785,21 +2931,27 @@ function initLoginScreen(){
 $('loginPass').addEventListener('input', ()=>{
   if(!$('loginPass2Box').classList.contains('hidden')) $('passReq').innerHTML = passHint($('loginPass').value);
 });
+$('btnLoginShowPass').addEventListener('click',e=>toggleAuthPassword(['loginPass'],e.currentTarget));
+['keydown','keyup'].forEach(event=>$('loginPass').addEventListener(event,e=>{
+  if(e.getModifierState) $('loginCaps').classList.toggle('hidden',!e.getModifierState('CapsLock'));
+}));
+$('loginPass').addEventListener('blur',()=>$('loginCaps').classList.add('hidden'));
 
 /* ---- recuperación de clave ---- */
+let RECOVERY_REQUEST_PENDING = false;
 $('lnkForgot').addEventListener('click', async e=>{
   e.preventDefault();
   if(Store.online()){
+    if(RECOVERY_REQUEST_PENDING) return;
     const em = ($('loginUser').value || '').trim();
-    if(!em){ loginMsg(T('Escribí tu email arriba y volvé a tocar el enlace.')); return; }
+    if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)){ loginMsg(T('Escribí un email válido arriba y volvé a tocar el enlace.')); $('loginUser').focus(); return; }
+    RECOVERY_REQUEST_PENDING=true; $('lnkForgot').setAttribute('aria-disabled','true');
+    loginMsg('Enviando el enlace de recuperación...',true);
     try{
-      const r = await fetch(supaBase()+'/auth/v1/recover', {
-        method:'POST', headers:{ 'apikey':CFG.supaKey, 'Content-Type':'application/json' },
-        body: JSON.stringify({ email:em, redirect_to:location.origin+location.pathname })
-      });
-      if(!r.ok){ const j = await r.json().catch(()=>({})); loginMsg(j.msg||j.error_description||T('No se pudo enviar el email.')); return; }
-      loginMsg(T('Te enviamos un email para restablecer la clave. Revisá tu casilla.'), true);
-    }catch(err){ loginMsg(T('Error de conexión: ')+err.message); }
+      await sendRecoveryEmail(em);
+      loginMsg('Si el email pertenece a una cuenta de Zonda, recibirás el enlace. Revisá también Correo no deseado y usá el mensaje más reciente.',true);
+    }catch(err){ loginMsg(err.message); }
+    finally{ RECOVERY_REQUEST_PENDING=false; $('lnkForgot').removeAttribute('aria-disabled'); }
     return;
   }
   /* modo local: no hay servidor que mande el mail; se usa el email guardado */
@@ -2823,22 +2975,28 @@ $('lnkForgot').addEventListener('click', async e=>{
 function loginMsg(txt, ok){ const m=$('loginMsg'); m.textContent=txt; m.className = ok?'ok':'err'; }
 
 async function doLogin(){
-  const user = $('loginUser').value.trim();
+  if($('btnLogin').disabled) return;
+  const user = $('loginUser').value.trim().toLowerCase();
   const pass = $('loginPass').value;
   if(!user || !pass){ loginMsg(T('Completá el email y la clave.')); return; }
   $('btnLogin').disabled = true;
+  const previousLabel=$('btnLogin').textContent;
+  $('btnLogin').textContent='Ingresando...'; $('loginFields').setAttribute('aria-busy','true');
+  loginMsg('Verificando acceso...',true);
   try{
     if(Store.online()){
-      const r = await fetch(supaBase()+'/auth/v1/token?grant_type=password', {
-        method:'POST', headers:{ 'apikey':CFG.supaKey, 'Content-Type':'application/json' },
+      const {response:r,body:j} = await authJsonRequest('/auth/v1/token?grant_type=password', {
+        method:'POST',
         body: JSON.stringify({ email:user, password:pass })
       });
-      const j = await r.json().catch(()=>({}));
-      if(!r.ok){ loginMsg(j.error_description||j.msg||'Email o clave incorrectos.'); return; }
+      if(!r.ok){ loginMsg(authResponseMessage(r,j,'No se pudo iniciar sesión.')); return; }
+      if(!j.access_token||!j.refresh_token) throw new Error('El servicio no devolvió una sesión válida. Volvé a intentar.');
+      clearPrivateSessionData();
       SESSION = { access_token:j.access_token, refresh_token:j.refresh_token, email:(j.user&&j.user.email)||user,
                   claveTemp: !!(j.user && j.user.user_metadata && j.user.user_metadata.clave_temporal) };
       saveJSON(LS.SES, SESSION);
       CURRENT_USER = SESSION.email;
+      $('loginPass').value=''; loginMsg('Clave aceptada. Cargando los datos del sitio...',true);
       await enterApp();
     } else {
       const auth = localAuth();
@@ -2906,42 +3064,81 @@ async function doLogin(){
       }
     }
   } catch(e){
-    loginMsg('Error de conexión: '+e.message);
+    $('appShell').classList.add('hidden'); $('loginScreen').classList.remove('hidden');
+    loginMsg(e.message||'No se pudo completar el ingreso. Volvé a intentar.');
   } finally {
     $('btnLogin').disabled = false;
+    $('btnLogin').textContent=previousLabel; $('loginFields').removeAttribute('aria-busy');
   }
 }
 
 let RECOVERY_TOKEN = '';
+function clearAuthCallbackUrl(){
+  const url=new URL(location.href);
+  ['access_token','refresh_token','token_type','expires_in','expires_at','provider_token','provider_refresh_token','type','error','error_code','error_description'].forEach(key=>url.searchParams.delete(key));
+  history.replaceState(null,'',url.pathname+url.search);
+}
+function closeRecoveryForm(){
+  RECOVERY_TOKEN='';
+  $('recoveryPass').value=''; $('recoveryPass2').value='';
+  $('recoveryPass').type='password'; $('recoveryPass2').type='password';
+  $('btnRecoveryShowPass').textContent='Mostrar claves'; $('btnRecoveryShowPass').setAttribute('aria-pressed','false');
+  $('recoveryMsg').textContent='';
+  $('recoveryBox').classList.add('hidden'); $('loginFields').classList.remove('hidden');
+  initLoginScreen();
+}
 async function consumeRecoveryLink(){
   if(!Store.online()) return false;
   const p = new URLSearchParams(location.hash.replace(/^#/,''));
-  if(p.get('error_description')){ loginMsg(p.get('error_description')); return false; }
-  if(p.get('type')!=='recovery' || !p.get('access_token')) return false;
+  const query = new URLSearchParams(location.search);
+  const type=p.get('type')||query.get('type');
+  const hasError=['error','error_code','error_description'].some(key=>p.has(key)||query.has(key));
+  const recognized=type==='recovery'||type==='invite'||['access_token','refresh_token'].some(key=>p.has(key)||query.has(key))||hasError;
+  if(!recognized) return false;
   const token = p.get('access_token');
+  /* Limpiar primero: los tokens y errores de correo no deben quedar en el
+     historial, en capturas o en enlaces que se compartan. */
+  clearAuthCallbackUrl();
+  if(hasError||!token){ loginMsg('El enlace venció, está incompleto o ya fue utilizado. Solicitá uno nuevo desde «¿Olvidaste la clave?».'); return true; }
+  if(type!=='recovery'&&type!=='invite'){ loginMsg('Este enlace no permite definir una clave. Usá «¿Olvidaste la clave?» o la invitación de tu administrador.'); return true; }
+  loginMsg('Validando el enlace...',true);
   try{
-    const r = await fetch(supaBase()+'/auth/v1/user',{headers:{apikey:CFG.supaKey,Authorization:'Bearer '+token}});
-    if(!r.ok) throw new Error('El enlace venció o ya fue utilizado. Solicitá uno nuevo.');
+    const {response:r,body:user} = await authJsonRequest('/auth/v1/user',{headers:{Authorization:'Bearer '+token}});
+    if(!r.ok||!user.id||!user.email) throw new Error('El enlace venció o ya fue utilizado. Solicitá uno nuevo.');
+    SESSION=null; localStorage.removeItem(LS.SES); CURRENT_USER=''; ME=null; MEMBRESIA=null;
+    clearPrivateSessionData();
     RECOVERY_TOKEN = token;
+    $('loginUser').value=user.email;
+    $('recoveryTitle').textContent=type==='invite'?'Activar tu cuenta de Zonda':'Definir una nueva clave';
+    $('recoveryHint').textContent='Elegí una clave para '+user.email+'.';
+    $('appShell').classList.add('hidden'); $('loginScreen').classList.remove('hidden');
     $('loginFields').classList.add('hidden'); $('recoveryBox').classList.remove('hidden');
+    $('recoveryPass').focus();
     return true;
-  }catch(e){ loginMsg(e.message); return false; }
+  }catch(e){ RECOVERY_TOKEN=''; loginMsg(e.message); return true; }
 }
-$('recoveryPass').addEventListener('input',()=>{ $('recoveryReq').innerHTML=passHint($('recoveryPass').value); });
+$('recoveryPass').addEventListener('input',()=>{
+  $('recoveryReq').textContent=authPasswordValid($('recoveryPass').value)?'✔ La clave cumple los requisitos.':'Mínimo 12 caracteres, con mayúscula, minúscula, número y símbolo; evitá secuencias y palabras obvias.';
+});
+$('btnRecoveryShowPass').addEventListener('click',e=>toggleAuthPassword(['recoveryPass','recoveryPass2'],e.currentTarget));
+$('btnRecoveryCancel').addEventListener('click',()=>{ closeRecoveryForm(); $('loginUser').focus(); });
 $('btnRecoverySave').addEventListener('click',async()=>{
+  if($('btnRecoverySave').disabled) return;
   const p1=$('recoveryPass').value,p2=$('recoveryPass2').value,m=$('recoveryMsg');
-  const pc=passCheck(p1);
-  if(!pc.ok||p1.length<12){ m.className='err'; m.textContent='La clave debe tener 12+ caracteres, mayúscula, minúscula, número y símbolo.'; return; }
+  if(!RECOVERY_TOKEN){ m.className='err'; m.textContent='El enlace ya no está disponible. Volvé al ingreso y solicitá uno nuevo.'; return; }
+  if(!authPasswordValid(p1)){ m.className='err'; m.textContent='La clave debe tener 12+ caracteres, mayúscula, minúscula, número y símbolo; evitá secuencias y palabras obvias.'; return; }
   if(p1!==p2){ m.className='err'; m.textContent='Las claves no coinciden.'; return; }
-  $('btnRecoverySave').disabled=true;
+  $('btnRecoverySave').disabled=true; $('btnRecoveryCancel').disabled=true;
+  m.className='muted'; m.textContent='Guardando la nueva clave...';
   try{
-    const r=await fetch(supaBase()+'/auth/v1/user',{method:'PUT',headers:{apikey:CFG.supaKey,Authorization:'Bearer '+RECOVERY_TOKEN,'Content-Type':'application/json'},body:JSON.stringify({password:p1})});
-    const j=await r.json().catch(()=>({})); if(!r.ok) throw new Error(j.msg||j.error_description||'No se pudo actualizar la clave.');
-    RECOVERY_TOKEN=''; history.replaceState(null,'',location.pathname+location.search);
-    $('recoveryBox').classList.add('hidden'); $('loginFields').classList.remove('hidden');
-    initLoginScreen(); loginMsg('Clave actualizada. Ya podés ingresar.',true);
+    const {response:r,body:j}=await authJsonRequest('/auth/v1/user',{method:'PUT',headers:{Authorization:'Bearer '+RECOVERY_TOKEN},body:JSON.stringify({password:p1,data:{clave_temporal:false}})});
+    if(!r.ok){
+      if(r.status===401||r.status===403){ RECOVERY_TOKEN=''; throw new Error('El enlace venció. Volvé al ingreso y solicitá uno nuevo.'); }
+      throw new Error(authResponseMessage(r,j,'No se pudo actualizar la clave.'));
+    }
+    closeRecoveryForm(); loginMsg('Clave actualizada. Ingresá con tu email y la nueva clave.',true); $('loginPass').focus();
   }catch(e){ m.className='err'; m.textContent=e.message; }
-  finally{$('btnRecoverySave').disabled=false;}
+  finally{$('btnRecoverySave').disabled=false; $('btnRecoveryCancel').disabled=false;}
 });
 
 async function enterApp(){
@@ -3020,31 +3217,36 @@ async function forzarCambioClave(){
         '<div class="muted small" style="margin-bottom:8px">'+
           T('Entraste con una clave temporal asignada por el administrador. Antes de continuar, definí una clave que solo vos conozcas: es la que respalda tu firma en los registros.')+
         '</div>'+
-        '<label>'+T('Clave nueva')+'</label><input type="password" id="fc_p1" autocomplete="new-password">'+
-        '<label>'+T('Repetila')+'</label><input type="password" id="fc_p2" autocomplete="new-password">'+
-        '<div class="small" id="fc_msg" style="margin-top:6px;min-height:16px"></div>'+
+        '<label for="fc_p1">'+T('Clave nueva')+'</label><input type="password" id="fc_p1" autocomplete="new-password" aria-describedby="fc_msg">'+
+        '<label for="fc_p2">'+T('Repetila')+'</label><input type="password" id="fc_p2" autocomplete="new-password">'+
+        '<div class="small" id="fc_msg" role="status" aria-live="polite" style="margin-top:6px;min-height:16px">'+T('Mínimo 12 caracteres, con mayúscula, minúscula, número y símbolo.')+'</div>'+
         '<div class="toolbar" style="margin-top:10px;margin-bottom:0">'+
           '<button class="primary" id="fc_ok">'+T('Guardar clave y continuar')+'</button>'+
+          '<button id="fc_cancel">'+T('Cerrar sesión')+'</button>'+
         '</div>'+
       '</div>';
     document.body.appendChild(back);
+    back.querySelector('#fc_p1').focus();
+    back.querySelector('#fc_cancel').addEventListener('click',()=>{ back.remove(); res(false); });
     back.querySelector('#fc_ok').addEventListener('click', async ()=>{
+      const button=back.querySelector('#fc_ok'),cancel=back.querySelector('#fc_cancel');
+      if(button.disabled) return;
       const p1 = back.querySelector('#fc_p1').value, p2 = back.querySelector('#fc_p2').value;
       const m = back.querySelector('#fc_msg');
-      const pc = passCheck(p1);
-      if(!pc.ok || p1.length<12){ m.textContent = T('Mínimo 12 caracteres, con mayúscula, minúscula, número y símbolo.'); m.style.color='var(--bad)'; return; }
+      if(!authPasswordValid(p1)){ m.textContent = T('Mínimo 12 caracteres, con mayúscula, minúscula, número y símbolo; evitá secuencias y palabras obvias.'); m.style.color='var(--bad)'; return; }
       if(p1!==p2){ m.textContent = T('Las claves no coinciden.'); m.style.color='var(--bad)'; return; }
+      button.disabled=true; cancel.disabled=true;
       m.textContent = T('Guardando...'); m.style.color='var(--muted)';
       try{
-        const r = await supaFetch('/auth/v1/user', { method:'PUT',
-          body: JSON.stringify({ password:p1, data:{ clave_temporal:false } }) });
-        const j = await r.json().catch(()=>({}));
-        if(!r.ok) throw new Error(j.error_description||j.msg||('('+r.status+')'));
+        const {response:r,body:j} = await authJsonRequest('/auth/v1/user', {method:'PUT',
+          body:JSON.stringify({password:p1,data:{clave_temporal:false}})},true);
+        if(!r.ok) throw new Error(authResponseMessage(r,j,'No se pudo actualizar la clave.'));
         SESSION.claveTemp = false; saveJSON(LS.SES, SESSION);
         auditar('sesion','cambio_clave_inicial','', CURRENT_USER);
         back.remove(); toast(T('Clave actualizada.'));
         res(true);
       }catch(e){ m.textContent = '⚠ '+e.message; m.style.color='var(--bad)'; }
+      finally{button.disabled=false; cancel.disabled=false;}
     });
   });
 }
@@ -3053,14 +3255,22 @@ function avisarClaveVencida(){
   const c = secCfg();
   toast('⚠ '+T('Tu clave superó los')+' '+c.vigenciaDias+' '+T('días de vigencia: cambiala en Configuración.'));
 }
-function doLogout(){
+function doLogout(reason){
+  if(typeof DOC_DELETE_PENDING!=='undefined' && DOC_DELETE_PENDING.size>0){
+    toast('Esperá a que termine la eliminación y su recuperación antes de cerrar sesión.');
+    return false;
+  }
+  if(reason==='inactividad' && CURRENT_USER) auditar('sesion','logout_inactividad','', T('Cierre automático por inactividad'));
   if(CURRENT_USER) auditar('sesion','salida','', CURRENT_USER);
   clearTimeout(SEC_TIMER); clearTimeout(SEC_WARN);
   SESSION = null; localStorage.removeItem(LS.SES);
   CURRENT_USER=''; ME = null; MEMBRESIA = null;
+  clearPrivateSessionData();
   $('appShell').classList.add('hidden');
   $('loginScreen').classList.remove('hidden');
   initLoginScreen();
+  location.reload();
+  return true;
 }
 
 $('btnLogin').addEventListener('click', doLogin);
@@ -3072,11 +3282,18 @@ $('btnLogout').addEventListener('click', doLogout);
 (async function boot(){
   initLoginScreen();
   applyLang();
-  if(await consumeRecoveryLink()) return;
-  if(Store.online() && SESSION && SESSION.refresh_token){
-    const ok = await supaRefresh();
-    if(ok){ CURRENT_USER = SESSION.email||''; await enterApp(); }
-  }
+  $('btnLogin').disabled=true;
+  try{
+    if(await consumeRecoveryLink()) return;
+    if(Store.online() && SESSION && SESSION.refresh_token){
+      $('btnLogin').disabled=true; $('btnLogin').textContent='Restaurando sesión...';
+      const ok = await supaRefresh();
+      if(ok){ CURRENT_USER = SESSION.email||''; loginMsg('Cargando los datos del sitio...',true); await enterApp(); }
+      else loginMsg('No se pudo restaurar la sesión. Ingresá nuevamente con tu email y clave.');
+    }
+  }catch(e){
+    $('appShell').classList.add('hidden'); $('loginScreen').classList.remove('hidden'); loginMsg(e.message);
+  }finally{ $('btnLogin').disabled=false; $('btnLogin').textContent='Ingresar'; }
 })();
 
 /* ================= ESTUDIOS ================= */
@@ -3169,6 +3386,7 @@ function openStudyEditor(id){
   renderDocsList();
   renderCiPanel();
   showView('view-study-edit');
+  if(s&&s.critRemapeoPendiente) toast('⚠ Hay pacientes pendientes de actualizar a estos criterios. Guardá el estudio sin cambiar los criterios para reintentar.');
 }
 
 function collectStMedsProhib(){
@@ -3296,6 +3514,7 @@ $('btnAddVisita').addEventListener('click', ()=>{
 });
 
 $('btnSaveStudy').addEventListener('click', async ()=>{
+  const btn=$('btnSaveStudy'); if(btn.disabled) return;
   if(!$('stId').value && !can('estudiosCrear')){ toast(T('Solo un administrador puede crear protocolos.')); return; }
   if($('stId').value && !can('estudiosEditar')){ toast(T('Tu rol no permite modificar protocolos.')); return; }
   const codigo = $('stCodigo').value.trim(), nombre = $('stNombre').value.trim();
@@ -3308,7 +3527,7 @@ $('btnSaveStudy').addEventListener('click', async ()=>{
   visitas.sort((a,b)=>a.dia-b.dia);
   const id = $('stId').value || uid();
   const prev = getStudy(id);
-  const s = {
+  const s = Object.assign({},prev||{}, {
     id, codigo, nombre,
     patrocinador: $('stPatro').value.trim(),
     indicacion: $('stIndic').value.trim(),
@@ -3333,28 +3552,43 @@ $('btnSaveStudy').addEventListener('click', async ()=>{
     medicamentosProhibidos: collectStMedsProhib(),
     importacionesProtocolo: EDIT_IMPORTACIONES_PROTOCOLO.slice(-20),
     visitas
-  };
+  });
   const hadPatients = DB.patients.some(p=>p.estudioId===id && !p.anulado);
   /* ¿cambiaron los criterios respecto de lo que estaba guardado? */
   const critCambio = !!prev && critFirma(prev) !== critFirma(s);
   s.critFirma = critFirma(s);
-  if(!await persist('studies', s, 'Estudio guardado.')) return;
-  if(critCambio && hadPatients){
+  if(prev&&prev.critRemapeoPendiente&&critCambio){
+    toast('⚠ Primero guardá el estudio con los criterios actuales para completar la actualización pendiente de pacientes.'); return;
+  }
+  if(critCambio && hadPatients) s.critRemapeoPendiente={
+    desde:{id:prev.id,criteriosInclusion:(prev.criteriosInclusion||[]).slice(),criteriosExclusion:(prev.criteriosExclusion||[]).slice()},
+    firmaDestino:s.critFirma,creado:new Date().toISOString()
+  };
+  btn.disabled=true;
+  try{
+  if(!await persist('studies', s)) return;
+  $('stId').value=s.id;
+  if(s.critRemapeoPendiente){
     /* las respuestas de los pacientes se reasignan por el TEXTO del criterio,
        nunca por su posición: si no, quedarían apuntando a otro criterio */
     try{
-      const r = await critRemapearPacientes(prev, s);
+      const origen=s.critRemapeoPendiente.desde;
+      const r = await critRemapearPacientes(origen, s);
+      const completo=Object.assign({},getStudy(s.id)||s);
+      delete completo.critRemapeoPendiente;
+      await Store.upsert('studies',completo);
       renderAll();
       critAvisoRemapeo(r, s);
       auditar('estudio','cambio_criterios', s.id,
-        s.codigo+': '+(prev.criteriosInclusion||[]).length+'+'+(prev.criteriosExclusion||[]).length+
+        s.codigo+': '+(origen.criteriosInclusion||[]).length+'+'+(origen.criteriosExclusion||[]).length+
         ' → '+s.criteriosInclusion.length+'+'+s.criteriosExclusion.length+
         ', '+r.tocados+' paciente(s) actualizados');
-    }catch(e){ toast('⚠ '+T('Los criterios cambiaron pero no se pudieron actualizar en los pacientes')+': '+e.message); }
+    }catch(e){ toast('⚠ Estudio guardado; la actualización de criterios sigue pendiente: '+e.message+'. Volvé a guardar este estudio para reintentar los pacientes pendientes.'); }
   } else if(prev && hadPatients){
     toast('Estudio guardado. Si cambiaste las visitas, revisá los pacientes ya cargados.');
-  }
+  } else toast('Estudio guardado.');
   showView('view-studies');
+  }finally{btn.disabled=false;}
 });
 $('btnCancelStudy').addEventListener('click', ()=>showView('view-studies'));
 $('btnNewStudy').addEventListener('click', ()=>openStudyEditor(null));
@@ -3363,6 +3597,7 @@ function duplicateStudy(id){
   const s = getStudy(id); if(!s) return;
   const copy = JSON.parse(JSON.stringify(s));
   copy.id = uid(); copy.codigo = s.codigo+'-COPIA';
+  delete copy.critRemapeoPendiente;
   copy.visitas = (copy.visitas||[]).map(v=>({ ...v, id:uid() }));
   persist('studies', copy, 'Estudio duplicado.');
 }
@@ -3664,10 +3899,12 @@ function updateEligBanner(){
 }
 
 $('btnSavePatient').addEventListener('click', async ()=>{
+  const btn=$('btnSavePatient'); if(btn.disabled) return;
   const codigo = $('paCodigo').value.trim(), inic = $('paIniciales').value.trim();
   if(!codigo){ toast('Completá el código del paciente.'); return; }
   if(!inic){ toast('Completá las iniciales.'); return; }
-  const p = {
+  const previo=getPatient($('paId').value);
+  const p = Object.assign({},previo||{}, {
     id: $('paId').value || uid(),
     codigo, iniciales:inic,
     estudioId: $('paEstudio').value,
@@ -3680,27 +3917,49 @@ $('btnSavePatient').addEventListener('click', async ()=>{
     criterios: Object.assign({}, PA_CRIT),
     critJust: Object.assign({}, PA_JUST),
     critFirma: (getStudy($('paEstudio').value) ? critFirma(getStudy($('paEstudio').value)) : '')
-  };
-  if(!await persist('patients', p, 'Paciente guardado.')) return;
-  /* Una sola fuente de verdad: la ficha del paciente y Herramientas → Medicación concomitante usan estos mismos registros. */
+  });
+  if(NARR&&NARR_PATIENT_ID===p.id&&NARR_STUDY_ID===p.estudioId)
+    p.critNarrativa=JSON.parse(JSON.stringify(NARR));
+  const formularioMedicacion=PA_CONMED;
   const bajas=new Set(PA_CONMED_BAJAS);
+  const registrosACerrar=(LOGS.conmed||[]).filter(r=>bajas.has(r.id)&&!r.fin);
+  const medsValidos=PA_CONMED.filter(m=>String(m.farmaco||'').trim()).map(m=>{
+    if(!m.id) m.id=uid();
+    if(!m.creado) m.creado=new Date().toISOString();
+    return Object.assign({},m);
+  });
+  btn.disabled=true;
+  try{
+  if(!await persist('patients', p)) return;
+  if(PA_CONMED===formularioMedicacion) $('paId').value=p.id;
+  /* Una sola fuente de verdad: la ficha del paciente y Herramientas → Medicación concomitante usan estos mismos registros. */
   if(bajas.size){
-    for(const r of (LOGS.conmed||[])){
-      if(!bajas.has(r.id) || r.fin) continue;
+    for(const r of registrosACerrar){
       const cerrado=Object.assign({},r,{fin:todayISO()});
-      if(!await guardarLog('conmed',cerrado,'modificación','',p.codigo+' · finalización desde ficha del paciente')) return;
+      if(!await guardarLog('conmed',cerrado,'modificación','',p.codigo+' · finalización desde ficha del paciente')){
+        toast('⚠ El paciente quedó guardado, pero falta actualizar la medicación. Reintentá Guardar paciente; no se duplicará la ficha.'); return;
+      }
+      if(PA_CONMED===formularioMedicacion) PA_CONMED_BAJAS=PA_CONMED_BAJAS.filter(id=>id!==r.id);
     }
   }
-  const medsValidos=PA_CONMED.filter(m=>String(m.farmaco||'').trim());
   for(const m of medsValidos){
     const hits = coincidenciasMedProhibida(p.estudioId, m.farmaco);
     const registro=Object.assign({},m,{id:m.id||uid(),pacienteId:p.id,estudioId:p.estudioId,farmaco:String(m.farmaco).trim(),dosis:String(m.dosis||'').trim(),via:String(m.via||'').trim(),indicacion:String(m.indicacion||'').trim(),inicio:m.inicio||'',fin:'',creado:m.creado||new Date().toISOString(),prohibida:hits.length?'Sí':(m.prohibida||'No'),alertaProtocolo:hits.map(x=>x.medicamento).join('; ')});
+    const confirmado=(LOGS.conmed||[]).find(r=>r.id===registro.id);
+    if(confirmado&&Object.keys(registro).every(k=>JSON.stringify(registro[k])===JSON.stringify(confirmado[k]))) continue;
     const existe=(DB.records||[]).some(x=>x.id===registro.id);
-    if(!await guardarLog('conmed',registro,existe?'modificación':'alta','',p.codigo+' · actualización desde ficha del paciente')) return;
+    if(!await guardarLog('conmed',registro,existe?'modificación':'alta','',p.codigo+' · actualización desde ficha del paciente')){
+      toast('⚠ El paciente quedó guardado, pero falta actualizar la medicación. Reintentá Guardar paciente; no se duplicará la ficha.'); return;
+    }
   }
+  let aviso='';
+  try{ await sincronizarEvolucionesClinicas(p.id); }
+  catch(e){ aviso='⚠ Paciente y medicación guardados; quedaron evoluciones pendientes de actualizar: '+e.message; }
   if(!p.fechaBasal && (p.estado==='activo'||p.estado==='screening'))
-    toast('Paciente guardado. Cargá la fecha basal para calcular las próximas visitas.');
-  showView('view-patients');
+    toast(aviso||'Paciente guardado. Cargá la fecha basal para calcular las próximas visitas.');
+  else toast(aviso||'Paciente guardado.');
+  if(PA_CONMED===formularioMedicacion) showView('view-patients');
+  }finally{btn.disabled=false;}
 });
 $('btnCancelPatient').addEventListener('click', ()=>showView('view-patients'));
 
@@ -3716,7 +3975,7 @@ async function deletePatient(id){
 /* ================= DASHBOARD ================= */
 function todayPriorities(studyId){
   const core=(window.ZondaToday?ZondaToday.priorities({
-    today:todayISO(), logs:LOGS, pendingAudit:AUDIT.filter(e=>!e.sincronizado).length
+    today:todayISO(), logs:LOGS, pendingAudit:auditPendingEvents().length
   }):[]).filter(a=>studyId==='all'||!a.studyId||a.studyId===studyId);
   const covered=new Set(['ea','queries','desvios','tareas']);
   const generic=logAlerts().filter(a=>!covered.has(a.tipo))
@@ -4182,6 +4441,7 @@ function suggestProxima(){
 }
 
 $('btnSaveVisit').addEventListener('click', async ()=>{
+  const btn=$('btnSaveVisit'); if(btn.disabled) return;
   const p = getPatient($('viPaciente').value);
   if(!p){ toast('Elegí un paciente.'); return; }
   const st = getStudy(p.estudioId);
@@ -4230,7 +4490,10 @@ $('btnSaveVisit').addEventListener('click', async ()=>{
     if(!motivoCambio.trim()){ toast(T('El cambio requiere un motivo.')); return; }
   }
   log.evolucionTexto = buildEvolution(log);
+  btn.disabled=true;
+  try{
   if(!await persist('visits', log, 'Visita guardada.', motivoCambio.trim())) return;
+  $('viId').value=log.id;
   if(createDeviation){
     const id='desvio-visita-'+log.id, previo=logRowsTodos('desvios').find(r=>r.id===id);
     const descripcion=deviationIssues.map(i=>i.message).join(' ');
@@ -4244,6 +4507,7 @@ $('btnSaveVisit').addEventListener('click', async ()=>{
       toast('⚠ La visita quedó guardada, pero la desviación propuesta sigue pendiente de creación.');
   }
   openEvolution(log.id);
+  }finally{btn.disabled=false;}
 });
 $('btnCancelVisit').addEventListener('click', ()=>showView('view-visits'));
 
@@ -4683,24 +4947,12 @@ function openEvolution(logId){
   $('evoWarnings').innerHTML = warns.length
     ? warns.map(w=>'<div class="banner '+w.cls+'">'+esc(w.txt)+'</div>').join('')
     : '<div class="banner ok">'+T('✔ Chequeo completo: sin observaciones pendientes.')+'</div>';
-  /* si el texto no se editó a mano, se regenera al abrirlo: así toma los
-     eventos adversos y la medicación concomitante cargados después de guardar
-     la visita, sin tener que apretar «Regenerar». */
-  if(log.editadoManual){
-    const actualizado=refrescarSeccionesClinicas(log.evolucionTexto||'',log);
-    if(actualizado!==log.evolucionTexto){ log.evolucionTexto=actualizado; persist('visits',log); }
-    $('evoText').value = actualizado;
-    $('evoStale').innerHTML = '<div class="banner gray">'+
-      T('Se actualizaron automáticamente los eventos adversos y la medicación concomitante. El resto del texto editado se conserva.')+'</div>';
-  } else {
-    const nuevo = buildEvolution(log);
-    if(nuevo !== log.evolucionTexto){
-      log.evolucionTexto = nuevo;
-      persist('visits', log);
-    }
-    $('evoText').value = nuevo;
-    $('evoStale').innerHTML = '';
-  }
+  /* Abrir muestra una vista actualizada sin escribir ni mutar el registro.
+     El usuario confirma el texto actualizado mediante Guardar. */
+  const actualizado=log.editadoManual ? refrescarSeccionesClinicas(log.evolucionTexto||'',log) : buildEvolution(log);
+  $('evoText').value=actualizado;
+  $('evoStale').innerHTML=actualizado!==log.evolucionTexto
+    ? '<div class="banner warn">'+T('La vista incorpora los registros clínicos más recientes. Revisá el texto y guardalo para confirmar esta actualización.')+'</div>' : '';
   $('evoText').readOnly = false;
   $('btnSaveEvo').classList.remove('hidden');
   $('btnRegenEvo').classList.remove('hidden');
@@ -4708,13 +4960,17 @@ function openEvolution(logId){
 }
 
 $('btnBackEvo').addEventListener('click', ()=>showView('view-visits'));
-$('btnRegenEvo').addEventListener('click', ()=>{
+$('btnRegenEvo').addEventListener('click', async ()=>{
+  if($('btnRegenEvo').disabled||$('btnSaveEvo').disabled) return;
   const log = getVisitLog($('evoVisitId').value); if(!log) return;
   if(log.editadoManual && !confirm('Vas a reemplazar el texto editado por el generado automáticamente. ¿Continuar?')) return;
-  log.evolucionTexto = buildEvolution(log);
-  log.editadoManual = false;
-  $('evoText').value = log.evolucionTexto;
-  persist('visits', log, 'Evolución regenerada.');
+  const actualizado=Object.assign({},log,{evolucionTexto:buildEvolution(log),editadoManual:false});
+  $('btnRegenEvo').disabled=true; $('btnSaveEvo').disabled=true;
+  try{
+    if(await persist('visits',actualizado,'Evolución regenerada.')){
+      if($('evoVisitId').value===log.id){ $('evoText').value=actualizado.evolucionTexto; $('evoStale').innerHTML=''; }
+    }
+  }finally{ $('btnRegenEvo').disabled=false; $('btnSaveEvo').disabled=false; }
 });
 $('btnCancelEvo').addEventListener('click', async ()=>{
   const log = getVisitLog($('evoVisitId').value); if(!log) return;
@@ -4722,11 +4978,16 @@ $('btnCancelEvo').addEventListener('click', async ()=>{
     T('Vas a cancelar la visita')+' «'+(log.nombreVisita||'')+'» '+T('del')+' '+fmtDate(log.fecha)+' '+T('y su evolución.'));
   if(ok) showView('view-visits');
 });
-$('btnSaveEvo').addEventListener('click', ()=>{
+$('btnSaveEvo').addEventListener('click', async ()=>{
+  if($('btnSaveEvo').disabled||$('btnRegenEvo').disabled) return;
   const log = getVisitLog($('evoVisitId').value); if(!log) return;
-  log.evolucionTexto = $('evoText').value;
-  log.editadoManual = true;
-  persist('visits', log, 'Texto de la evolución guardado.');
+  const actualizado=Object.assign({},log,{evolucionTexto:$('evoText').value,editadoManual:true});
+  $('btnSaveEvo').disabled=true; $('btnRegenEvo').disabled=true;
+  try{
+    const ok=await persist('visits',actualizado,'Texto de la evolución guardado.');
+    if($('evoVisitId').value===log.id) $('evoStale').innerHTML=ok ? ''
+      : '<div class="banner warn">'+T('El texto editado sigue en pantalla, pero no se pudo guardar. Reintentá cuando se restablezca la conexión.')+'</div>';
+  }finally{ $('btnSaveEvo').disabled=false; $('btnRegenEvo').disabled=false; }
 });
 $('btnCopyEvo').addEventListener('click', async ()=>{
   const txt = $('evoText').value;
@@ -4788,16 +5049,64 @@ async function storagePut(path, blob){
 }
 async function storageGet(path){ const r = await supaFetch('/storage/v1/object/ec-docs/'+storagePrefijo()+path, { method:'GET' }); return r.ok ? r.blob() : null; }
 async function storageDel(path){
-  const r=await supaFetch('/storage/v1/object/ec-docs/'+storagePrefijo()+path,{method:'DELETE'});
+  const fullPath=storagePrefijo()+path;
+  const r=await supaFetch('/storage/v1/object/ec-docs',{method:'DELETE',body:JSON.stringify({prefixes:[fullPath]})});
   if(!r.ok){ const j=await r.json().catch(()=>({})); throw new Error('No se pudo eliminar el archivo ('+(j.message||r.status)+').'); }
+  const deleted=await r.json().catch(()=>null);
+  if(!Array.isArray(deleted)||!deleted.some(item=>item.name===fullPath)) throw new Error('Storage no confirmó la eliminación del archivo.');
 }
 
 async function docBlob(doc){
+  const recovery=DOC_RECOVERY_FILES.get(doc.id);
+  if(recovery&&recovery.session===SESSION) return recovery.blob;
   try{ return doc.storage==='supabase' ? await storageGet(doc.path) : await idbGet(doc.id); }
   catch(e){ return null; }
 }
 
+const DOC_DELETE_PENDING=new Set();
+const DOC_RECOVERY_FILES=new Map();
+async function eliminarDocumentoSeguro(doc,audit){
+  if(DOC_DELETE_PENDING.has(doc.id)) throw new Error('Este documento ya se está eliminando.');
+  if(Store.online()&&!['admin','medico'].includes(MEMBRESIA&&MEMBRESIA.rol)&&!(doc.tipo==='contrato'&&canFact())) throw new Error('Tu rol no permite eliminar este documento.');
+  const session=SESSION;
+  DOC_DELETE_PENDING.add(doc.id);
+  let respaldo=null,archivoEliminado=false;
+  try{
+    respaldo=await docBlob(doc);
+    if(!respaldo) throw new Error('No se pudo obtener una copia del archivo. Se conservó su registro; comprobá la conexión antes de reintentar.');
+    assertSameSession(session);
+    if(doc.ragIndexado||doc.ragPendiente) await ragBorrar(doc);
+    assertSameSession(session);
+    // Una respuesta perdida también puede haber borrado el objeto: restaurar
+    // ante cualquier fallo posterior al intento, no sólo tras un HTTP exitoso.
+    archivoEliminado=true;
+    if(doc.storage==='supabase') await storageDel(doc.path); else await idbDel(doc.id);
+    assertSameSession(session);
+    await Store.remove('docs',doc.id,audit||{detalle:auditResumen('docs',doc)});
+    DOC_RECOVERY_FILES.delete(doc.id);
+  }catch(e){
+    assertSameSession(session);
+    if(archivoEliminado&&respaldo){
+      try{
+        assertSameSession(session);
+        if(doc.storage==='supabase') await storagePut(doc.path,respaldo); else await idbPut(doc.id,respaldo);
+      }catch(restaurar){
+        assertSameSession(session);
+        // Conservar el binario en memoria y ofrecerlo también como descarga.
+        DOC_RECOVERY_FILES.set(doc.id,{doc,blob:respaldo,session});
+        const a=document.createElement('a');a.href=URL.createObjectURL(respaldo);a.download=doc.filename||'documento-recuperado';a.click();
+        setTimeout(()=>URL.revokeObjectURL(a.href),60000);
+        throw new Error('No se confirmó la eliminación y falló la restauración. Se inició la descarga de una copia de recuperación: '+restaurar.message);
+      }
+      throw new Error('No se confirmó la eliminación. El archivo fue restaurado; recargá los datos antes de reintentar. '+e.message);
+    }
+    throw e;
+  }finally{DOC_DELETE_PENDING.delete(doc.id);}
+}
+
 $('btnUploadDoc').addEventListener('click', async ()=>{
+  if($('btnUploadDoc').disabled) return;
+  const session=SESSION;
   const stId = $('stId').value;
   if(!stId || !getStudy(stId)){ toast('Guardá el estudio antes de adjuntar documentos.'); return; }
   const f = $('docFile').files[0];
@@ -4812,17 +5121,20 @@ $('btnUploadDoc').addEventListener('click', async ()=>{
   try{
     if(Store.online()){ doc.path = stId+'/'+doc.id+'/'+f.name.replace(/[^\w.\-]+/g,'_'); await storagePut(doc.path, f); }
     else{ await idbPut(doc.id, f); }
+    assertSameSession(session);
     await Store.upsert('docs', doc);
     $('docFile').value=''; $('docVersion').value='';
     renderDocsList(); renderCiPanel(); renderStudies();
     toast(doc.tipo==='ci' ? T('Consentimiento cargado. Queda como versión vigente.') : T('Documento adjuntado.'));
     /* si la búsqueda documental está activa, se manda al índice en segundo plano */
-    if(ragActivo()){
+    if(ragActivo()&&ZondaClinicalRag.isClinicalDocument(doc)){
       btn.textContent = T('Indexando...');
-      const ok = await ragIndexar(doc);
-      if(ok){ renderDocsList(); toast(T('Documento enviado al índice de búsqueda.')); }
+      const resultado = await ragIndexarDetalle(doc);
+      renderDocsList();
+      if(resultado.ok) toast(T('Documento enviado al índice de búsqueda.'));
+      else toast(T('El archivo quedó guardado, pero su indexación requiere un reintento.')+ragResumenFallos([resultado]));
     }
-  }catch(e){ alert('No se pudo adjuntar: '+e.message); }
+  }catch(e){ if(!e.sessionChanged)alert('No se pudo adjuntar: '+e.message); }
   finally{ btn.disabled = false; btn.textContent = 'Adjuntar'; }
 });
 
@@ -4843,6 +5155,7 @@ function renderDocsList(){
       '<div class="dinfo">📄 <b>'+esc(DOC_TIPOS[doc.tipo]||doc.tipo)+'</b> '+
         (doc.id===ciId?'<span class="chip ok">'+T('CI vigente')+'</span> ':'')+
         (doc.version?'<span class="chip gray">'+esc(doc.version)+'</span>':'')+
+        (doc.ragPendiente?'<span class="chip warn">'+T('Envío al índice por confirmar')+'</span>':'')+
         '<br><span class="muted small">'+esc(doc.filename)+' · '+fmtSize(doc.size)+' · '+T('subido')+' '+fmtDate((doc.subido||'').slice(0,10))+'</span></div>'+
       '<button class="ghost" data-a="ver">'+T('Ver')+'</button>'+
       '<button class="ghost" data-a="dl">'+T('Descargar')+'</button>'+
@@ -4859,8 +5172,12 @@ async function openDoc(id){
   const b = await docBlob(doc);
   if(!b){ toast('El archivo no está disponible en este navegador/modo. Volvé a adjuntarlo.'); return; }
   const blob = b.type ? b : new Blob([b], { type: doc.mime||'application/octet-stream' });
+  if(!/^(?:application\/pdf|text\/plain|image\/(?:png|jpeg|gif|webp))$/i.test(blob.type)){
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=doc.filename||'documento';a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href),60000);return;
+  }
   const url = URL.createObjectURL(blob);
-  window.open(url, '_blank');
+  window.open(url, '_blank', 'noopener,noreferrer');
   setTimeout(()=>URL.revokeObjectURL(url), 60000);
 }
 async function downloadDoc(id){
@@ -4874,20 +5191,11 @@ async function downloadDoc(id){
 async function deleteDoc(id){
   const doc = (DB.docs||[]).find(d=>d.id===id); if(!doc) return;
   if(!confirm('¿Eliminar el documento «'+(doc.filename||'')+'»?')) return;
-  let respaldo=null,archivoEliminado=false;
   try{
-    respaldo=await docBlob(doc);
-    if(doc.ragIndexado) await ragBorrar(doc);
-    if(doc.storage==='supabase') await storageDel(doc.path); else await idbDel(doc.id);
-    archivoEliminado=true;
-    await removeEntity('docs', id, T('Documento eliminado.'));
-    renderDocsList(); renderCiPanel();
+    await eliminarDocumentoSeguro(doc);
+    renderAll(); renderDocsList(); renderCiPanel(); renderPaDocs(); toast(T('Documento eliminado.'));
   }catch(e){
-    if(archivoEliminado&&respaldo){
-      try{ if(doc.storage==='supabase') await storagePut(doc.path,respaldo); else await idbPut(doc.id,respaldo); }
-      catch(restaurar){ throw new Error(e.message+' Además, no se pudo restaurar el archivo: '+restaurar.message); }
-    }
-    alert('No se pudo eliminar el documento; el archivo fue conservado o restaurado. '+e.message);
+    if(!e.sessionChanged) alert('No se pudo completar la eliminación del documento. '+e.message);
   }
 }
 
@@ -5188,46 +5496,65 @@ function aiModelName(){ return (AI_STATUS&&AI_STATUS.model)||AI_SERVICE.modelo; 
 
 function aiServerError(status, j){
   const raw=String((j&&j.error)||'');
-  if(raw==='AI_NOT_CONFIGURED') return 'El servicio de IA todavía no tiene una clave configurada en Supabase.';
-  if(raw==='IMAGE_DEIDENTIFICATION_CONFIRMATION_REQUIRED') return 'Antes de enviar imágenes, confirmá que no contienen nombres, DNI ni otros identificadores.';
-  if(raw==='AI_AUDIT_FAILED') return 'La salida no se entregó porque no pudo registrarse en la auditoría.';
+  const messages={
+    AI_NOT_CONFIGURED:'El servicio de IA todavía no tiene una clave configurada en Supabase.',
+    IMAGE_DEIDENTIFICATION_CONFIRMATION_REQUIRED:'Antes de enviar estas imágenes, confirmá que no contienen nombres, DNI ni otros identificadores.',
+    AI_AUDIT_FAILED:'No se envió material al proveedor de IA porque no pudo registrarse la solicitud en la auditoría.',
+    AI_TIMEOUT:'El proveedor de IA tardó demasiado en responder. Volvé a intentar más tarde.',
+    AI_RATE_LIMITED:'El proveedor de IA alcanzó su límite de uso. Esperá unos minutos antes de reintentar.',
+    AI_PROVIDER_FAILED:'El proveedor de IA no pudo completar la solicitud. Volvé a intentar más tarde.',
+    AI_EMPTY_RESPONSE:'El proveedor de IA devolvió una respuesta vacía. Revisá el material y volvé a intentar.',
+    CONTENT_TOO_LARGE:'El material supera el tamaño admitido. Dividilo en partes antes de enviarlo.',
+    IDENTIFIERS_LIMIT_EXCEEDED:'El material contiene más identificadores personales de los que se pueden revisar en una solicitud. Dividilo o retirá los identificadores antes de enviarlo.',
+    INVALID_CONTENT:'El material no tiene un formato válido para analizar. Revisá que incluya texto o imágenes.',
+    INVALID_IMAGE:'Una imagen no tiene un formato válido. Volvé a cargarla como PNG, JPEG o WebP.',
+    BILLING_ACCESS_REQUIRED:'Necesitás permiso de Facturación para analizar contratos.',
+    PROFILE_AMBIGUOUS:'Tu cuenta tiene más de una ficha de usuario. Un administrador debe revisar el vínculo antes de usar IA.',
+    PROFILE_LOOKUP_FAILED:'No se pudo verificar tu permiso de acceso. Volvé a intentar.',
+  };
+  if(messages[raw]) return messages[raw];
   if(status===401) return 'La sesión no está autorizada para usar el servicio de IA.';
-  return raw || (T('Error de la API de IA')+' ('+status+').');
+  return T('No se pudo completar la solicitud de IA')+' ('+status+').';
 }
 
-function aiIdentifiers(){
+function aiIdentifiers(blocks, system){
   const out=[];
+  const texts=[String(system||''),...blocks.filter(b=>b&&b.t==='text').map(b=>String(b.text||''))];
   (DB.patients||[]).forEach(p=>{
     /* El código del participante se conserva porque es el identificador
-       autorizado del estudio; las iniciales se omiten si aparecen en texto. */
-    if(p&&p.iniciales) out.push(String(p.iniciales));
+       autorizado del estudio. Solo se envían iniciales presentes en este material,
+       sin adjuntar listas de participantes ajenos ni recortar coincidencias. */
+    const initials=String(p&&p.iniciales||'').trim();
+    if(initials.length<2 || initials.length>100) return;
+    const escaped=initials.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+    const pattern=new RegExp('(?<![\\p{L}\\p{N}_])'+escaped+'(?![\\p{L}\\p{N}_])','iu');
+    if(texts.some(text=>pattern.test(text))) out.push(initials);
   });
-  return Array.from(new Set(out)).slice(0,50);
+  return Array.from(new Set(out));
 }
 
-let AI_IMAGES_CONFIRMED=false;
 function aiConfirmImages(blocks){
   if(!blocks.some(b=>b&&b.t==='img')) return true;
-  if(AI_IMAGES_CONFIRMED) return true;
-  AI_IMAGES_CONFIRMED=confirm('Las imágenes no pueden anonimizarse automáticamente. Confirmá que no contienen nombre, DNI, teléfono, correo ni otros identificadores directos del paciente.');
-  return AI_IMAGES_CONFIRMED;
+  return confirm('Las imágenes de esta solicitud no pueden anonimizarse automáticamente. Revisá cada una y confirmá que no contienen nombre, DNI, teléfono, correo ni otros identificadores directos del paciente.');
 }
 
 /* opt = { system, content, maxTokens }
    content: string, o lista de bloques {t:'text',text} / {t:'img',mime,data(base64)} */
 async function aiChat(opt){
   const blocks = (typeof opt.content==='string') ? [{t:'text',text:opt.content}] : opt.content;
+  if(!Array.isArray(blocks) || !blocks.length) throw new Error('Agregá texto o imágenes antes de usar IA.');
   if(!aiConfirmImages(blocks)) throw new Error('No se enviaron las imágenes porque falta confirmar su anonimización.');
   let r;
   try{ r = await supaFetch('/functions/v1/ia', { method:'POST', body:JSON.stringify({
     purpose:opt.purpose||'consulta_general', system:opt.system||'', content:blocks,
-    max_tokens:opt.maxTokens||8000, identifiers:aiIdentifiers(),
+    max_tokens:opt.maxTokens||8000, identifiers:aiIdentifiers(blocks,opt.system),
     images_confirmed_deidentified:blocks.some(b=>b&&b.t==='img')
   }) }); }
   catch(e){ throw new Error(T('No se pudo conectar con la API de IA. Revisá tu conexión a internet.')); }
   const j = await r.json().catch(()=>({}));
   if(!r.ok || j.error) throw new Error(aiServerError(r.status,j));
   AI_STATUS={ configured:true, provider:j.meta&&j.meta.provider, model:j.meta&&j.meta.model };
+  if(j.meta&&j.meta.audit_pending) syncStatus('audit','error','La respuesta de IA se generó, pero quedó pendiente su registro final de auditoría. Conservá el resultado y no repitas la generación. Referencia: '+String(j.meta.request_id||'sin referencia'));
   return { text:String(j.text||''), cut:!!j.cut, meta:j.meta||{} };
 }
 /* ================= CAPA ÚNICA DE CONSULTA A DOCUMENTOS =================
@@ -5757,13 +6084,14 @@ function ragFallo(etapa){ return { ok:false, etapa }; }
 function ragResumenFallos(errores){
   const conteo = {};
   for(const e of (errores||[])) conteo[e.etapa] = (conteo[e.etapa]||0)+1;
-  const nombres = { configuracion:'configuración', validacion:'validación', descarga:'descarga', extraccion:'extracción', envio:'envío' };
+  const nombres = { configuracion:'configuración', validacion:'validación', descarga:'descarga', extraccion:'extracción', envio:'envío', registro:'registro del envío' };
   const partes = Object.keys(conteo).map(k=>conteo[k]+' '+(nombres[k]||'procesamiento'));
   return partes.length ? ' '+T('Diagnóstico')+': '+partes.join(', ')+'.' : '';
 }
 
 /* sube un documento al índice y conserva sólo la etapa segura si falla */
 async function ragIndexarDetalle(doc, texto){
+  const session=SESSION;
   if(!ragActivo()) return ragFallo('configuracion');
   if(!ZondaClinicalRag.isClinicalDocument(doc)) return ragFallo('validacion');
   if(!texto){
@@ -5774,14 +6102,22 @@ async function ragIndexarDetalle(doc, texto){
     catch(e){ return ragFallo('extraccion'); }
   }
   if((texto||'').trim().length < 50) return ragFallo('extraccion');
+  assertSameSession(session);
+  // Registrar la intención antes de la llamada externa permite retirar o
+  // reintentar el envío aunque la respuesta o su confirmación se pierdan.
+  const pending=Object.assign({},doc,{ragPendiente:new Date().toISOString()});
+  try{await Store.upsert('docs',pending);assertSameSession(session);}
+  catch(e){if(e.sessionChanged)throw e;return ragFallo('registro');}
   try{
     await ragLlamar({ accion:'indexar', doc_id:ragDocId(doc), source_doc_id:doc.id, texto,
                       estudio_id:doc.estudioId||'',
                       titulo:doc.filename||'', tipo:doc.tipo||'' });
-    doc.ragIndexado = new Date().toISOString();
-    try{ await Store.upsert('docs', doc); }catch(e){}
-    return { ok:true };
-  }catch(e){ return ragFallo('envio'); }
+    assertSameSession(session);
+  }catch(e){ if(e.sessionChanged)throw e;return ragFallo('envio'); }
+  const indexed=Object.assign({},pending,{ragIndexado:new Date().toISOString()});delete indexed.ragPendiente;
+  try{ await Store.upsert('docs',indexed); }
+  catch(e){ if(e.sessionChanged)throw e;return ragFallo('registro'); }
+  return { ok:true };
 }
 async function ragIndexar(doc, texto){ return (await ragIndexarDetalle(doc, texto)).ok; }
 
@@ -5800,7 +6136,12 @@ async function ragIndexarLista(docs, elEstado){
 }
 
 async function ragBorrar(doc){
-  await ragLlamar({ accion:'borrar', doc_id:ragDocId(doc), source_doc_id:doc.id, estudio_id:doc.estudioId||'' });
+  const session=SESSION;
+  const accion=ZondaClinicalRag.isClinicalDocument(doc)?'borrar':'purgar_legacy';
+  await ragLlamar({ accion, doc_id:ragDocId(doc), source_doc_id:doc.id, estudio_id:doc.estudioId||'' });
+  assertSameSession(session);
+  const limpio=Object.assign({},doc);delete limpio.ragIndexado;delete limpio.ragPendiente;
+  await Store.upsert('docs',limpio);
 }
 
 /* consulta con recuperación: devuelve { a, citas } como el resto del panel */
@@ -5877,18 +6218,20 @@ $('btnRagTest').addEventListener('click', async ()=>{
 
 $('btnRagList').addEventListener('click', async ()=>{
   const m = $('ragMsg');
+  const estudioId=$('stId')?$('stId').value:'';
+  if(!estudioId){m.style.color='var(--warn)';m.textContent=T('Abrí un estudio para revisar sus documentos enviados.');return;}
   m.style.color='var(--muted)'; m.textContent = T('Consultando el índice...');
   try{
-    const j = await ragLlamar({ accion:'listar' });
+    const j = await ragLlamar({ accion:'listar',estudio_id:estudioId });
     if(!j.total){
       m.style.color='var(--warn)';
-      m.textContent = '⚠ '+T('El índice está vacío. Indexá los documentos y esperá a que Google los procese.');
+      m.textContent = T('Este estudio no tiene envíos registrados. Este resultado no comprueba que el índice externo esté vacío.');
       return;
     }
     m.style.color='var(--ok)';
-    m.innerHTML = '✔ '+j.total+' '+T('documento(s) en el índice')+':<br>'+
-      j.documentos.map(d=>'· '+esc(d.titulo||d.id)).join('<br>')+
-      '<br><span class="muted">'+T('Si acabás de indexarlos, Google puede tardar hasta 30 minutos en dejarlos consultables.')+'</span>';
+    m.innerHTML = j.total+' '+T('documento(s) con envío registrado o pendiente de este estudio')+':<br>'+
+      j.documentos.map(d=>'· '+esc(d.titulo||d.id)+(d.pendiente?' — '+T('por confirmar'):'')).join('<br>')+
+      '<br><span class="muted">'+esc(j.mensaje||T('El registro de envío no confirma que el índice externo ya esté disponible.'))+'</span>';
   }catch(e){ m.style.color='var(--bad)'; m.textContent = '⚠ '+e.message; }
 });
 
@@ -5909,7 +6252,7 @@ $('btnRagPurge').addEventListener('click',async()=>{
   const m=$('ragMsg');
   if(!ME||ME.rol!=='admin'){ m.style.color='var(--bad)'; m.textContent='Solo un administrador puede depurar el índice.'; return; }
   const permitidos=new Set(['protocolo','manual','enmienda','ci']);
-  const docs=(DB.docs||[]).filter(d=>d.ragIndexado&&(d.pacienteId||!permitidos.has(String(d.tipo||''))));
+  const docs=(DB.docs||[]).filter(d=>(d.ragIndexado||d.ragPendiente)&&(d.pacienteId||!permitidos.has(String(d.tipo||''))));
   if(!docs.length){ m.style.color='var(--ok)'; m.textContent='✔ No hay documentos clínicos no permitidos marcados como indexados.'; return; }
   if(!confirm('Se eliminarán del índice externo '+docs.length+' documento(s) históricos no permitidos. Los archivos originales se conservan en Zonda. ¿Continuar?')) return;
   let ok=0; const fallos=[]; $('btnRagPurge').disabled=true;
@@ -5917,9 +6260,7 @@ $('btnRagPurge').addEventListener('click',async()=>{
     for(const doc of docs){
       m.style.color='var(--muted)'; m.textContent='Depurando '+(ok+fallos.length+1)+'/'+docs.length+'...';
       try{
-        await ragLlamar({accion:'purgar_legacy',source_doc_id:doc.id});
-        const limpio=Object.assign({},doc); delete limpio.ragIndexado;
-        await Store.upsert('docs',limpio); ok++;
+        await ragBorrar(doc); ok++;
       }catch(e){ fallos.push(e.message); }
     }
     m.style.color=fallos.length?'var(--warn)':'var(--ok)';
@@ -7345,6 +7686,8 @@ $('btnFlowApply').addEventListener('click', ()=>{
 function docsOfPatient(pid){ return (DB.docs||[]).filter(d=>d.pacienteId===pid).sort((a,b)=>(b.subido||'').localeCompare(a.subido||'')); }
 
 $('btnUploadPdoc').addEventListener('click', async ()=>{
+  if($('btnUploadPdoc').disabled) return;
+  const session=SESSION;
   const pid = $('paId').value;
   const paciente=getPatient(pid);
   if(!pid || !paciente){ toast('Guardá el paciente antes de adjuntar documentos.'); return; }
@@ -7360,16 +7703,12 @@ $('btnUploadPdoc').addEventListener('click', async ()=>{
   try{
     if(Store.online()){ doc.path = paciente.estudioId+'/'+doc.id+'/'+f.name.replace(/[^\w.\-]+/g,'_'); await storagePut(doc.path, f); }
     else{ await idbPut(doc.id, f); }
+    assertSameSession(session);
     await Store.upsert('docs', doc);
     $('pdocFile').value=''; $('pdocVersion').value='';
     renderPaDocs();
     toast('Documento del paciente adjuntado.');
-    if(ragActivo()){
-      btn.textContent = T('Indexando...');
-      const ok = await ragIndexar(doc);
-      if(ok){ renderPaDocs(); toast(T('Documento enviado al índice de búsqueda.')); }
-    }
-  }catch(e){ alert('No se pudo adjuntar: '+e.message); }
+  }catch(e){ if(!e.sessionChanged)alert('No se pudo adjuntar: '+e.message); }
   finally{ btn.disabled = false; btn.textContent = 'Adjuntar'; }
 });
 
@@ -7393,14 +7732,7 @@ function renderPaDocs(){
       '<button class="ghost" data-a="del" style="color:var(--bad)">✕</button>';
     d.querySelector('[data-a=ver]').addEventListener('click', ()=>openDoc(doc.id));
     d.querySelector('[data-a=dl]').addEventListener('click', ()=>downloadDoc(doc.id));
-    d.querySelector('[data-a=del]').addEventListener('click', ()=>{
-      if(!confirm('¿Eliminar el documento «'+(doc.filename||'')+'»?')) return;
-      (async ()=>{
-        try{ if(doc.storage==='supabase') await storageDel(doc.path); else await idbDel(doc.id); }catch(e){}
-        await removeEntity('docs', doc.id, 'Documento eliminado.');
-        renderPaDocs();
-      })();
-    });
+    d.querySelector('[data-a=del]').addEventListener('click', ()=>deleteDoc(doc.id));
     box.appendChild(d);
   }
 }
@@ -7726,8 +8058,15 @@ async function critRemapearPacientes(prev, nuevo){
   const firma = critFirma(nuevo);
   const pacientes = DB.patients.filter(p=>p.estudioId===nuevo.id && !p.anulado);
   let tocados = 0, respMovidas = 0, respPerdidas = 0;
+  const fallidos=[];
 
   for(const p of pacientes){
+    /* Un reintento omite pacientes confirmados; sus claves ya pertenecen al destino. */
+    if(p.critFirma===firma) continue;
+    if(p.critFirma&&p.critFirma!==critFirma(prev)){
+      fallidos.push(p.codigo||p.id); continue;
+    }
+    try{
     const viejasR = p.criterios || {};
     const viejasJ = p.critJust || {};
     if(!Object.keys(viejasR).length && !Object.keys(viejasJ).length){
@@ -7735,18 +8074,18 @@ async function critRemapearPacientes(prev, nuevo){
     }
     const nuevasR = {}, nuevasJ = {};
     const perdidasDe = [];
-    for(const k of Object.keys(viejasR)){
+    let movidasDe=0;
+    for(const k of new Set([...Object.keys(viejasR),...Object.keys(viejasJ)])){
       const dest = mapa[k];
       if(dest){
-        nuevasR[dest] = viejasR[k];
+        if(Object.prototype.hasOwnProperty.call(viejasR,k)) nuevasR[dest] = viejasR[k];
         if(viejasJ[k]) nuevasJ[dest] = viejasJ[k];
         /* si el emparejamiento fue aproximado, la respuesta queda marcada para reconfirmar */
-        respMovidas++;
+        if(Object.prototype.hasOwnProperty.call(viejasR,k)) movidasDe++;
       } else if(viejasR[k] && viejasR[k]!=='pendiente'){
         const idx = parseInt(k.slice(1),10);
         const lista = k[0]==='i' ? (prev.criteriosInclusion||[]) : (prev.criteriosExclusion||[]);
         perdidasDe.push({ clave:k, texto:lista[idx]||'', respuesta:viejasR[k] });
-        respPerdidas++;
       }
     }
     const actualizado=Object.assign({},p,{criterios:nuevasR,critJust:nuevasJ,critFirma:firma});
@@ -7757,9 +8096,12 @@ async function critRemapearPacientes(prev, nuevo){
       exactas, aproximadas, perdidas: perdidasDe
     }]);
     await Store.upsert('patients', actualizado); tocados++;
+    respMovidas+=movidasDe; respPerdidas+=perdidasDe.length;
     auditar('paciente','remapeo_criterios', p.id,
-      p.codigo+': '+respMovidas+' conservadas, '+perdidasDe.length+' descartadas');
+      p.codigo+': '+movidasDe+' conservadas, '+perdidasDe.length+' descartadas');
+    }catch(e){ fallidos.push(p.codigo||p.id); }
   }
+  if(fallidos.length) throw new Error(fallidos.length+' paciente(s) pendientes: '+fallidos.join(', '));
   return { pacientes:pacientes.length, tocados, exactas, aproximadas, perdidos, respMovidas, respPerdidas };
 }
 
@@ -7896,6 +8238,7 @@ async function docsImagenes(docs, maxTotal){
    como pendiente, nunca se completa por inferencia. */
 
 let NARR = null;   /* { items:[{clave,tipo,n,texto,criterio,resp,cita}], fecha, modelo } */
+let NARR_PATIENT_ID='', NARR_STUDY_ID='';
 
 function narrCriterios(st){
   const out = [];
@@ -7926,8 +8269,9 @@ function openNarrModal(){
   $('btnNarrMail').classList.add('hidden');
   /* si ya se redactó antes para este paciente, se muestra */
   const guardada = (getPatient(pid)||{}).critNarrativa;
+  NARR=null; NARR_PATIENT_ID=pid; NARR_STUDY_ID=st.id;
   if(guardada && guardada.items && guardada.items.length){
-    NARR = guardada; renderNarr();
+    NARR = JSON.parse(JSON.stringify(guardada)); renderNarr();
     if(guardada.obsoleta){
       $('narrStatus').style.color='var(--warn)';
       $('narrStatus').textContent = '⚠ '+T('Los criterios del protocolo cambiaron después de redactar esta fundamentación: volvé a redactarla.');
@@ -8274,28 +8618,35 @@ $('btnNarrClose').addEventListener('click', ()=>$('narrModal').classList.add('hi
 
 $('btnNarrRun').addEventListener('click', async ()=>{
   const stEl = $('narrStatus'), btn = $('btnNarrRun');
+  if(btn.disabled) return;
+  const patientId=$('paId').value, studyId=$('paEstudio').value;
+  const st=JSON.parse(JSON.stringify(getStudy(studyId)||null));
+  const p=Object.assign({},getPatient(patientId),{id:patientId,estudioId:studyId,criterios:Object.assign({},PA_CRIT),sexo:($('paSexo')||{}).value||''});
+  const seleccion=Array.from(document.querySelectorAll('#narrDocsBox input[type=checkbox]:checked')).map(c=>c.dataset.ndoc);
   btn.disabled = true;
   try{
+    if(!st||!getPatient(patientId)) throw new Error('Guardá y seleccioná el paciente antes de generar la fundamentación.');
     stEl.style.color='var(--muted)'; stEl.textContent = T('Leyendo los documentos del paciente...');
     let texto = '';
-    for(const c of Array.from(document.querySelectorAll('#narrDocsBox input[type=checkbox]:checked'))){
-      const doc = (DB.docs||[]).find(d=>d.id===c.dataset.ndoc);
+    for(const docId of seleccion){
+      const doc = docsOfPatient(patientId).find(d=>d.id===docId);
       if(!doc) continue;
       const b = await docBlob(doc);
       if(!b) continue;
       try{ texto += '\n=== '+doc.filename+' ===\n' + await extractTextTablas(b, doc.filename); }catch(e){}
     }
     if(texto.trim().length < 30) throw new Error(T('No hay texto legible en los documentos seleccionados.'));
-    const st = getStudy($('paEstudio').value);
-    const p = Object.assign({}, getPatient($('paId').value), {
-      id: $('paId').value,
-      criterios: PA_CRIT, estudioId: $('paEstudio').value, sexo: ($('paSexo')||{}).value || ''
-    });
     stEl.textContent = T('Redactando la fundamentación (puede tardar un momento)...');
     const r = await aiNarrarCriterios(st, patientEvidenceSafeText(texto), p, stEl);
+    if($('paId').value!==patientId||$('paEstudio').value!==studyId||critFirma(getStudy(studyId)||{})!==critFirma(st))
+      throw new Error('Cambió el paciente o el protocolo mientras se generaba el texto. Volvé a generar para la ficha actual.');
     const items = r.items;
     NARR = { items, fecha:new Date().toISOString(), modelo:aiModelName(), obsoleta:false, critFirma:critFirma(st) };
+    NARR_PATIENT_ID=patientId; NARR_STUDY_ID=studyId;
     renderNarr();
+    const pac=getPatient(patientId);
+    const puedeGuardar=pac&&JSON.stringify(pac.criterios||{})===JSON.stringify(p.criterios||{});
+    if(puedeGuardar) await Store.upsert('patients',Object.assign({},pac,{critNarrativa:JSON.parse(JSON.stringify(NARR))}));
     const pend = items.filter(x=>x.estado==='pendiente').length;
     const incompletas = items.filter(x=>/redacci[oó]n qued[oó] incompleta/i.test(x.texto)).length;
     stEl.style.color = (pend||r.fallados||incompletas) ? 'var(--warn)' : 'var(--ok)';
@@ -8304,13 +8655,10 @@ $('btnNarrRun').addEventListener('click', async ()=>{
       (pend ? ' — '+pend+' '+T('sin documentación suficiente')+'.' : '.')+
       (r.fallados ? ' '+r.fallados+' '+T('tanda(s) fallaron: volvé a generar para completarlas.') : '')+
       (incompletas ? ' '+incompletas+' '+T('quedaron incompletas.') : '')+
-      ' '+T('Editá lo que haga falta; se guarda con el paciente.');
-    /* queda guardada en la ficha del paciente */
-    const pac = getPatient($('paId').value);
-    if(pac){ await Store.upsert('patients',Object.assign({},pac,{critNarrativa:NARR})); }
-    auditar('paciente','fundamentacion_criterios', pac?pac.id:'', (pac&&pac.codigo)||'');
+      ' '+(puedeGuardar?T('Fundamentación guardada. Las ediciones se confirman con Guardar paciente.'):T('Borrador sin guardar: confirmá los criterios y la fundamentación con Guardar paciente.'));
+    if(puedeGuardar) auditar('paciente','fundamentacion_criterios',pac.id,pac.codigo||'');
   }catch(e){
-    stEl.style.color='var(--bad)'; stEl.textContent = '⚠ '+e.message;
+    stEl.style.color='var(--bad)'; stEl.textContent = '⚠ '+e.message+(NARR&&NARR_PATIENT_ID===patientId?' El borrador sigue en pantalla; guardá el paciente para confirmarlo.':'');
   }finally{ btn.disabled = !aiConfigured() || ragEstricto(); }
 });
 
@@ -9764,7 +10112,9 @@ function renderLog(){
   box.innerHTML = h;
   box.querySelectorAll('[data-ed]').forEach(b=>b.addEventListener('click', ()=>logForm(b.dataset.ed)));
   box.querySelectorAll('[data-del]').forEach(b=>b.addEventListener('click', async ()=>{
-    const r = logRowsTodos(LOG_TIPO).find(x=>x.id===b.dataset.del);
+    if(b.disabled) return;
+    const tipo=LOG_TIPO;
+    const r = logRowsTodos(tipo).find(x=>x.id===b.dataset.del);
     if(!r) return;
     if(LOG_CLINICOS.includes(LOG_TIPO)){
       const motivo = prompt(T('Este registro es clínico: se anula con motivo y queda en la auditoría. Motivo:'),'');
@@ -9775,12 +10125,16 @@ function renderLog(){
         anuladoPor:(ME&&(ME.email||ME.nombre))||CURRENT_USER||'',
         anuladoEn:new Date().toISOString()
       });
-      if(!await guardarLog(LOG_TIPO, anulado, 'anulación', motivo.trim())) return;
-      if((LOG_TIPO==='ea' || LOG_TIPO==='conmed') && anulado.pacienteId){
+      b.disabled=true;
+      try{
+      if(!await guardarLog(tipo, anulado, 'anulación', motivo.trim())) return;
+      let aviso='';
+      if((tipo==='ea' || tipo==='conmed') && anulado.pacienteId){
         try{ await sincronizarEvolucionesClinicas(anulado.pacienteId); }
-        catch(e){ toast('⚠ Registro anulado, pero no se pudieron actualizar las evoluciones: '+e.message); }
+        catch(e){ aviso='⚠ Registro anulado, pero no se pudieron actualizar las evoluciones: '+e.message; }
       }
-      renderLog(); renderTools(); toast(T('Registro anulado.'));
+      renderLog(); renderTools(); toast(aviso||T('Registro anulado.'));
+      }finally{b.disabled=false;}
       return;
     }
     if(!confirm(T('¿Borrar este registro?'))) return;
@@ -9879,7 +10233,8 @@ function eaCampoFechaHora(k, etiqueta, r, requerido){
   '</div>';
 }
 function logForm(id,preset){
-  const def = LOG_DEFS[LOG_TIPO];
+  const tipo=LOG_TIPO, draftId=id||uid();
+  const def = LOG_DEFS[tipo];
   LOG_EDIT = id || null;
   const r = id ? logRows(LOG_TIPO).find(x=>x.id===id) : (preset||{});
   const sid = $('toolsStudy').value;
@@ -9957,9 +10312,10 @@ function logForm(id,preset){
   });
   if(LOG_TIPO==='ciproceso'){ const ta = $('lf_texto'); if(ta) ta.rows = 8; }
   $('lf_save').addEventListener('click', async ()=>{
-    const obj = { id: LOG_EDIT || uid(), creado: (r.creado || new Date().toISOString()),
+    const saveButton=$('lf_save'); if(saveButton.disabled) return;
+    const obj = Object.assign({},r,{ id:draftId, creado: (r.creado || new Date().toISOString()),
                   estudioId: ($('lf_estudio')||{}).value || '',
-                  pacienteId: def.paciente ? (($('lf_paciente')||{}).value || '') : '' };
+                  pacienteId: def.paciente ? (($('lf_paciente')||{}).value || '') : '' });
     for(const c of def.campos){
       if(c.t==='calc') continue;
       const el = $('lf_'+c.k);
@@ -9978,19 +10334,24 @@ function logForm(id,preset){
     if(!qualityGate(qualityIssues,'guardar el registro')) return;
     if(qualityIssues.length || ['ea','ciproceso','random'].includes(LOG_TIPO)) obj.controlCalidad=qualityStamp(qualityIssues);
     let motivoCambio = '';
-    if(LOG_EDIT && LOG_CLINICOS.includes(LOG_TIPO)){
+    if(id && LOG_CLINICOS.includes(tipo)){
       motivoCambio = prompt(T('Motivo del cambio (obligatorio para registros clínicos ya guardados):'),'') || '';
       if(!motivoCambio.trim()){ toast(T('El cambio requiere un motivo.')); return; }
     }
-    if(!await guardarLog(LOG_TIPO, obj, LOG_EDIT?'modificación':'alta', motivoCambio.trim())) return;
-    if((LOG_TIPO==='ea' || LOG_TIPO==='conmed') && obj.pacienteId){
+    saveButton.disabled=true;
+    try{
+    if(!await guardarLog(tipo, obj, id?'modificación':'alta', motivoCambio.trim())) return;
+    let aviso='';
+    if((tipo==='ea' || tipo==='conmed') && obj.pacienteId){
       try{ await sincronizarEvolucionesClinicas(obj.pacienteId); }
-      catch(e){ toast('⚠ Registro guardado, pero no se pudieron actualizar las evoluciones: '+e.message); }
+      catch(e){ aviso='⚠ Registro guardado, pero no se pudieron actualizar las evoluciones: '+e.message; }
     }
-    box.classList.add('hidden'); LOG_EDIT=null;
-    renderLog(); renderTools();
-    toast(T('Registro guardado.'));
-    finishLinkedVisitLog();
+    if($('lf_save')===saveButton){
+      box.classList.add('hidden'); LOG_EDIT=null;
+      renderLog(); renderTools(); finishLinkedVisitLog();
+    }
+    toast(aviso||T('Registro guardado.'));
+    }finally{saveButton.disabled=false;}
   });
   box.scrollIntoView({ behavior:'smooth', block:'nearest' });
 }
@@ -10408,20 +10769,11 @@ function factContratoSeleccionado(){
 async function factEliminarContrato(doc){
   if(!doc || !canFact()) return;
   if(!confirm('¿Eliminar el contrato o adenda «'+(doc.filename||'')+'»?')) return;
-  let respaldo=null,archivoEliminado=false;
   try{
-    respaldo=await docBlob(doc);
-    if(doc.ragIndexado) await ragBorrar(doc);
-    if(doc.storage==='supabase') await storageDel(doc.path); else await idbDel(doc.id);
-    archivoEliminado=true;
-    await removeEntity('docs', doc.id, T('Contrato o adenda eliminado.'));
-    FACT_CHAT=[]; FACT_CHAT_KEY=''; renderFact();
+    await eliminarDocumentoSeguro(doc);
+    FACT_CHAT=[]; FACT_CHAT_KEY=''; renderFact(); toast(T('Contrato o adenda eliminado.'));
   }catch(e){
-    if(archivoEliminado&&respaldo){
-      try{ if(doc.storage==='supabase') await storagePut(doc.path,respaldo); else await idbPut(doc.id,respaldo); }
-      catch(restaurar){ alert('Falló la eliminación y también la restauración del archivo: '+restaurar.message); return; }
-    }
-    alert('No se pudo eliminar el contrato o adenda; el archivo fue conservado o restaurado. '+e.message);
+    if(!e.sessionChanged) alert('No se pudo completar la eliminación del contrato o adenda. '+e.message);
   }
 }
 function renderFactChat(){
@@ -10440,14 +10792,13 @@ function renderFactChat(){
   box.scrollTop = box.scrollHeight;
 }
 async function factDesindexarContratos(contratos){
-  if(!ragActivo()) return;
-  for(const doc of contratos.filter(d=>d.ragIndexado && !FACT_RAG_CLEANUP.has(d.id))){
+  if(!Store.online()||!ME||ME.rol!=='admin') return;
+  for(const doc of contratos.filter(d=>(d.ragIndexado||d.ragPendiente) && !FACT_RAG_CLEANUP.has(d.id))){
     FACT_RAG_CLEANUP.add(doc.id);
     try{
-      await ragLlamar({ accion:'borrar', doc_id:ragDocId(doc), source_doc_id:doc.id, estudio_id:doc.estudioId||'' });
-      const limpio=Object.assign({},doc); delete limpio.ragIndexado;
-      await Store.upsert('docs',limpio);
-    }catch(e){ FACT_RAG_CLEANUP.delete(doc.id); }
+      await ragBorrar(doc);
+    }catch(e){ if(e.sessionChanged)return;toast('⚠ No se pudo retirar un contrato del índice histórico. Reintentá desde Configuración.'); }
+    finally{FACT_RAG_CLEANUP.delete(doc.id);}
   }
 }
 const FACT_GASTOS = {
@@ -10493,6 +10844,7 @@ function renderFactGastos(){ Object.keys(FACT_GASTOS).forEach(renderFactGasto); 
 async function factGuardarGasto(tipo){
   const def=FACT_GASTOS[tipo], k=def.key, stId=$('factStudy').value, btn=$('btnFactGasto'+k);
   if(btn.disabled) return;
+  const session=SESSION;
   const fecha=$('factGasto'+k+'Fecha').value, referencia=$('factGasto'+k+'Referencia').value.trim();
   const detalle=$('factGasto'+k+'Detalle').value.trim(), monto=$('factGasto'+k+'Monto').value.trim();
   const moneda=$('factGasto'+k+'Moneda').value.trim(), file=$('factGasto'+k+'File').files[0];
@@ -10504,6 +10856,7 @@ async function factGuardarGasto(tipo){
   btn.disabled=true; btn.textContent=T('Guardando...');
   try{
     await Store.upsert('records',gasto,{accion:'alta',detalle:def.titulo+': '+detalle,motivo:''});
+    assertSameSession(session);
     if(file){
       const doc={ id:uid(), estudioId:stId, gastoId:gasto.id, tipo:tipo+'_comprobante', version:fecha,
         filename:file.name, mime:file.type, size:file.size, subido:new Date().toISOString(),
@@ -10511,30 +10864,41 @@ async function factGuardarGasto(tipo){
       try{
         if(Store.online()){ doc.path=stId+'/'+doc.id+'/'+file.name.replace(/[^\w.\-]+/g,'_'); await storagePut(doc.path,file); }
         else await idbPut(doc.id,file);
+        assertSameSession(session);
         await Store.upsert('docs',doc);
+        assertSameSession(session);
         gasto.comprobanteDocId=doc.id;
         await Store.upsert('records',gasto,{accion:'modificación',detalle:def.titulo+' con comprobante',motivo:''});
-      }catch(eDoc){ attachmentError=eDoc.message; }
+      }catch(eDoc){ if(eDoc.sessionChanged)throw eDoc;attachmentError=eDoc.message; }
     }
     renderFactGasto(tipo);
     if(attachmentError)
       alert(T('El gasto quedó guardado, pero no se pudo adjuntar el comprobante. No vuelvas a agregar el mismo gasto.')+'\n'+attachmentError);
     else toast(T('Gasto registrado.'));
-  }catch(e){ alert(T('No se pudo guardar el gasto: ')+e.message); }
+  }catch(e){ if(!e.sessionChanged)alert(T('No se pudo guardar el gasto: ')+e.message); }
   finally{ btn.disabled=false; btn.textContent=T('Agregar gasto'); }
 }
 async function factEliminarGasto(tipo,id){
   const def=FACT_GASTOS[tipo], gasto=factGastos(tipo,$('factStudy').value).find(r=>r.id===id);
   if(!gasto || !canFact() || !confirm('¿Eliminar este '+def.titulo.toLowerCase()+'?')) return;
   const doc=factGastoComprobante(gasto);
+  const session=SESSION;
+  let gastoEliminado=false;
   try{
-    if(doc){
-      if(doc.storage==='supabase') await storageDel(doc.path); else await idbDel(doc.id);
-      await Store.remove('docs',doc.id,{detalle:'Comprobante de '+def.titulo.toLowerCase(),motivo:'Gasto eliminado'});
-    }
     await Store.remove('records',gasto.id,{detalle:def.titulo+': '+gasto.detalle,motivo:''});
+    gastoEliminado=true;
+    if(doc){
+      await eliminarDocumentoSeguro(doc,{detalle:'Comprobante de '+def.titulo.toLowerCase(),motivo:'Gasto eliminado'});
+    }
     renderFactGasto(tipo); toast(T('Gasto eliminado.'));
-  }catch(e){ alert(T('No se pudo eliminar el gasto: ')+e.message); }
+  }catch(e){
+    if(e.sessionChanged) return;
+    if(gastoEliminado){
+      try{assertSameSession(session);await Store.upsert('records',gasto,{detalle:'Restauración de gasto: comprobante no eliminado',motivo:'Eliminación incompleta'});}
+      catch(restaurar){if(!restaurar.sessionChanged)alert('La eliminación quedó incompleta: el comprobante requiere revisión y no se pudo restaurar el registro del gasto. '+restaurar.message);return;}
+    }
+    renderFactGasto(tipo);alert(T('No se pudo eliminar el gasto: ')+e.message);
+  }
 }
 function factTarifas(stId){
   return logRows('tarifas').filter(r=>r.estudioId===stId);
@@ -10693,6 +11057,8 @@ $('btnFactContratoDescargar').addEventListener('click', ()=>{ const d=factContra
 $('btnFactContratoEliminar').addEventListener('click', ()=>factEliminarContrato(factContratoSeleccionado()));
 $('btnFactContratoUpload').addEventListener('click', async ()=>{
   const stId=$('factStudy').value, f=$('factContratoFile').files[0], btn=$('btnFactContratoUpload');
+  if(btn.disabled) return;
+  const session=SESSION;
   if(!canFact() || !stId || !getStudy(stId)){ toast(T('No tenés acceso o no hay un estudio seleccionado.')); return; }
   if(!f){ toast(T('Elegí un archivo primero.')); return; }
   if(f.size>50*1048576){ toast(T('El archivo supera 50 MB. Comprimilo o dividilo.')); return; }
@@ -10705,10 +11071,11 @@ $('btnFactContratoUpload').addEventListener('click', async ()=>{
   try{
     if(Store.online()){ doc.path=stId+'/'+doc.id+'/'+f.name.replace(/[^\w.\-]+/g,'_'); await storagePut(doc.path,f); }
     else await idbPut(doc.id,f);
+    assertSameSession(session);
     await Store.upsert('docs',doc);
     $('factContratoFile').value=''; $('factContratoVersion').value='';
     renderFact(); toast(T('Contrato adjuntado en Facturación.'));
-  }catch(e){ alert(T('No se pudo adjuntar el contrato: ')+e.message); }
+  }catch(e){ if(!e.sessionChanged)alert(T('No se pudo adjuntar el contrato: ')+e.message); }
   finally{ btn.disabled=false; btn.textContent=T('Adjuntar contrato'); }
 });
 
@@ -11935,7 +12302,7 @@ $('btnAuditCsv').addEventListener('click', async ()=>{
   a.href = URL.createObjectURL(blob);
   a.download = 'auditoria_'+todayISO()+'.csv';
   a.click(); URL.revokeObjectURL(a.href);
-  auditar('config','exportación de auditoría','', AUDIT.length+' '+T('eventos'));
+  auditar('config','exportación de auditoría','', filas.length+' '+T('eventos'));
   toast(T('CSV exportado.'));
 });
 
@@ -12159,13 +12526,13 @@ function userForm(id){
   $('uf_cancel').addEventListener('click', ()=>box.classList.add('hidden'));
   const br = $('uf_reset');
   if(br) br.addEventListener('click', async ()=>{
+    if(br.disabled) return;
+    br.disabled=true;
     try{
-      const r = await fetch(supaBase()+'/auth/v1/recover', {
-        method:'POST', headers:{ 'apikey':CFG.supaKey, 'Content-Type':'application/json' },
-        body: JSON.stringify({ email:u.email })
-      });
-      toast(r.ok ? T('Email de restablecimiento enviado a')+' '+u.email : T('No se pudo enviar el email.'));
+      await sendRecoveryEmail(u.email);
+      toast(T('Solicitud de restablecimiento enviada a')+' '+u.email);
     }catch(e){ toast('⚠ '+e.message); }
+    finally{br.disabled=false;}
   });
   const bp = $('uf_passwordSave');
   if(bp) bp.addEventListener('click', async ()=>{
@@ -12394,7 +12761,7 @@ $('btnTestSupa').addEventListener('click', async ()=>{
 function backupPayload(){
   return cloneData({ studies:DB.studies, patients:DB.patients, visits:DB.visits, docs:DB.docs||[],
            logs:LOGS, settings:DB.settings||[], labExtra:LAB_EXTRA, procClasif:PROC_CLASIF,
-           tabletClasif:TABLET_CLASIF, checklists:CHK, features:FEAT, auditoria:AUDIT });
+           tabletClasif:TABLET_CLASIF, checklists:CHK, features:FEAT, auditoria:auditLocalEvents() });
 }
 async function backupEnvelope(){
   if(!crypto.subtle) throw new Error('Este navegador no permite calcular el checksum SHA-256 del respaldo.');
@@ -12428,15 +12795,14 @@ $('btnExport').addEventListener('click', async ()=>{
   toast('Respaldo exportado.');
 });
 $('btnStorageCleanup').addEventListener('click',async()=>{
-  if(!Store.online()||!ME||ME.rol!=='admin'){ toast('Solo un administrador online puede ejecutar esta limpieza.'); return; }
+  if(!Store.online()||!ME||ME.rol!=='admin'){ toast('Solo un administrador online puede revisar los archivos sin registro.'); return; }
   const btn=$('btnStorageCleanup'); btn.disabled=true;
   try{
     const previa=await ragLlamar({accion:'storage_orphans',ejecutar:false});
-    if(!previa.total){ toast('✔ No hay archivos huérfanos.'); return; }
-    if(!confirm('Se encontraron '+previa.total+' archivo(s) sin registro, con '+fmtSize(previa.bytes)+'. Se eliminarán únicamente esos objetos; los documentos registrados se conservan. ¿Continuar?')) return;
-    const r=await ragLlamar({accion:'storage_orphans',ejecutar:true});
-    toast('✔ Se eliminaron '+r.eliminados+' archivo(s) huérfanos.');
-  }catch(e){ toast('⚠ No se pudo completar la limpieza: '+e.message); }
+    alert('Revisión de archivos: '+previa.total+' objeto(s) de más de '+previa.antiguedadMinimaHoras+' horas sin registro visible ('+fmtSize(previa.bytes)+').\n'+
+      'Se omitieron '+previa.omitidosRecientesOSinFecha+' archivo(s) recientes o sin fecha verificable.\n'+
+      'No se eliminó ningún archivo. La eliminación automática está deshabilitada porque puede haber subidas o registros en curso.');
+  }catch(e){ toast('⚠ No se pudo completar la revisión: '+e.message); }
   finally{btn.disabled=false;}
 });
 $('btnImportClick').addEventListener('click', ()=>$('importFile').click());
@@ -12447,12 +12813,14 @@ $('importFile').addEventListener('change', async e=>{
     const parsed=JSON.parse(await file.text());
     const normalized=ZondaRelease.validateBackup(parsed);
     const data=normalized.payload, manifest=normalized.manifest||{};
+    const restoreContext=ZondaRelease.validateRestoreOrganization(manifest,MEMBRESIA&&MEMBRESIA.org_id);
     if(manifest.checksum&&manifest.checksum.value){
       const actual=await sha256hex(ZondaRelease.canonicalStringify(data));
       if(actual!==manifest.checksum.value) throw new Error('El checksum no coincide: el archivo pudo haberse alterado o dañado.');
     }
     const plan=ZondaRelease.restorePlan(data,DB);
-    const source=manifest.environment?('Origen: '+manifest.environment+' · v'+(manifest.appVersion||'—')+'.\n'):'';
+    const source=(manifest.environment?('Origen: '+manifest.environment+' · v'+(manifest.appVersion||'—')+'.\n'):'')+
+      (!restoreContext.organizationVerified?'Respaldo antiguo sin sitio identificable: verificá que corresponde a este sitio.\n':'');
     const summary=source+'Simulación: '+plan.creates+' registros nuevos, '+plan.updates+' reemplazos y '+plan.unchanged+' sin cambios.\n'+
       plan.logRecords+' registros operativos y '+plan.checklists+' checklists serán revisados durante la importación.\n\n'+
       'Se descargará primero un respaldo del estado actual. Los archivos binarios adjuntos no están incluidos.\n\nEscribí IMPORTAR para continuar:';
