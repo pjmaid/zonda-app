@@ -1,0 +1,130 @@
+{
+  "runId": "zi_mwtw6vmn_ae3e7e60",
+  "projectRef": "local-zonda-test",
+  "startedAt": "2026-11-23T23:23:52.607Z",
+  "checks": [
+    {
+      "name": "Auth devuelve la membresía real del usuario",
+      "status": "passed"
+    },
+    {
+      "name": "coordinadora lee y actualiza, sin borrar documento clínico",
+      "status": "failed",
+      "message": "Se eliminó un archivo que debía estar protegido."
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "objetos sintéticos",
+      "status": "passed"
+    },
+    {
+      "name": "ec_docs",
+      "status": "passed"
+    },
+    {
+      "name": "ec_users",
+      "status": "passed"
+    },
+    {
+      "name": "ec_studies",
+      "status": "passed"
+    },
+    {
+      "name": "ec_members",
+      "status": "passed"
+    },
+    {
+      "name": "cuenta 4feb4818-238c-4604-a157-e6386fed8e8a",
+      "status": "passed"
+    },
+    {
+      "name": "cuenta f23e2fdc-e6b1-47e8-a67c-fbabcf793c06",
+      "status": "passed"
+    },
+    {
+      "name": "cuenta 209dd060-aaee-4463-a028-05a9b1860837",
+      "status": "passed"
+    },
+    {
+      "name": "cuenta a3e19d33-97ff-488f-b2a8-1394b7ce051b",
+      "status": "passed"
+    },
+    {
+      "name": "cuenta b0669946-a263-4622-b4b7-53bed5d23989",
+      "status": "passed"
+    },
+    {
+      "name": "cuenta fbe69885-27b5-467d-acf7-87efbed1aaab",
+      "status": "passed"
+    },
+    {
+      "name": "cuenta 17a62fdd-fa5f-47e2-9429-99b142ae7596",
+      "status": "passed"
+    },
+    {
+      "name": "cuenta fac983d4-4afb-4e25-9402-67d8f9c70269",
+      "status": "passed"
+    },
+    {
+      "name": "ec_orgs",
+      "status": "passed"
+    },
+    {
+      "name": "bucket vacío creado por la prueba",
+      "status": "passed"
+    },
+    {
+      "name": "verificar destino vacío tras limpieza",
+      "status": "passed"
+    }
+  ],
+  "passed": false,
+  "error": "Se eliminó un archivo que debía estar protegido.",
+  "finishedAt": "2026-11-23T23:23:55.756Z",
+  "fixtureManifest": {
+    "orgs": [
+      "9bdb42dc-c899-48d4-9d65-8620a1b4827c",
+      "1aee1cdb-504f-4a2c-b889-aad50c7f9954"
+    ],
+    "authIds": [
+      "4feb4818-238c-4604-a157-e6386fed8e8a",
+      "f23e2fdc-e6b1-47e8-a67c-fbabcf793c06",
+      "209dd060-aaee-4463-a028-05a9b1860837",
+      "a3e19d33-97ff-488f-b2a8-1394b7ce051b",
+      "b0669946-a263-4622-b4b7-53bed5d23989",
+      "fbe69885-27b5-467d-acf7-87efbed1aaab",
+      "17a62fdd-fa5f-47e2-9429-99b142ae7596",
+      "fac983d4-4afb-4e25-9402-67d8f9c70269"
+    ],
+    "profiles": [
+      "zi_mwtw6vmn_ae3e7e60_admin",
+      "zi_mwtw6vmn_ae3e7e60_coord",
+      "zi_mwtw6vmn_ae3e7e60_finance",
+      "zi_mwtw6vmn_ae3e7e60_medico",
+      "zi_mwtw6vmn_ae3e7e60_outsider",
+      "zi_mwtw6vmn_ae3e7e60_recycled",
+      "zi_mwtw6vmn_ae3e7e60_bound",
+      "zi_mwtw6vmn_ae3e7e60_legacy"
+    ],
+    "docs": [
+      "zi_mwtw6vmn_ae3e7e60_clinical",
+      "zi_mwtw6vmn_ae3e7e60_contract",
+      "zi_mwtw6vmn_ae3e7e60_restricted",
+      "zi_mwtw6vmn_ae3e7e60_historical",
+      "zi_mwtw6vmn_ae3e7e60_oldpath"
+    ],
+    "studies": [
+      "zi_mwtw6vmn_ae3e7e60_study_a",
+      "zi_mwtw6vmn_ae3e7e60_study_other",
+      "zi_mwtw6vmn_ae3e7e60_study_b"
+    ],
+    "objects": [
+      "9bdb42dc-c899-48d4-9d65-8620a1b4827c/zi_mwtw6vmn_ae3e7e60_study_a/zi_mwtw6vmn_ae3e7e60_clinical/fixture.pdf",
+      "9bdb42dc-c899-48d4-9d65-8620a1b4827c/zi_mwtw6vmn_ae3e7e60_study_a/zi_mwtw6vmn_ae3e7e60_contract/fixture.pdf",
+      "9bdb42dc-c899-48d4-9d65-8620a1b4827c/zi_mwtw6vmn_ae3e7e60_study_other/zi_mwtw6vmn_ae3e7e60_restricted/fixture.pdf",
+      "9bdb42dc-c899-48d4-9d65-8620a1b4827c/zi_mwtw6vmn_ae3e7e60_study_a/zi_mwtw6vmn_ae3e7e60_historical/fixture.pdf",
+      "9bdb42dc-c899-48d4-9d65-8620a1b4827c/zi_mwtw6vmn_ae3e7e60_oldpath/fixture.pdf"
+    ]
+  }
+}

@@ -27,7 +27,7 @@ clínicos existentes no se modificaron durante la revisión.
 
 ## Verificación
 
-- `node --test tests/*.test.js`: 216 pruebas aprobadas, sin fallos.
+- `node --test tests/*.test.js`: 223 pruebas aprobadas, sin fallos (incluye las nuevas guardas de integración).
 - `tests/database-policy-runtime.mjs`: 15 comprobaciones PostgreSQL mediante
   PGlite 0.6.0, con datos sintéticos y sin conexión a producción.
 - JavaScript del HTML y archivos nuevos analizados sin errores de sintaxis.
@@ -40,11 +40,15 @@ clínicos existentes no se modificaron durante la revisión.
 
 ## Pendientes y límites
 
-La migración `20261123_storage_roles_identidad.sql` no está aplicada. La revisión
-automática bloqueó su aplicación a producción porque falta validación integrada
-con Auth, membresías y Storage en un Supabase de prueba. Las pruebas locales
-verifican SQL y roles, pero no sustituyen esa integración. Ver la matriz y los
-hallazgos estructurales en `DATABASE_REVIEW_20261123.md`.
+La migración `20261123_storage_roles_identidad.sql` se aplicó en producción como
+`20261123233445_storage_roles_identidad`, después de superar 14 pruebas con
+Auth, membresías y Storage reales en una instancia local separada. El defecto
+previo se reprodujo, se verificó la limpieza de fixtures y el rollback restauró
+el catálogo original. La revisión automática que inicialmente bloqueó el cambio
+lo permitió después de esa validación. Se comprobaron las cuatro políticas y
+funciones publicadas, sin cambios en cantidades de registros, archivos o cuentas.
+Ver `VALIDACION_SUPABASE_20261123.md` y los hallazgos estructurales que permanecen
+en `DATABASE_REVIEW_20261123.md`.
 
 Quedan pendientes la auditoría obligatoria para toda escritura directa, el
 control transaccional del último administrador, la protección de membresías de

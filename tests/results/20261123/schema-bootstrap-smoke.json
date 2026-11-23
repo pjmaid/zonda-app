@@ -1,0 +1,36 @@
+{
+  "scope": "Syntax/catalog smoke with managed-schema STUBS ONLY; NOT Supabase integration",
+  "checks": [
+    "sin autorización explícita aborta y no crea objetos",
+    "rechaza una base preexistente y conserva sus filas, columnas y permisos",
+    "no reemplaza funciones preexistentes aunque no haya tablas de la aplicación",
+    "defaults globales inesperados abortan sin modificar sus grants",
+    "el renderer exige evidencia de globals vacíos y rechaza enteros redondeados",
+    "crea esquema completo dentro de la transacción y sin copiar filas",
+    "el default UUID enlaza pg_catalog aunque exista una función homónima en extensions",
+    "catálogo equivalente: tables",
+    "catálogo equivalente: functions",
+    "catálogo equivalente: policies",
+    "catálogo equivalente: auth_triggers",
+    "catálogo equivalente: sequences",
+    "catálogo equivalente: schema_acl",
+    "catálogo equivalente: default_acl",
+    "catálogo equivalente: default_acl_global",
+    "conserva ACL de auditoría sin habilitar UPDATE o DELETE a clientes",
+    "defaults, secuencia y columnas generadas funcionan con datos exclusivamente sintéticos",
+    "la nueva función de la migración conserva los defaults capturados y los revokes"
+  ],
+  "declaredDifferences": {
+    "extensions": "Managed Supabase extensions are not reproduced by the stubs.",
+    "bucket": "No bucket rows are created.",
+    "notNullConstraintCatalogEntries": 47
+  },
+  "version": "PostgreSQL 19.0 (PGlite 0.6.0) on wasm32-unknown-emscripten, compiled by emcc (Emscripten gcc/clang-like replacement + linker emulating GNU ld) 6.0.13 (e13ee988ce3d87a738dd8f3661d02223308c412a), 32-bit",
+  "newMigrationFunctionAcl": "{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+  "passed": 18,
+  "bootstrap": {
+    "tables": 11,
+    "functions": 14,
+    "policies": 43
+  }
+}

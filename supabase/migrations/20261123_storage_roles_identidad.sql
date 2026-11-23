@@ -1,5 +1,6 @@
--- PENDIENTE DE VALIDACIÓN INTEGRADA EN SUPABASE TEST. No aplicada en producción.
--- Funciones/políticas probadas localmente en PostgreSQL WASM con datos sintéticos.
+-- Validada con Auth/Storage reales: 14/14 escenarios sintéticos y rollback probado.
+-- Aplicada en producción el 23/11/2026: versión 20261123233445, storage_roles_identidad.
+-- Evidencia y hash del SQL original: docs/VALIDACION_SUPABASE_20261123.md.
 -- Requiere las migraciones de permisos por protocolo y contratos de 20260810/16.
 -- No modifica filas ni binarios. Mantiene los permisos DML necesarios para las
 -- RPC SECURITY INVOKER. Matriz de comprobación: docs/DATABASE_REVIEW_20261123.md.

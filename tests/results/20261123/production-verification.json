@@ -1,0 +1,117 @@
+{
+  "project": "aqinxboxjklsyvesdcyr",
+  "migration": {
+    "version": "20261123233445",
+    "name": "storage_roles_identidad"
+  },
+  "preflight": {
+    "passed": true,
+    "differences": [],
+    "keys": [
+      "tables",
+      "functions",
+      "policies",
+      "auth_triggers",
+      "sequences",
+      "schema_acl",
+      "default_acl",
+      "default_acl_global",
+      "extensions",
+      "bucket"
+    ],
+    "tables": 11,
+    "functions": 14,
+    "policies": 43
+  },
+  "rowCountsUnchanged": true,
+  "checkedRowCategories": [
+    "objects",
+    "records",
+    "studies",
+    "patients",
+    "documents",
+    "auth_users"
+  ],
+  "anonymousSecurityDefinerExecuteCount": 0,
+  "functionChecks": [
+    {
+      "name": "ec_can_delete_storage_object",
+      "bodyMatchesValidatedMigration": true,
+      "searchPath": "search_path=pg_catalog, public",
+      "authenticatedExecute": true,
+      "serviceExecute": true
+    },
+    {
+      "name": "ec_can_facturacion",
+      "bodyMatchesValidatedMigration": true,
+      "searchPath": "search_path=pg_catalog, public",
+      "authenticatedExecute": true,
+      "serviceExecute": true
+    },
+    {
+      "name": "ec_is_own_user",
+      "bodyMatchesValidatedMigration": true,
+      "searchPath": "search_path=pg_catalog, public",
+      "authenticatedExecute": true,
+      "serviceExecute": true
+    },
+    {
+      "name": "ec_user_study_ids",
+      "bodyMatchesValidatedMigration": true,
+      "searchPath": "search_path=pg_catalog, public",
+      "authenticatedExecute": true,
+      "serviceExecute": true
+    }
+  ],
+  "storagePolicies": [
+    {
+      "cmd": "DELETE",
+      "qual": "((bucket_id = 'ec-docs'::text) AND ec_can_delete_storage_object(name, owner_id))",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "objects",
+      "permissive": "PERMISSIVE",
+      "policyname": "ec_docs_delete",
+      "schemaname": "storage",
+      "with_check": null
+    },
+    {
+      "cmd": "INSERT",
+      "qual": null,
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "objects",
+      "permissive": "PERMISSIVE",
+      "policyname": "ec_docs_insert",
+      "schemaname": "storage",
+      "with_check": "((bucket_id = 'ec-docs'::text) AND (( SELECT current_rol() AS current_rol) = ANY (ARRAY['admin'::text, 'medico'::text, 'coord'::text])) AND ec_can_storage_object(name))"
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "((bucket_id = 'ec-docs'::text) AND ec_can_storage_object(name))",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "objects",
+      "permissive": "PERMISSIVE",
+      "policyname": "ec_docs_read",
+      "schemaname": "storage",
+      "with_check": null
+    },
+    {
+      "cmd": "UPDATE",
+      "qual": "((bucket_id = 'ec-docs'::text) AND (( SELECT current_rol() AS current_rol) = ANY (ARRAY['admin'::text, 'medico'::text, 'coord'::text])) AND ec_can_storage_object(name))",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "objects",
+      "permissive": "PERMISSIVE",
+      "policyname": "ec_docs_update",
+      "schemaname": "storage",
+      "with_check": "((bucket_id = 'ec-docs'::text) AND (( SELECT current_rol() AS current_rol) = ANY (ARRAY['admin'::text, 'medico'::text, 'coord'::text])) AND ec_can_storage_object(name))"
+    }
+  ],
+  "passed": true
+}

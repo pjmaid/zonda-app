@@ -1,0 +1,131 @@
+{
+  "runId": "zi_mwtw6y3j_bf968db9",
+  "projectRef": "local-zonda-test",
+  "startedAt": "2026-11-23T23:23:55.807Z",
+  "checks": [
+    {
+      "name": "Auth devuelve la membresía real del usuario",
+      "status": "passed"
+    },
+    {
+      "name": "coordinadora lee y actualiza, sin borrar documento clínico",
+      "status": "passed"
+    },
+    {
+      "name": "compensación borra la carga propia sin ficha y conserva la ajena",
+      "status": "passed"
+    },
+    {
+      "name": "contrato exige facturación y permite su baja autorizada",
+      "status": "passed"
+    },
+    {
+      "name": "otro sitio no lee, sobrescribe ni borra el archivo",
+      "status": "passed"
+    },
+    {
+      "name": "médico respeta asignación y administrador accede a su sitio",
+      "status": "passed"
+    },
+    {
+      "name": "anónimo no lee, sobrescribe ni borra archivos privados",
+      "status": "passed"
+    },
+    {
+      "name": "email reciclado no hereda estudios ni facturación de otra cuenta",
+      "status": "passed"
+    },
+    {
+      "name": "authId conserva acceso aunque no coincida el email histórico",
+      "status": "passed"
+    },
+    {
+      "name": "perfil histórico sin authId conserva su asignación",
+      "status": "passed"
+    },
+    {
+      "name": "médico puede borrar rutas actuales e históricas autorizadas",
+      "status": "passed"
+    },
+    {
+      "name": "coordinadora sin asignación no accede al protocolo",
+      "status": "passed"
+    },
+    {
+      "name": "membresía inactiva invalida acceso con el token ya emitido",
+      "status": "passed"
+    },
+    {
+      "name": "cuenta Auth sin membresía no accede a archivos del sitio",
+      "status": "passed"
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "objetos sintéticos",
+      "status": "passed"
+    },
+    {
+      "name": "ec_docs",
+      "status": "passed"
+    },
+    {
+      "name": "ec_users",
+      "status": "passed"
+    },
+    {
+      "name": "ec_studies",
+      "status": "passed"
+    },
+    {
+      "name": "ec_members",
+      "status": "passed"
+    },
+    {
+      "name": "cuenta c36838b7-58c8-4aa8-93f3-29c952be9127",
+      "status": "passed"
+    },
+    {
+      "name": "cuenta e30e21a9-0d7c-4d9f-82e4-61bd7e2401e3",
+      "status": "passed"
+    },
+    {
+      "name": "cuenta 252e55e3-c46e-4366-bfa8-d1310d3f8820",
+      "status": "passed"
+    },
+    {
+      "name": "cuenta 3be88bf7-ba9f-46d3-b949-7771e0ba13d6",
+      "status": "passed"
+    },
+    {
+      "name": "cuenta 88fe5b24-0e18-4f34-89b5-6ff6a9360bcd",
+      "status": "passed"
+    },
+    {
+      "name": "cuenta 3e265dab-c09c-4d0f-8626-b3414b72753c",
+      "status": "passed"
+    },
+    {
+      "name": "cuenta a3d033d4-5acf-4fe0-b1f1-5f0e197d8da7",
+      "status": "passed"
+    },
+    {
+      "name": "cuenta 9fccb06f-69aa-44fb-bc0b-b0c7df57ac64",
+      "status": "passed"
+    },
+    {
+      "name": "ec_orgs",
+      "status": "passed"
+    },
+    {
+      "name": "bucket vacío creado por la prueba",
+      "status": "passed"
+    },
+    {
+      "name": "verificar destino vacío tras limpieza",
+      "status": "passed"
+    }
+  ],
+  "passed": true,
+  "finishedAt": "2026-11-23T23:23:58.830Z"
+}

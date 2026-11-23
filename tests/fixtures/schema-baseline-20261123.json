@@ -1,0 +1,1696 @@
+{
+  "capturedAt": "2026-11-23",
+  "default_acl_global": [],
+  "sourceProject": "aqinxboxjklsyvesdcyr",
+  "scope": "Schema metadata only; no application/Auth/Storage rows or files",
+  "bucket": {
+    "id": "ec-docs",
+    "name": "ec-docs",
+    "public": false,
+    "file_size_limit": null,
+    "allowed_mime_types": null
+  },
+  "tables": [
+    {
+      "acl": [
+        "postgres=arwdDxtm/postgres",
+        "anon=arDxtm/postgres",
+        "authenticated=arDxtm/postgres",
+        "service_role=arwdDxtm/postgres"
+      ],
+      "rls": true,
+      "name": "ec_audit",
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "default": "nextval('ec_audit_id_seq'::regclass)",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "ts",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "usuario",
+          "type": "text",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "rol",
+          "type": "text",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "entidad",
+          "type": "text",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "accion",
+          "type": "text",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "ref_id",
+          "type": "text",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "detalle",
+          "type": "text",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "motivo",
+          "type": "text",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "org_id",
+          "type": "uuid",
+          "default": "current_org()",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "event_id",
+          "type": "text",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "client_ts",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX ec_audit_org_event_idx ON public.ec_audit USING btree (org_id, event_id) WHERE (event_id IS NOT NULL)",
+        "CREATE INDEX ec_audit_org_ts_idx ON public.ec_audit USING btree (org_id, ts DESC)"
+      ],
+      "triggers": null,
+      "force_rls": false,
+      "constraints": [
+        {
+          "name": "ec_audit_org_id_fkey",
+          "type": "f",
+          "definition": "FOREIGN KEY (org_id) REFERENCES ec_orgs(id) ON DELETE CASCADE"
+        },
+        {
+          "name": "ec_audit_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (id)"
+        }
+      ]
+    },
+    {
+      "acl": [
+        "postgres=arwdDxtm/postgres",
+        "anon=arwdDxtm/postgres",
+        "authenticated=arwdDxtm/postgres",
+        "service_role=arwdDxtm/postgres"
+      ],
+      "rls": true,
+      "name": "ec_checklists",
+      "columns": [
+        {
+          "name": "id",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "org_id",
+          "type": "uuid",
+          "default": "current_org()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "data",
+          "type": "jsonb",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "rev",
+          "type": "bigint",
+          "default": "1",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "study_id",
+          "type": "text",
+          "default": "(data ->> 'estudioId'::text)",
+          "notnull": false,
+          "identity": "",
+          "generated": "s"
+        },
+        {
+          "name": "checklist_type",
+          "type": "text",
+          "default": "(data ->> 'plantilla'::text)",
+          "notnull": false,
+          "identity": "",
+          "generated": "s"
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX ec_checklists_org_study_idx ON public.ec_checklists USING btree (org_id, study_id)"
+      ],
+      "triggers": null,
+      "force_rls": false,
+      "constraints": [
+        {
+          "name": "ec_checklists_org_id_fkey",
+          "type": "f",
+          "definition": "FOREIGN KEY (org_id) REFERENCES ec_orgs(id) ON DELETE CASCADE"
+        },
+        {
+          "name": "ec_checklists_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (id)"
+        }
+      ]
+    },
+    {
+      "acl": [
+        "postgres=arwdDxtm/postgres",
+        "anon=arwdDxtm/postgres",
+        "authenticated=arwdDxtm/postgres",
+        "service_role=arwdDxtm/postgres"
+      ],
+      "rls": true,
+      "name": "ec_docs",
+      "columns": [
+        {
+          "name": "id",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "data",
+          "type": "jsonb",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "org_id",
+          "type": "uuid",
+          "default": "current_org()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "rev",
+          "type": "bigint",
+          "default": "1",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX ec_docs_org_patient_json_idx ON public.ec_docs USING btree (org_id, ((data ->> 'pacienteId'::text)))",
+        "CREATE INDEX ec_docs_org_study_json_idx ON public.ec_docs USING btree (org_id, ((data ->> 'estudioId'::text)))",
+        "CREATE INDEX ec_docs_org_idx ON public.ec_docs USING btree (org_id)"
+      ],
+      "triggers": null,
+      "force_rls": false,
+      "constraints": [
+        {
+          "name": "ec_docs_org_id_fkey",
+          "type": "f",
+          "definition": "FOREIGN KEY (org_id) REFERENCES ec_orgs(id) ON DELETE CASCADE"
+        },
+        {
+          "name": "ec_docs_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (id)"
+        }
+      ]
+    },
+    {
+      "acl": [
+        "postgres=arwdDxtm/postgres",
+        "anon=arwdDxtm/postgres",
+        "authenticated=arwdDxtm/postgres",
+        "service_role=arwdDxtm/postgres"
+      ],
+      "rls": true,
+      "name": "ec_members",
+      "columns": [
+        {
+          "name": "user_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "org_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "rol",
+          "type": "text",
+          "default": "'coord'::text",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "superadmin",
+          "type": "boolean",
+          "default": "false",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "activo",
+          "type": "boolean",
+          "default": "true",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "creado_en",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX ec_members_org_idx ON public.ec_members USING btree (org_id)"
+      ],
+      "triggers": [
+        "CREATE TRIGGER ec_members_guard_trg BEFORE INSERT OR UPDATE ON public.ec_members FOR EACH ROW EXECUTE FUNCTION ec_members_guard()"
+      ],
+      "force_rls": false,
+      "constraints": [
+        {
+          "name": "ec_members_org_id_fkey",
+          "type": "f",
+          "definition": "FOREIGN KEY (org_id) REFERENCES ec_orgs(id) ON DELETE CASCADE"
+        },
+        {
+          "name": "ec_members_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (user_id)"
+        },
+        {
+          "name": "ec_members_rol_check",
+          "type": "c",
+          "definition": "CHECK ((rol = ANY (ARRAY['admin'::text, 'medico'::text, 'coord'::text])))"
+        },
+        {
+          "name": "ec_members_user_id_fkey",
+          "type": "f",
+          "definition": "FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE"
+        }
+      ]
+    },
+    {
+      "acl": [
+        "postgres=arwdDxtm/postgres",
+        "anon=arwdDxtm/postgres",
+        "authenticated=arwdDxtm/postgres",
+        "service_role=arwdDxtm/postgres"
+      ],
+      "rls": true,
+      "name": "ec_orgs",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "nombre",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "contacto",
+          "type": "text",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "activo",
+          "type": "boolean",
+          "default": "true",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "creado_en",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        }
+      ],
+      "indexes": null,
+      "triggers": null,
+      "force_rls": false,
+      "constraints": [
+        {
+          "name": "ec_orgs_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (id)"
+        }
+      ]
+    },
+    {
+      "acl": [
+        "postgres=arwdDxtm/postgres",
+        "anon=arwdDxtm/postgres",
+        "authenticated=arwdDxtm/postgres",
+        "service_role=arwdDxtm/postgres"
+      ],
+      "rls": true,
+      "name": "ec_patients",
+      "columns": [
+        {
+          "name": "id",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "data",
+          "type": "jsonb",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "org_id",
+          "type": "uuid",
+          "default": "current_org()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "rev",
+          "type": "bigint",
+          "default": "1",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX ec_patients_org_idx ON public.ec_patients USING btree (org_id)",
+        "CREATE INDEX ec_patients_org_study_json_idx ON public.ec_patients USING btree (org_id, ((data ->> 'estudioId'::text)))"
+      ],
+      "triggers": null,
+      "force_rls": false,
+      "constraints": [
+        {
+          "name": "ec_patients_org_id_fkey",
+          "type": "f",
+          "definition": "FOREIGN KEY (org_id) REFERENCES ec_orgs(id) ON DELETE CASCADE"
+        },
+        {
+          "name": "ec_patients_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (id)"
+        }
+      ]
+    },
+    {
+      "acl": [
+        "postgres=arwdDxtm/postgres",
+        "anon=arwdDxtm/postgres",
+        "authenticated=arwdDxtm/postgres",
+        "service_role=arwdDxtm/postgres"
+      ],
+      "rls": true,
+      "name": "ec_records",
+      "columns": [
+        {
+          "name": "id",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "org_id",
+          "type": "uuid",
+          "default": "current_org()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "data",
+          "type": "jsonb",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "rev",
+          "type": "bigint",
+          "default": "1",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "record_type",
+          "type": "text",
+          "default": "(data ->> 'recordType'::text)",
+          "notnull": false,
+          "identity": "",
+          "generated": "s"
+        },
+        {
+          "name": "study_id",
+          "type": "text",
+          "default": "(data ->> 'estudioId'::text)",
+          "notnull": false,
+          "identity": "",
+          "generated": "s"
+        },
+        {
+          "name": "patient_id",
+          "type": "text",
+          "default": "(data ->> 'pacienteId'::text)",
+          "notnull": false,
+          "identity": "",
+          "generated": "s"
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX ec_records_org_study_idx ON public.ec_records USING btree (org_id, study_id)",
+        "CREATE INDEX ec_records_org_type_idx ON public.ec_records USING btree (org_id, record_type)",
+        "CREATE INDEX ec_records_org_patient_idx ON public.ec_records USING btree (org_id, patient_id)"
+      ],
+      "triggers": null,
+      "force_rls": false,
+      "constraints": [
+        {
+          "name": "ec_records_org_id_fkey",
+          "type": "f",
+          "definition": "FOREIGN KEY (org_id) REFERENCES ec_orgs(id) ON DELETE CASCADE"
+        },
+        {
+          "name": "ec_records_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (id)"
+        }
+      ]
+    },
+    {
+      "acl": [
+        "postgres=arwdDxtm/postgres",
+        "anon=arwdDxtm/postgres",
+        "authenticated=arwdDxtm/postgres",
+        "service_role=arwdDxtm/postgres"
+      ],
+      "rls": true,
+      "name": "ec_settings",
+      "columns": [
+        {
+          "name": "id",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "org_id",
+          "type": "uuid",
+          "default": "current_org()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "data",
+          "type": "jsonb",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "rev",
+          "type": "bigint",
+          "default": "1",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "setting_type",
+          "type": "text",
+          "default": "(data ->> 'settingType'::text)",
+          "notnull": false,
+          "identity": "",
+          "generated": "s"
+        },
+        {
+          "name": "study_id",
+          "type": "text",
+          "default": "(data ->> 'estudioId'::text)",
+          "notnull": false,
+          "identity": "",
+          "generated": "s"
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX ec_settings_org_study_idx ON public.ec_settings USING btree (org_id, study_id)",
+        "CREATE INDEX ec_settings_org_type_idx ON public.ec_settings USING btree (org_id, setting_type)"
+      ],
+      "triggers": null,
+      "force_rls": false,
+      "constraints": [
+        {
+          "name": "ec_settings_org_id_fkey",
+          "type": "f",
+          "definition": "FOREIGN KEY (org_id) REFERENCES ec_orgs(id) ON DELETE CASCADE"
+        },
+        {
+          "name": "ec_settings_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (id)"
+        }
+      ]
+    },
+    {
+      "acl": [
+        "postgres=arwdDxtm/postgres",
+        "anon=arwdDxtm/postgres",
+        "authenticated=arwdDxtm/postgres",
+        "service_role=arwdDxtm/postgres"
+      ],
+      "rls": true,
+      "name": "ec_studies",
+      "columns": [
+        {
+          "name": "id",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "data",
+          "type": "jsonb",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "org_id",
+          "type": "uuid",
+          "default": "current_org()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "rev",
+          "type": "bigint",
+          "default": "1",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX ec_studies_org_idx ON public.ec_studies USING btree (org_id)"
+      ],
+      "triggers": null,
+      "force_rls": false,
+      "constraints": [
+        {
+          "name": "ec_studies_org_id_fkey",
+          "type": "f",
+          "definition": "FOREIGN KEY (org_id) REFERENCES ec_orgs(id) ON DELETE CASCADE"
+        },
+        {
+          "name": "ec_studies_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (id)"
+        }
+      ]
+    },
+    {
+      "acl": [
+        "postgres=arwdDxtm/postgres",
+        "anon=arwdDxtm/postgres",
+        "authenticated=arwdDxtm/postgres",
+        "service_role=arwdDxtm/postgres"
+      ],
+      "rls": true,
+      "name": "ec_users",
+      "columns": [
+        {
+          "name": "id",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "data",
+          "type": "jsonb",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "org_id",
+          "type": "uuid",
+          "default": "current_org()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "rev",
+          "type": "bigint",
+          "default": "1",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX ec_users_org_idx ON public.ec_users USING btree (org_id)",
+        "CREATE INDEX ec_users_org_email_json_idx ON public.ec_users USING btree (org_id, lower((data ->> 'email'::text)))",
+        "CREATE INDEX ec_users_org_auth_json_idx ON public.ec_users USING btree (org_id, ((data ->> 'authId'::text)))"
+      ],
+      "triggers": null,
+      "force_rls": false,
+      "constraints": [
+        {
+          "name": "ec_users_org_id_fkey",
+          "type": "f",
+          "definition": "FOREIGN KEY (org_id) REFERENCES ec_orgs(id) ON DELETE CASCADE"
+        },
+        {
+          "name": "ec_users_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (id)"
+        }
+      ]
+    },
+    {
+      "acl": [
+        "postgres=arwdDxtm/postgres",
+        "anon=arwdDxtm/postgres",
+        "authenticated=arwdDxtm/postgres",
+        "service_role=arwdDxtm/postgres"
+      ],
+      "rls": true,
+      "name": "ec_visits",
+      "columns": [
+        {
+          "name": "id",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "data",
+          "type": "jsonb",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "org_id",
+          "type": "uuid",
+          "default": "current_org()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "rev",
+          "type": "bigint",
+          "default": "1",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX ec_visits_org_study_json_idx ON public.ec_visits USING btree (org_id, ((data ->> 'estudioId'::text)))",
+        "CREATE INDEX ec_visits_org_idx ON public.ec_visits USING btree (org_id)"
+      ],
+      "triggers": null,
+      "force_rls": false,
+      "constraints": [
+        {
+          "name": "ec_visits_org_id_fkey",
+          "type": "f",
+          "definition": "FOREIGN KEY (org_id) REFERENCES ec_orgs(id) ON DELETE CASCADE"
+        },
+        {
+          "name": "ec_visits_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (id)"
+        }
+      ]
+    }
+  ],
+  "policies": [
+    {
+      "cmd": "DELETE",
+      "qual": "((org_id = current_org()) AND ((current_rol() = 'admin'::text) OR es_superadmin()))",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "ec_users",
+      "permissive": "PERMISSIVE",
+      "policyname": "users_del",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "INSERT",
+      "qual": null,
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "ec_users",
+      "permissive": "PERMISSIVE",
+      "policyname": "users_ins",
+      "schemaname": "public",
+      "with_check": "((org_id = current_org()) AND ((current_rol() = 'admin'::text) OR es_superadmin()))"
+    },
+    {
+      "cmd": "UPDATE",
+      "qual": "((org_id = current_org()) AND ((current_rol() = 'admin'::text) OR es_superadmin()))",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "ec_users",
+      "permissive": "PERMISSIVE",
+      "policyname": "users_upd",
+      "schemaname": "public",
+      "with_check": "((org_id = current_org()) AND ((current_rol() = 'admin'::text) OR es_superadmin()))"
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "((org_id = current_org()) AND ((current_rol() = 'admin'::text) OR es_superadmin() OR ec_is_own_user(data)))",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "ec_users",
+      "permissive": "PERMISSIVE",
+      "policyname": "users_ver",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "ALL",
+      "qual": "((bucket_id = 'ec-docs'::text) AND ec_can_storage_object(name))",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "objects",
+      "permissive": "PERMISSIVE",
+      "policyname": "ec_docs_protocol",
+      "schemaname": "storage",
+      "with_check": "((bucket_id = 'ec-docs'::text) AND ec_can_storage_object(name))"
+    },
+    {
+      "cmd": "DELETE",
+      "qual": "( SELECT es_superadmin() AS es_superadmin)",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "ec_orgs",
+      "permissive": "PERMISSIVE",
+      "policyname": "orgs_super_delete",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "INSERT",
+      "qual": null,
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "ec_orgs",
+      "permissive": "PERMISSIVE",
+      "policyname": "orgs_super_insert",
+      "schemaname": "public",
+      "with_check": "( SELECT es_superadmin() AS es_superadmin)"
+    },
+    {
+      "cmd": "UPDATE",
+      "qual": "( SELECT es_superadmin() AS es_superadmin)",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "ec_orgs",
+      "permissive": "PERMISSIVE",
+      "policyname": "orgs_super_update",
+      "schemaname": "public",
+      "with_check": "( SELECT es_superadmin() AS es_superadmin)"
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "((id = ( SELECT current_org() AS current_org)) OR ( SELECT es_superadmin() AS es_superadmin))",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "ec_orgs",
+      "permissive": "PERMISSIVE",
+      "policyname": "orgs_ver",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "DELETE",
+      "qual": "(((org_id = ( SELECT current_org() AS current_org)) AND (( SELECT current_rol() AS current_rol) = 'admin'::text) AND (user_id <> ( SELECT auth.uid() AS uid))) OR ( SELECT es_superadmin() AS es_superadmin))",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "ec_members",
+      "permissive": "PERMISSIVE",
+      "policyname": "mem_del",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "INSERT",
+      "qual": null,
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "ec_members",
+      "permissive": "PERMISSIVE",
+      "policyname": "mem_ins",
+      "schemaname": "public",
+      "with_check": "es_superadmin()"
+    },
+    {
+      "cmd": "UPDATE",
+      "qual": "(((org_id = current_org()) AND (current_rol() = 'admin'::text)) OR es_superadmin())",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "ec_members",
+      "permissive": "PERMISSIVE",
+      "policyname": "mem_upd",
+      "schemaname": "public",
+      "with_check": "(((org_id = current_org()) AND (current_rol() = 'admin'::text)) OR es_superadmin())"
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "((org_id = current_org()) OR es_superadmin())",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "ec_members",
+      "permissive": "PERMISSIVE",
+      "policyname": "mem_ver",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "INSERT",
+      "qual": null,
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "ec_audit",
+      "permissive": "PERMISSIVE",
+      "policyname": "aud_ins",
+      "schemaname": "public",
+      "with_check": "(org_id = current_org())"
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "((org_id = current_org()) OR es_superadmin())",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "ec_audit",
+      "permissive": "PERMISSIVE",
+      "policyname": "aud_ver",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "DELETE",
+      "qual": "((org_id = current_org()) AND ec_can_study(id) AND (current_rol() = ANY (ARRAY['admin'::text, 'medico'::text])))",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "ec_studies",
+      "permissive": "PERMISSIVE",
+      "policyname": "protocol_del",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "INSERT",
+      "qual": null,
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "ec_studies",
+      "permissive": "PERMISSIVE",
+      "policyname": "protocol_ins",
+      "schemaname": "public",
+      "with_check": "((org_id = current_org()) AND ((current_rol() = 'admin'::text) OR es_superadmin()))"
+    },
+    {
+      "cmd": "UPDATE",
+      "qual": "((org_id = current_org()) AND ec_can_study(id) AND (current_rol() = ANY (ARRAY['admin'::text, 'medico'::text])))",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "ec_studies",
+      "permissive": "PERMISSIVE",
+      "policyname": "protocol_upd",
+      "schemaname": "public",
+      "with_check": "((org_id = current_org()) AND ec_can_study(id) AND (current_rol() = ANY (ARRAY['admin'::text, 'medico'::text])))"
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "((org_id = current_org()) AND ec_can_study(id))",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "ec_studies",
+      "permissive": "PERMISSIVE",
+      "policyname": "protocol_ver",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "DELETE",
+      "qual": "((org_id = current_org()) AND (current_rol() = ANY (ARRAY['admin'::text, 'medico'::text])) AND ec_can_study(ec_data_study(data)))",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "ec_patients",
+      "permissive": "PERMISSIVE",
+      "policyname": "protocol_del",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "INSERT",
+      "qual": null,
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "ec_patients",
+      "permissive": "PERMISSIVE",
+      "policyname": "protocol_ins",
+      "schemaname": "public",
+      "with_check": "((org_id = current_org()) AND (current_rol() = ANY (ARRAY['admin'::text, 'medico'::text, 'coord'::text])) AND ec_can_study(ec_data_study(data)))"
+    },
+    {
+      "cmd": "UPDATE",
+      "qual": "((org_id = current_org()) AND (current_rol() = ANY (ARRAY['admin'::text, 'medico'::text, 'coord'::text])) AND ec_can_study(ec_data_study(data)))",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "ec_patients",
+      "permissive": "PERMISSIVE",
+      "policyname": "protocol_upd",
+      "schemaname": "public",
+      "with_check": "((org_id = current_org()) AND (current_rol() = ANY (ARRAY['admin'::text, 'medico'::text, 'coord'::text])) AND ec_can_study(ec_data_study(data)))"
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "((org_id = current_org()) AND ec_can_study(ec_data_study(data)))",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "ec_patients",
+      "permissive": "PERMISSIVE",
+      "policyname": "protocol_ver",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "DELETE",
+      "qual": "((org_id = current_org()) AND (current_rol() = ANY (ARRAY['admin'::text, 'medico'::text])) AND ec_can_study(ec_data_study(data)))",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "ec_visits",
+      "permissive": "PERMISSIVE",
+      "policyname": "protocol_del",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "INSERT",
+      "qual": null,
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "ec_visits",
+      "permissive": "PERMISSIVE",
+      "policyname": "protocol_ins",
+      "schemaname": "public",
+      "with_check": "((org_id = current_org()) AND (current_rol() = ANY (ARRAY['admin'::text, 'medico'::text, 'coord'::text])) AND ec_can_study(ec_data_study(data)))"
+    },
+    {
+      "cmd": "UPDATE",
+      "qual": "((org_id = current_org()) AND (current_rol() = ANY (ARRAY['admin'::text, 'medico'::text, 'coord'::text])) AND ec_can_study(ec_data_study(data)))",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "ec_visits",
+      "permissive": "PERMISSIVE",
+      "policyname": "protocol_upd",
+      "schemaname": "public",
+      "with_check": "((org_id = current_org()) AND (current_rol() = ANY (ARRAY['admin'::text, 'medico'::text, 'coord'::text])) AND ec_can_study(ec_data_study(data)))"
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "((org_id = current_org()) AND ec_can_study(ec_data_study(data)))",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "ec_visits",
+      "permissive": "PERMISSIVE",
+      "policyname": "protocol_ver",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "DELETE",
+      "qual": "((org_id = current_org()) AND ec_can_document(data) AND ((current_rol() = ANY (ARRAY['admin'::text, 'medico'::text])) OR (((data ->> 'tipo'::text) = 'contrato'::text) AND ec_can_facturacion())))",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "ec_docs",
+      "permissive": "PERMISSIVE",
+      "policyname": "contracts_del",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "INSERT",
+      "qual": null,
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "ec_docs",
+      "permissive": "PERMISSIVE",
+      "policyname": "contracts_ins",
+      "schemaname": "public",
+      "with_check": "((org_id = current_org()) AND (current_rol() = ANY (ARRAY['admin'::text, 'medico'::text, 'coord'::text])) AND ec_can_document(data))"
+    },
+    {
+      "cmd": "UPDATE",
+      "qual": "((org_id = current_org()) AND (current_rol() = ANY (ARRAY['admin'::text, 'medico'::text, 'coord'::text])) AND ec_can_document(data))",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "ec_docs",
+      "permissive": "PERMISSIVE",
+      "policyname": "contracts_upd",
+      "schemaname": "public",
+      "with_check": "((org_id = current_org()) AND (current_rol() = ANY (ARRAY['admin'::text, 'medico'::text, 'coord'::text])) AND ec_can_document(data))"
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "((org_id = current_org()) AND ec_can_document(data))",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "ec_docs",
+      "permissive": "PERMISSIVE",
+      "policyname": "contracts_ver",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "DELETE",
+      "qual": "((org_id = current_org()) AND ec_can_record(data) AND ((current_rol() = ANY (ARRAY['admin'::text, 'medico'::text])) OR (((data ->> 'recordType'::text) = ANY (ARRAY['gasto_remis'::text, 'gasto_medicamentos'::text])) AND ec_can_facturacion())))",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "ec_records",
+      "permissive": "PERMISSIVE",
+      "policyname": "finance_records_del",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "INSERT",
+      "qual": null,
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "ec_records",
+      "permissive": "PERMISSIVE",
+      "policyname": "finance_records_ins",
+      "schemaname": "public",
+      "with_check": "((org_id = current_org()) AND (current_rol() = ANY (ARRAY['admin'::text, 'medico'::text, 'coord'::text])) AND ec_can_record(data))"
+    },
+    {
+      "cmd": "UPDATE",
+      "qual": "((org_id = current_org()) AND (current_rol() = ANY (ARRAY['admin'::text, 'medico'::text, 'coord'::text])) AND ec_can_record(data))",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "ec_records",
+      "permissive": "PERMISSIVE",
+      "policyname": "finance_records_upd",
+      "schemaname": "public",
+      "with_check": "((org_id = current_org()) AND (current_rol() = ANY (ARRAY['admin'::text, 'medico'::text, 'coord'::text])) AND ec_can_record(data))"
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "((org_id = current_org()) AND ec_can_record(data))",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "ec_records",
+      "permissive": "PERMISSIVE",
+      "policyname": "finance_records_ver",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "DELETE",
+      "qual": "((org_id = current_org()) AND (current_rol() = ANY (ARRAY['admin'::text, 'medico'::text])) AND ((NULLIF(ec_data_study(data), ''::text) IS NULL) OR ec_can_study(ec_data_study(data))))",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "ec_checklists",
+      "permissive": "PERMISSIVE",
+      "policyname": "protocol_del",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "INSERT",
+      "qual": null,
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "ec_checklists",
+      "permissive": "PERMISSIVE",
+      "policyname": "protocol_ins",
+      "schemaname": "public",
+      "with_check": "((org_id = current_org()) AND (current_rol() = ANY (ARRAY['admin'::text, 'medico'::text, 'coord'::text])) AND ((NULLIF(ec_data_study(data), ''::text) IS NULL) OR ec_can_study(ec_data_study(data))))"
+    },
+    {
+      "cmd": "UPDATE",
+      "qual": "((org_id = current_org()) AND (current_rol() = ANY (ARRAY['admin'::text, 'medico'::text, 'coord'::text])) AND ((NULLIF(ec_data_study(data), ''::text) IS NULL) OR ec_can_study(ec_data_study(data))))",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "ec_checklists",
+      "permissive": "PERMISSIVE",
+      "policyname": "protocol_upd",
+      "schemaname": "public",
+      "with_check": "((org_id = current_org()) AND (current_rol() = ANY (ARRAY['admin'::text, 'medico'::text, 'coord'::text])) AND ((NULLIF(ec_data_study(data), ''::text) IS NULL) OR ec_can_study(ec_data_study(data))))"
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "((org_id = current_org()) AND ((NULLIF(ec_data_study(data), ''::text) IS NULL) OR ec_can_study(ec_data_study(data))))",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "ec_checklists",
+      "permissive": "PERMISSIVE",
+      "policyname": "protocol_ver",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "DELETE",
+      "qual": "((org_id = current_org()) AND (current_rol() = ANY (ARRAY['admin'::text, 'medico'::text])) AND ((NULLIF(ec_data_study(data), ''::text) IS NULL) OR ec_can_study(ec_data_study(data))))",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "ec_settings",
+      "permissive": "PERMISSIVE",
+      "policyname": "protocol_del",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "INSERT",
+      "qual": null,
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "ec_settings",
+      "permissive": "PERMISSIVE",
+      "policyname": "protocol_ins",
+      "schemaname": "public",
+      "with_check": "((org_id = current_org()) AND (current_rol() = ANY (ARRAY['admin'::text, 'medico'::text, 'coord'::text])) AND ((NULLIF(ec_data_study(data), ''::text) IS NULL) OR ec_can_study(ec_data_study(data))))"
+    },
+    {
+      "cmd": "UPDATE",
+      "qual": "((org_id = current_org()) AND (current_rol() = ANY (ARRAY['admin'::text, 'medico'::text, 'coord'::text])) AND ((NULLIF(ec_data_study(data), ''::text) IS NULL) OR ec_can_study(ec_data_study(data))))",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "ec_settings",
+      "permissive": "PERMISSIVE",
+      "policyname": "protocol_upd",
+      "schemaname": "public",
+      "with_check": "((org_id = current_org()) AND (current_rol() = ANY (ARRAY['admin'::text, 'medico'::text, 'coord'::text])) AND ((NULLIF(ec_data_study(data), ''::text) IS NULL) OR ec_can_study(ec_data_study(data))))"
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "((org_id = current_org()) AND ((NULLIF(ec_data_study(data), ''::text) IS NULL) OR ec_can_study(ec_data_study(data))))",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "ec_settings",
+      "permissive": "PERMISSIVE",
+      "policyname": "protocol_ver",
+      "schemaname": "public",
+      "with_check": null
+    }
+  ],
+  "functions": [
+    {
+      "acl": [
+        "postgres=X/postgres",
+        "authenticated=X/postgres",
+        "service_role=X/postgres"
+      ],
+      "args": "p_data jsonb",
+      "name": "ec_can_document",
+      "definition": "CREATE OR REPLACE FUNCTION public.ec_can_document(p_data jsonb)\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  select ec_can_study(ec_data_study(p_data))\r\n    and (\r\n      not (\r\n        coalesce(p_data ->> 'tipo', '') = 'contrato'\r\n        or coalesce(p_data ->> 'tipo', '') ~ '^gasto_(remis|medicamentos)_comprobante$'\r\n      )\r\n      or ec_can_facturacion()\r\n    )\r\n$function$\n"
+    },
+    {
+      "acl": [
+        "postgres=X/postgres",
+        "authenticated=X/postgres",
+        "service_role=X/postgres"
+      ],
+      "args": "p_data jsonb",
+      "name": "ec_can_record",
+      "definition": "CREATE OR REPLACE FUNCTION public.ec_can_record(p_data jsonb)\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  select ec_can_study(ec_data_study(p_data))\r\n    and (\r\n      coalesce(p_data ->> 'recordType', '') not in ('gasto_remis','gasto_medicamentos')\r\n      or ec_can_facturacion()\r\n    )\r\n$function$\n"
+    },
+    {
+      "acl": [
+        "postgres=X/postgres",
+        "authenticated=X/postgres",
+        "service_role=X/postgres"
+      ],
+      "args": "",
+      "name": "ec_can_facturacion",
+      "definition": "CREATE OR REPLACE FUNCTION public.ec_can_facturacion()\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  select es_superadmin()\r\n    or current_rol() = 'admin'\r\n    or exists (\r\n      select 1\r\n      from ec_users u\r\n      where u.org_id = current_org()\r\n        and coalesce((u.data ->> 'activo')::boolean, true)\r\n        and coalesce((u.data ->> 'facturacion')::boolean, false)\r\n        and (\r\n          u.data ->> 'authId' = auth.uid()::text\r\n          or lower(u.data ->> 'email') = lower(coalesce(auth.jwt() ->> 'email', ''))\r\n        )\r\n    )\r\n$function$\n"
+    },
+    {
+      "acl": [
+        "postgres=X/postgres",
+        "authenticated=X/postgres",
+        "service_role=X/postgres"
+      ],
+      "args": "p_data jsonb",
+      "name": "ec_is_own_user",
+      "definition": "CREATE OR REPLACE FUNCTION public.ec_is_own_user(p_data jsonb)\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  select p_data ->> 'authId' = auth.uid()::text\r\n      or lower(p_data ->> 'email') = lower(coalesce(auth.jwt() ->> 'email', ''))\r\n$function$\n"
+    },
+    {
+      "acl": [
+        "postgres=X/postgres",
+        "authenticated=X/postgres",
+        "service_role=X/postgres"
+      ],
+      "args": "",
+      "name": "current_org",
+      "definition": "CREATE OR REPLACE FUNCTION public.current_org()\n RETURNS uuid\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  select org_id from ec_members where user_id = auth.uid() and activo\r\n$function$\n"
+    },
+    {
+      "acl": [
+        "postgres=X/postgres",
+        "authenticated=X/postgres",
+        "service_role=X/postgres"
+      ],
+      "args": "",
+      "name": "current_rol",
+      "definition": "CREATE OR REPLACE FUNCTION public.current_rol()\n RETURNS text\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  select rol from ec_members where user_id = auth.uid() and activo\r\n$function$\n"
+    },
+    {
+      "acl": [
+        "postgres=X/postgres",
+        "authenticated=X/postgres",
+        "service_role=X/postgres"
+      ],
+      "args": "",
+      "name": "es_superadmin",
+      "definition": "CREATE OR REPLACE FUNCTION public.es_superadmin()\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  select coalesce((select superadmin from ec_members\r\n                   where user_id = auth.uid() and activo), false)\r\n$function$\n"
+    },
+    {
+      "acl": [
+        "postgres=X/postgres",
+        "authenticated=X/postgres",
+        "service_role=X/postgres"
+      ],
+      "args": "",
+      "name": "ec_members_guard",
+      "definition": "CREATE OR REPLACE FUNCTION public.ec_members_guard()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\nbegin\r\n  /* sin sesion de usuario = acceso directo por SQL Editor o service_role:\r\n     es el dueno del proyecto o la Edge Function, no se restringe */\r\n  if auth.uid() is null then return new; end if;\r\n  if es_superadmin() then return new; end if;\r\n\r\n  if tg_op = 'INSERT' and new.superadmin then\r\n    raise exception 'Solo un superadministrador puede otorgar ese permiso';\r\n  end if;\r\n\r\n  if tg_op = 'UPDATE' then\r\n    if new.superadmin is distinct from old.superadmin then\r\n      raise exception 'Solo un superadministrador puede otorgar ese permiso';\r\n    end if;\r\n    if new.org_id is distinct from old.org_id then\r\n      raise exception 'No se puede mover un usuario a otra organizacion';\r\n    end if;\r\n    if new.user_id = auth.uid() and new.rol is distinct from old.rol then\r\n      raise exception 'No podes cambiar tu propio rol';\r\n    end if;\r\n  end if;\r\n\r\n  return new;\r\nend $function$\n"
+    },
+    {
+      "acl": [
+        "=X/postgres",
+        "postgres=X/postgres",
+        "anon=X/postgres",
+        "authenticated=X/postgres",
+        "service_role=X/postgres"
+      ],
+      "args": "p_kind text, p_id text, p_data jsonb, p_expected_rev bigint, p_event_id text, p_action text, p_detail text, p_motivo text",
+      "name": "ec_save_record",
+      "definition": "CREATE OR REPLACE FUNCTION public.ec_save_record(p_kind text, p_id text, p_data jsonb, p_expected_rev bigint, p_event_id text, p_action text DEFAULT NULL::text, p_detail text DEFAULT NULL::text, p_motivo text DEFAULT NULL::text)\n RETURNS jsonb\n LANGUAGE plpgsql\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  v_table text; v_rev bigint; v_updated_at timestamptz; v_rows bigint;\r\n  v_created boolean := p_expected_rev is null;\r\nbegin\r\n  v_table := case p_kind\r\n    when 'studies' then 'ec_studies' when 'patients' then 'ec_patients'\r\n    when 'visits' then 'ec_visits' when 'docs' then 'ec_docs'\r\n    when 'users' then 'ec_users' when 'records' then 'ec_records'\r\n    when 'checklists' then 'ec_checklists' when 'settings' then 'ec_settings'\r\n    else null end;\r\n  if v_table is null then raise exception using errcode='22023', message='INVALID_RECORD_KIND'; end if;\r\n  if exists (select 1 from ec_audit where org_id=current_org() and event_id=p_event_id and ref_id=p_id) then\r\n    execute format('select rev, updated_at from %I where id=$1 and org_id=current_org()',v_table)\r\n      using p_id into v_rev,v_updated_at;\r\n    return jsonb_build_object('rev',v_rev,'updated_at',v_updated_at,'created',v_created,'event_id',p_event_id,'replayed',true);\r\n  end if;\r\n  if v_created then\r\n    begin\r\n      execute format('insert into %I (id,data,rev,updated_at,org_id) values ($1,$2,1,now(),current_org()) returning rev,updated_at',v_table)\r\n        using p_id,p_data into v_rev,v_updated_at;\r\n    exception when unique_violation then raise exception using errcode='P0001',message='VERSION_CONFLICT'; end;\r\n  else\r\n    execute format('update %I set data=$1,rev=rev+1,updated_at=now() where id=$2 and org_id=current_org() and rev=$3 returning rev,updated_at',v_table)\r\n      using p_data,p_id,p_expected_rev into v_rev,v_updated_at;\r\n    get diagnostics v_rows = row_count;\r\n    if v_rows = 0 then raise exception using errcode='P0001',message='VERSION_CONFLICT'; end if;\r\n  end if;\r\n  insert into ec_audit(event_id,usuario,rol,entidad,accion,ref_id,detalle,motivo)\r\n  values(p_event_id,coalesce(auth.jwt()->>'email',auth.uid()::text,'usuario'),coalesce(current_rol(),''),p_kind,\r\n    coalesce(nullif(p_action,''),case when v_created then 'alta' else 'modificacion' end),p_id,\r\n    left(coalesce(p_detail,''),600),left(coalesce(p_motivo,''),300));\r\n  return jsonb_build_object('rev',v_rev,'updated_at',v_updated_at,'created',v_created,'event_id',p_event_id);\r\nend $function$\n"
+    },
+    {
+      "acl": [
+        "postgres=X/postgres",
+        "authenticated=X/postgres",
+        "service_role=X/postgres"
+      ],
+      "args": "",
+      "name": "ec_user_study_ids",
+      "definition": "CREATE OR REPLACE FUNCTION public.ec_user_study_ids()\n RETURNS text[]\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  select coalesce(array_agg(distinct s.id), array[]::text[])\r\n  from ec_users u\r\n  cross join lateral jsonb_array_elements_text(coalesce(u.data -> 'estudios', '[]'::jsonb)) s(id)\r\n  where u.org_id = current_org()\r\n    and coalesce((u.data ->> 'activo')::boolean, true)\r\n    and (\r\n      u.data ->> 'authId' = auth.uid()::text\r\n      or lower(u.data ->> 'email') = lower(coalesce(auth.jwt() ->> 'email', ''))\r\n    )\r\n$function$\n"
+    },
+    {
+      "acl": [
+        "postgres=X/postgres",
+        "authenticated=X/postgres",
+        "service_role=X/postgres"
+      ],
+      "args": "p_study_id text",
+      "name": "ec_can_study",
+      "definition": "CREATE OR REPLACE FUNCTION public.ec_can_study(p_study_id text)\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  select es_superadmin()\r\n    or current_rol() = 'admin'\r\n    or p_study_id = any(ec_user_study_ids())\r\n$function$\n"
+    },
+    {
+      "acl": [
+        "postgres=X/postgres",
+        "authenticated=X/postgres",
+        "service_role=X/postgres"
+      ],
+      "args": "p_data jsonb",
+      "name": "ec_data_study",
+      "definition": "CREATE OR REPLACE FUNCTION public.ec_data_study(p_data jsonb)\n RETURNS text\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  select coalesce(\r\n    nullif(p_data ->> 'estudioId', ''),\r\n    (select nullif(p.data ->> 'estudioId', '')\r\n       from ec_patients p\r\n      where p.org_id = current_org() and p.id = p_data ->> 'pacienteId'\r\n      limit 1)\r\n  )\r\n$function$\n"
+    },
+    {
+      "acl": [
+        "=X/postgres",
+        "postgres=X/postgres",
+        "anon=X/postgres",
+        "authenticated=X/postgres",
+        "service_role=X/postgres"
+      ],
+      "args": "p_kind text, p_id text, p_expected_rev bigint, p_event_id text, p_detail text, p_motivo text",
+      "name": "ec_remove_record",
+      "definition": "CREATE OR REPLACE FUNCTION public.ec_remove_record(p_kind text, p_id text, p_expected_rev bigint, p_event_id text, p_detail text DEFAULT NULL::text, p_motivo text DEFAULT NULL::text)\n RETURNS jsonb\n LANGUAGE plpgsql\n SET search_path TO 'public'\nAS $function$\r\ndeclare v_table text; v_rows bigint;\r\nbegin\r\n  v_table := case p_kind\r\n    when 'studies' then 'ec_studies' when 'patients' then 'ec_patients'\r\n    when 'visits' then 'ec_visits' when 'docs' then 'ec_docs'\r\n    when 'users' then 'ec_users' when 'records' then 'ec_records'\r\n    when 'checklists' then 'ec_checklists' when 'settings' then 'ec_settings'\r\n    else null end;\r\n  if v_table is null then raise exception using errcode='22023',message='INVALID_RECORD_KIND'; end if;\r\n  if exists (select 1 from ec_audit where org_id=current_org() and event_id=p_event_id and ref_id=p_id) then\r\n    return jsonb_build_object('deleted',true,'event_id',p_event_id,'replayed',true);\r\n  end if;\r\n  execute format('delete from %I where id=$1 and org_id=current_org() and rev=$2',v_table) using p_id,p_expected_rev;\r\n  get diagnostics v_rows = row_count;\r\n  if v_rows = 0 then raise exception using errcode='P0001',message='VERSION_CONFLICT'; end if;\r\n  insert into ec_audit(event_id,usuario,rol,entidad,accion,ref_id,detalle,motivo)\r\n  values(p_event_id,coalesce(auth.jwt()->>'email',auth.uid()::text,'usuario'),coalesce(current_rol(),''),p_kind,'baja',p_id,\r\n    left(coalesce(p_detail,''),600),left(coalesce(p_motivo,''),300));\r\n  return jsonb_build_object('deleted',true,'event_id',p_event_id);\r\nend $function$\n"
+    },
+    {
+      "acl": [
+        "postgres=X/postgres",
+        "authenticated=X/postgres",
+        "service_role=X/postgres"
+      ],
+      "args": "p_name text",
+      "name": "ec_can_storage_object",
+      "definition": "CREATE OR REPLACE FUNCTION public.ec_can_storage_object(p_name text)\n RETURNS boolean\n LANGUAGE plpgsql\n STABLE SECURITY DEFINER\n SET search_path TO 'public', 'storage'\nAS $function$\r\ndeclare\r\n  v_org text := split_part(p_name, '/', 1);\r\n  v_scope text := split_part(p_name, '/', 2);\r\n  v_doc_id text := nullif(split_part(p_name, '/', 3), '');\r\n  v_doc_data jsonb;\r\nbegin\r\n  if v_org <> current_org()::text then return false; end if;\r\n\r\n  if v_doc_id is not null then\r\n    select d.data into v_doc_data\r\n      from ec_docs d\r\n      where d.org_id = current_org() and d.id = v_doc_id\r\n      limit 1;\r\n  end if;\r\n\r\n  if v_doc_data is null then\r\n    select d.data into v_doc_data\r\n      from ec_docs d\r\n      where d.org_id = current_org() and d.id = v_scope\r\n      limit 1;\r\n  end if;\r\n\r\n  if v_doc_data is not null then\r\n    return ec_can_document(v_doc_data);\r\n  end if;\r\n\r\n  -- Durante una carga nueva el objeto se crea antes que su ficha ec_docs.\r\n  -- La inserción posterior de la ficha vuelve a validar tipo y facturación.\r\n  if exists (select 1 from ec_studies s where s.org_id = current_org() and s.id = v_scope) then\r\n    return ec_can_study(v_scope);\r\n  end if;\r\n  return false;\r\nend $function$\n"
+    }
+  ],
+  "auth_triggers": null,
+  "sequences": [
+    {
+      "acl": [
+        "postgres=rwU/postgres",
+        "anon=rwU/postgres",
+        "authenticated=rwU/postgres",
+        "service_role=rwU/postgres"
+      ],
+      "max": "9223372036854775807",
+      "min": "1",
+      "name": "ec_audit_id_seq",
+      "cache": "1",
+      "cycle": false,
+      "start": "1",
+      "table": "ec_audit",
+      "owned_by": "id",
+      "increment": "1"
+    }
+  ],
+  "extensions": [
+    {
+      "name": "plpgsql",
+      "schema": "pg_catalog",
+      "version": "1.0"
+    },
+    {
+      "name": "pg_stat_statements",
+      "schema": "extensions",
+      "version": "1.11"
+    },
+    {
+      "name": "uuid-ossp",
+      "schema": "extensions",
+      "version": "1.1"
+    },
+    {
+      "name": "pgcrypto",
+      "schema": "extensions",
+      "version": "1.3"
+    },
+    {
+      "name": "supabase_vault",
+      "schema": "vault",
+      "version": "0.3.1"
+    }
+  ],
+  "schema_acl": [
+    "pg_database_owner=UC/pg_database_owner",
+    "=U/pg_database_owner",
+    "postgres=U/pg_database_owner",
+    "anon=U/pg_database_owner",
+    "authenticated=U/pg_database_owner",
+    "service_role=U/pg_database_owner"
+  ],
+  "default_acl": [
+    {
+      "acl": [
+        "postgres=arwdDxtm/postgres",
+        "anon=arwdDxtm/postgres",
+        "authenticated=arwdDxtm/postgres",
+        "service_role=arwdDxtm/postgres"
+      ],
+      "role": "postgres",
+      "type": "r",
+      "schema": "public"
+    },
+    {
+      "acl": [
+        "postgres=X/postgres",
+        "anon=X/postgres",
+        "authenticated=X/postgres",
+        "service_role=X/postgres"
+      ],
+      "role": "postgres",
+      "type": "f",
+      "schema": "public"
+    },
+    {
+      "acl": [
+        "postgres=rwU/postgres",
+        "anon=rwU/postgres",
+        "authenticated=rwU/postgres",
+        "service_role=rwU/postgres"
+      ],
+      "role": "postgres",
+      "type": "S",
+      "schema": "public"
+    },
+    {
+      "acl": [
+        "postgres=rwU/supabase_admin",
+        "anon=rwU/supabase_admin",
+        "authenticated=rwU/supabase_admin",
+        "service_role=rwU/supabase_admin"
+      ],
+      "role": "supabase_admin",
+      "type": "S",
+      "schema": "public"
+    },
+    {
+      "acl": [
+        "postgres=arwdDxtm/supabase_admin",
+        "anon=arwdDxtm/supabase_admin",
+        "authenticated=arwdDxtm/supabase_admin",
+        "service_role=arwdDxtm/supabase_admin"
+      ],
+      "role": "supabase_admin",
+      "type": "r",
+      "schema": "public"
+    },
+    {
+      "acl": [
+        "postgres=X/supabase_admin",
+        "anon=X/supabase_admin",
+        "authenticated=X/supabase_admin",
+        "service_role=X/supabase_admin"
+      ],
+      "role": "supabase_admin",
+      "type": "f",
+      "schema": "public"
+    }
+  ]
+}

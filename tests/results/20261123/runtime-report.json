@@ -1,0 +1,70 @@
+{
+  "startedAt": "2026-11-23T23:23:48.123Z",
+  "runtime": "native official binaries, loopback only",
+  "passed": true,
+  "stages": [
+    {
+      "stage": "PostgreSQL 17.12 ready",
+      "at": "2026-11-23T23:23:48.561Z"
+    },
+    {
+      "stage": "Auth 2.198.0 ready",
+      "at": "2026-11-23T23:23:49.014Z"
+    },
+    {
+      "stage": "Official Auth uid/jwt/email/role helpers match production definitions",
+      "at": "2026-11-23T23:23:49.120Z"
+    },
+    {
+      "stage": "Storage 1.98.6 ready",
+      "at": "2026-11-23T23:23:51.628Z"
+    },
+    {
+      "stage": "PostgREST 16.6 ready",
+      "at": "2026-11-23T23:23:52.078Z"
+    },
+    {
+      "stage": "Loopback gateway ready",
+      "at": "2026-11-23T23:23:52.090Z"
+    },
+    {
+      "stage": "Empty local application schema reset for exact baseline reconstruction",
+      "at": "2026-11-23T23:23:52.205Z"
+    },
+    {
+      "stage": "Guarded application baseline applied",
+      "at": "2026-11-23T23:23:52.517Z"
+    },
+    {
+      "stage": "Application schema matches captured baseline",
+      "at": "2026-11-23T23:23:52.574Z",
+      "counts": {
+        "tables": 11,
+        "functions": 14,
+        "policies": 43
+      },
+      "extensionDifferencesDeclared": true
+    },
+    {
+      "stage": "Application API schema ready",
+      "at": "2026-11-23T23:23:52.604Z"
+    },
+    {
+      "stage": "Baseline reproduced coordinator deletion defect; cleanup verified",
+      "at": "2026-11-23T23:23:55.756Z"
+    },
+    {
+      "stage": "Pending migration applied only to local synthetic database",
+      "at": "2026-11-23T23:23:55.806Z"
+    },
+    {
+      "stage": "All 14 real Auth/Storage integration checks passed; cleanup verified",
+      "at": "2026-11-23T23:23:58.831Z"
+    },
+    {
+      "stage": "Local rollback restored the captured application baseline",
+      "at": "2026-11-23T23:23:58.913Z"
+    }
+  ],
+  "finishedAt": "2026-11-23T23:23:59.084Z"
+}
