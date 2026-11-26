@@ -289,15 +289,19 @@ async function createOrganization(ctx: Awaited<ReturnType<typeof requireAdminist
 async function changePassword(ctx: Awaited<ReturnType<typeof requireAdministrator>>, input: Record<string, unknown>) {
   const target = await targetMember(ctx, input.authId);
   const password = validTemporaryPassword(input.claveTemporal);
-  await audit(ctx, "cambio de clave solicitado", target.user_id, "Asignación de clave temporal; contenido no registrado");
+  const personal = target.user_id === ctx.user.id;
+  await audit(ctx, "cambio de clave solicitado", target.user_id, personal
+    ? "Cambio de clave personal; contenido no registrado" : "Asignación de clave temporal; contenido no registrado");
   const response = await fetch(`${ctx.supabaseUrl}/auth/v1/admin/users/${target.user_id}`, {
     method: "PUT",
     headers: serviceHeaders(ctx.serviceKey),
-    body: JSON.stringify({ password, user_metadata: { clave_temporal: true } }),
+    body: JSON.stringify({ password, user_metadata: { clave_temporal: !personal } }),
   });
   if (!response.ok) throw new Error("PASSWORD_UPDATE_FAILED");
-  return completed(ctx, "cambio de clave", target.user_id, "Clave temporal asignada; contenido no registrado",
-    "Clave cambiada. El usuario deberá reemplazarla al iniciar sesión.");
+  return completed(ctx, "cambio de clave", target.user_id,
+    personal ? "Clave personal actualizada; contenido no registrado" : "Clave temporal asignada; contenido no registrado",
+    personal ? "Tu clave personal quedó actualizada. Podés usarla para ingresar."
+      : "Clave cambiada. El usuario deberá reemplazarla al iniciar sesión.");
 }
 
 async function targetProfiles(ctx: Awaited<ReturnType<typeof requireAdministrator>>, target: Member, requestedId: unknown) {

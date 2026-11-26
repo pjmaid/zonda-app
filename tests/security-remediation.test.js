@@ -11,7 +11,7 @@ const migration=fs.readFileSync(path.join(root,'supabase/migrations/20261113_end
 
 test('la recuperación valida el enlace y permite definir una clave nueva',()=>{
   assert.match(html,/type!=='recovery'&&type!=='invite'/);
-  assert.match(html,/Authorization:'Bearer '\+RECOVERY_TOKEN/);
+  assert.match(html,/savePersonalPassword\(p1,RECOVERY_TOKEN\)/);
   assert.match(html,/new URLSearchParams\(\{redirect_to:redirectTo\}\)/);
   assert.doesNotMatch(html,/\/auth\/v1\/signup/);
 });

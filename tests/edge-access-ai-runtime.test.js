@@ -72,6 +72,24 @@ const deleteInput = { accion: 'eliminar_usuario', authId: targetId, profileId: '
 const aiInput = { content: 'Material de ejemplo sin datos personales.', purpose: 'protocolo_resumen' };
 const authMutations = state => state.calls.filter(call => call.url.pathname.startsWith('/auth/') && call.method !== 'GET');
 
+test('cambiar la propia clave la confirma como personal; una clave asignada a otro sigue temporal', async () => {
+  for (const ownAccount of [true, false]) {
+    const app = edge('users', { actor: { superadmin: !ownAccount } });
+    const id = ownAccount ? actorId : targetId;
+    const result = await app.request({ ...passwordInput, authId: id });
+    assert.equal(result.status, 200);
+    const updates = authMutations(app.state);
+    assert.equal(updates.length, 1);
+    assert.equal(updates[0].method, 'PUT');
+    assert.equal(updates[0].url.pathname, `/auth/v1/admin/users/${id}`);
+    assert.deepEqual(updates[0].body.user_metadata, { clave_temporal: !ownAccount });
+    assert.match(result.body.mensaje, ownAccount ? /clave personal quedó actualizada/ : /deberá reemplazarla/);
+    assert.equal(app.state.audits.length, 2);
+    assert.ok(app.state.audits.every(event => event.detalle.includes(ownAccount ? 'personal' : 'temporal')));
+    assert.ok(app.state.audits.every(event => !JSON.stringify(event).includes(passwordInput.claveTemporal)));
+  }
+});
+
 test('un administrador de sitio no puede cambiar la clave ni borrar un superadministrador', async () => {
   for (const input of [passwordInput, deleteInput]) {
     const app = edge('users', { target: { superadmin: true } });

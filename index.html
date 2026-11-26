@@ -929,7 +929,7 @@ details>summary{color:var(--acc-dark)}
         <div style="flex:0 0 170px"><label>Minutos de bloqueo</label><input type="number" id="secBloqueo" min="1" max="120"></div>
         <div style="flex:0 0 210px"><label>Cierre por inactividad (minutos)</label><input type="number" id="secInact" min="0" max="120"></div>
         <div style="flex:0 0 200px"><label>Vigencia de la clave (días)</label><input type="number" id="secVigencia" min="0" max="365"></div>
-        <div style="flex:0 0 200px"><label>Claves que no se pueden repetir</label><input type="number" id="secHist" min="0" max="20"></div>
+        <div style="flex:0 0 200px"><label>Reutilización de claves</label><div class="small muted">Permitida si cumplen los requisitos de seguridad.</div></div>
       </div>
       <div class="toolbar" style="margin-top:10px;margin-bottom:0">
         <button class="primary" id="btnSaveSec">Guardar política</button>
@@ -2174,6 +2174,8 @@ async function supaRefresh(){
          de un cierre de sesión o del ingreso de otro usuario. */
       Object.assign(session, { access_token:j.access_token, refresh_token:j.refresh_token,
         email:(j.user&&j.user.email)||session.email });
+      if(j.user && j.user.user_metadata && typeof j.user.user_metadata==='object')
+        session.claveTemp = j.user.user_metadata.clave_temporal===true;
       saveJSON(LS.SES, session);
       return true;
     }catch(e){ return false; }
@@ -2389,7 +2391,7 @@ const SEC_DEF = {
   bloqueoMin: 15,          /* minutos de bloqueo */
   inactividadMin: 15,      /* cierre de sesión por inactividad */
   vigenciaDias: 90,        /* validez de la clave */
-  historial: 5             /* claves anteriores que no se pueden repetir */
+  historial: 5             /* registro local; reutilizar claves está permitido */
 };
 function secCfg(){ return Object.assign({}, SEC_DEF, CFG.seguridad||{}); }
 
@@ -2452,11 +2454,6 @@ function claveVencida(rec){
   const c = secCfg();
   if(!c.vigenciaDias || !rec || !rec.claveFecha) return false;
   return diffDays(String(rec.claveFecha).slice(0,10), todayISO()) > c.vigenciaDias;
-}
-async function claveRepetida(pass, rec){
-  const hist = (rec && rec.claveHist) || [];
-  for(const h of hist){ if(await verificarHash(pass, h.salt, h.hash)) return true; }
-  return false;
 }
 function pushHistorial(rec, salt, hash){
   const c = secCfg();
@@ -2860,8 +2857,13 @@ async function authJsonRequest(path, options, useSession, timeoutMs=20000){
     throw new Error('No se pudo conectar con Zonda. Revisá internet y volvé a intentar.');
   }finally{ clearTimeout(timer); }
 }
+function authPasswordUnchanged(body){
+  return String(body&&body.error_code||body&&body.code||'')==='same_password' ||
+    /new password should be different from the old password/i.test(String(body&&body.msg||body&&body.error_description||body&&body.message||''));
+}
 function authResponseMessage(response,body,fallback){
   const code=String(body&&body.error_code||body&&body.code||'');
+  if(authPasswordUnchanged(body)) return 'Esa ya es tu clave actual.';
   if(code==='invalid_credentials'||/invalid login credentials/i.test(String(body&&body.msg||body&&body.error_description||'')))
     return 'Email o clave incorrectos. Si usás el autocompletado, escribí la clave actual o elegí «¿Olvidaste la clave?».';
   if(code==='email_not_confirmed') return 'El email todavía no está confirmado. Abrí la invitación enviada por tu administrador.';
@@ -2884,6 +2886,30 @@ function toggleAuthPassword(ids,button){
 }
 function authPasswordValid(password){
   return passCheck(password).ok;
+}
+async function savePersonalPassword(password,token){
+  if(!authPasswordValid(password)) throw new Error('La clave no cumple los requisitos.');
+  const session=SESSION, useSession=!token;
+  const send=body=>authJsonRequest('/auth/v1/user',{method:'PUT',
+    ...(token?{headers:{Authorization:'Bearer '+token}}:{}),body:JSON.stringify(body)},useSession);
+  const assertContext=()=>{
+    if((useSession && SESSION!==session) || (token && RECOVERY_TOKEN!==token))
+      throw new Error('La sesión cambió. Volvé a ingresar antes de confirmar la clave.');
+  };
+  let result=await send({password,data:{clave_temporal:false}});
+  assertContext();
+  const reused=!result.response.ok && authPasswordUnchanged(result.body);
+  if(reused){
+    // Auth confirmó que es la clave actual. No reenviar la misma contraseña:
+    // confirmar por separado que el usuario decidió conservarla como personal.
+    result=await send({data:{clave_temporal:false}});
+    assertContext();
+    if(result.response.ok && (!result.body.id ||
+      (useSession && result.body.id!==jwtSub()) ||
+      !result.body.user_metadata || result.body.user_metadata.clave_temporal!==false))
+      throw new Error('No se pudo confirmar tu clave personal. Volvé a intentar.');
+  }
+  return Object.assign({},result,{reused});
 }
 function clearPrivateSessionData(){
   DB={studies:[],patients:[],visits:[],docs:[],users:[],records:[],checklists:[],settings:[]};
@@ -3131,12 +3157,12 @@ $('btnRecoverySave').addEventListener('click',async()=>{
   $('btnRecoverySave').disabled=true; $('btnRecoveryCancel').disabled=true;
   m.className='muted'; m.textContent='Guardando la nueva clave...';
   try{
-    const {response:r,body:j}=await authJsonRequest('/auth/v1/user',{method:'PUT',headers:{Authorization:'Bearer '+RECOVERY_TOKEN},body:JSON.stringify({password:p1,data:{clave_temporal:false}})});
+    const {response:r,body:j}=await savePersonalPassword(p1,RECOVERY_TOKEN);
     if(!r.ok){
       if(r.status===401||r.status===403){ RECOVERY_TOKEN=''; throw new Error('El enlace venció. Volvé al ingreso y solicitá uno nuevo.'); }
       throw new Error(authResponseMessage(r,j,'No se pudo actualizar la clave.'));
     }
-    closeRecoveryForm(); loginMsg('Clave actualizada. Ingresá con tu email y la nueva clave.',true); $('loginPass').focus();
+    closeRecoveryForm(); loginMsg('Clave confirmada. Ingresá con tu email y la clave que elegiste.',true); $('loginPass').focus();
   }catch(e){ m.className='err'; m.textContent=e.message; }
   finally{$('btnRecoverySave').disabled=false; $('btnRecoveryCancel').disabled=false;}
 });
@@ -3209,15 +3235,16 @@ async function enterApp(){
 }
 
 async function forzarCambioClave(){
+  const session=SESSION;
   return new Promise(res=>{
     const back = document.createElement('div'); back.className='modal-back';
     back.innerHTML =
       '<div class="modal" style="max-width:440px">'+
         '<h3>'+T('Definí tu clave personal')+'</h3>'+
         '<div class="muted small" style="margin-bottom:8px">'+
-          T('Entraste con una clave temporal asignada por el administrador. Antes de continuar, definí una clave que solo vos conozcas: es la que respalda tu firma en los registros.')+
+          T('Confirmá la clave personal que querés usar. Podés conservar la actual o reutilizar una anterior si cumple los requisitos.')+
         '</div>'+
-        '<label for="fc_p1">'+T('Clave nueva')+'</label><input type="password" id="fc_p1" autocomplete="new-password" aria-describedby="fc_msg">'+
+        '<label for="fc_p1">'+T('Clave personal')+'</label><input type="password" id="fc_p1" autocomplete="new-password" aria-describedby="fc_msg">'+
         '<label for="fc_p2">'+T('Repetila')+'</label><input type="password" id="fc_p2" autocomplete="new-password">'+
         '<div class="small" id="fc_msg" role="status" aria-live="polite" style="margin-top:6px;min-height:16px">'+T('Mínimo 10 caracteres, con mayúscula, minúscula, número y símbolo.')+'</div>'+
         '<div class="toolbar" style="margin-top:10px;margin-bottom:0">'+
@@ -3238,12 +3265,13 @@ async function forzarCambioClave(){
       button.disabled=true; cancel.disabled=true;
       m.textContent = T('Guardando...'); m.style.color='var(--muted)';
       try{
-        const {response:r,body:j} = await authJsonRequest('/auth/v1/user', {method:'PUT',
-          body:JSON.stringify({password:p1,data:{clave_temporal:false}})},true);
-        if(!r.ok) throw new Error(authResponseMessage(r,j,'No se pudo actualizar la clave.'));
+        if(SESSION!==session) throw new Error('La sesión cambió. Cerrá este formulario y volvé a ingresar.');
+        const {response:r,body:j,reused} = await savePersonalPassword(p1);
+        if(SESSION!==session) throw new Error('La sesión cambió. Cerrá este formulario y volvé a ingresar.');
+        if(!r.ok) throw new Error(authResponseMessage(r,j,'No se pudo confirmar la clave.'));
         SESSION.claveTemp = false; saveJSON(LS.SES, SESSION);
-        auditar('sesion','cambio_clave_inicial','', CURRENT_USER);
-        back.remove(); toast(T('Clave actualizada.'));
+        auditar('sesion',reused?'confirmación_clave_personal':'cambio_clave_inicial','', CURRENT_USER);
+        back.remove(); toast(T(reused?'Tu clave actual quedó confirmada.':'Clave actualizada.'));
         res(true);
       }catch(e){ m.textContent = '⚠ '+e.message; m.style.color='var(--bad)'; }
       finally{button.disabled=false; cancel.disabled=false;}
@@ -12256,7 +12284,6 @@ function initSecUI(){
   const c = secCfg();
   $('secIntentos').value = c.intentos; $('secBloqueo').value = c.bloqueoMin;
   $('secInact').value = c.inactividadMin; $('secVigencia').value = c.vigenciaDias;
-  $('secHist').value = c.historial;
   $('secCard').classList.toggle('hidden', !can('config'));
 }
 $('btnSaveSec').addEventListener('click', ()=>{
@@ -12267,7 +12294,6 @@ $('btnSaveSec').addEventListener('click', ()=>{
     bloqueoMin: num('secBloqueo',1,120,SEC_DEF.bloqueoMin),
     inactividadMin: num('secInact',0,120,SEC_DEF.inactividadMin),
     vigenciaDias: num('secVigencia',0,365,SEC_DEF.vigenciaDias),
-    historial: num('secHist',0,20,SEC_DEF.historial),
     pbkdf2: SEC_DEF.pbkdf2
   };
   saveJSON(LS.CFG, CFG);
@@ -12561,7 +12587,6 @@ function userForm(id){
     if(claveEl && claveEl.value){
       const pc = passCheck(claveEl.value);
       if(!pc.ok){ toast(T('La clave no cumple los requisitos. Falta')+': '+pc.faltan.map(f=>T(f)).join(', ')+'.'); return; }
-      if(await claveRepetida(claveEl.value, u)){ toast(T('Esa clave ya se usó antes. Elegí una distinta.')); return; }
       const salt = uid();
       const hash = await hashClave(claveEl.value, salt);
       cred = pushHistorial(Object.assign({}, u, { salt, hash }), salt, hash);

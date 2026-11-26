@@ -156,6 +156,17 @@ test('las renovaciones simultáneas comparten una única solicitud', async () =>
   assert.equal(ctx.SESSION.access_token, 'new-access');
 });
 
+test('renovar sesión reemplaza el indicador temporal obsoleto por el estado de Auth',async()=>{
+  for(const temporary of [false,true]){
+    const ctx=app(async()=>reply({access_token:'new-access',refresh_token:'new-refresh',
+      user:{email:'test@example.invalid',user_metadata:{clave_temporal:temporary}}}));
+    ctx.SESSION.claveTemp=!temporary;
+    assert.equal(await ctx.refresh(),true);
+    assert.equal(ctx.SESSION.claveTemp,temporary);
+    assert.equal(ctx.saved.at(-1).claveTemp,temporary);
+  }
+});
+
 test('una renovación pendiente no reemplaza una cuenta que acaba de ingresar', async () => {
   const network = deferred();
   const ctx = app(async () => network.promise);

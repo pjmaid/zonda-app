@@ -118,7 +118,7 @@ test('guardar una clave recuperada limpia el indicador temporal y las contraseñ
   assert.equal(ctx.element('recoveryPass').value,'');
   assert.equal(ctx.element('recoveryPass2').value,'');
   assert.equal(ctx.element('recoveryBox').classList.contains('hidden'),true);
-  assert.match(ctx.element('loginMsg').textContent,/Clave actualizada/);
+  assert.match(ctx.element('loginMsg').textContent,/Clave confirmada/);
 });
 
 test('una clave existente se transmite intacta y dos ingresos simultáneos producen una sola solicitud',async()=>{
@@ -207,6 +207,100 @@ test('el cambio de clave temporal se guarda una sola vez y permite reintentar tr
   assert.equal(await result,true);
   assert.equal(ctx.SESSION.claveTemp,false);
   assert.deepEqual(update,{password:'Cometa!2026Azul',data:{clave_temporal:false}});
+});
+
+test('conservar la clave actual confirma la elección y cierra el aviso',async()=>{
+  const calls=[];
+  const ctx=app(async(_url,opts)=>{
+    calls.push({method:opts.method,body:JSON.parse(opts.body)});
+    return calls.length===1?reply({code:'same_password',msg:'New password should be different from the old password.'},422)
+      :reply({id:'user-test',user_metadata:{clave_temporal:false}});
+  });
+  ctx.SESSION={claveTemp:true};
+  const result=ctx.auth.temporary();
+  ctx.element('fc_p1').value=ctx.element('fc_p2').value='RíoT7!vexa';
+  await ctx.click('fc_ok');
+  assert.equal(await result,true);
+  assert.equal(ctx.SESSION.claveTemp,false);
+  assert.deepEqual(calls,[
+    {method:'PUT',body:{password:'RíoT7!vexa',data:{clave_temporal:false}}},
+    {method:'PUT',body:{data:{clave_temporal:false}}}
+  ]);
+});
+
+for(const [label,status,body] of [
+  ['si falla la confirmación',503,{}],
+  ['si sigue siendo temporal',200,{id:'user-test',user_metadata:{clave_temporal:true}}],
+  ['si pertenece a otra cuenta',200,{id:'other-user',user_metadata:{clave_temporal:false}}]
+]) test('conservar la clave no cierra el aviso '+label,async()=>{
+  let calls=0;
+  const ctx=app(async()=>++calls===1?reply({code:'same_password'},422):reply(body,status));
+  ctx.SESSION={claveTemp:true};
+  const result=ctx.auth.temporary();
+  ctx.element('fc_p1').value=ctx.element('fc_p2').value='RíoT7!vexa';
+  await ctx.click('fc_ok');
+  assert.equal(calls,2);
+  assert.equal(ctx.SESSION.claveTemp,true);
+  assert.match(ctx.element('fc_msg').textContent,/confirmar tu clave|servicio de acceso no está disponible/);
+  await ctx.click('fc_cancel');
+  assert.equal(await result,false);
+});
+
+test('otro error de contraseña no intenta confirmar la clave sin cambiarla',async()=>{
+  let calls=0;
+  const ctx=app(async()=>{calls++;return reply({code:'weak_password',msg:'Clave rechazada'},422);});
+  ctx.SESSION={claveTemp:true};
+  const result=ctx.auth.temporary();
+  ctx.element('fc_p1').value=ctx.element('fc_p2').value='RíoT7!vexa';
+  await ctx.click('fc_ok');
+  assert.equal(calls,1);
+  assert.equal(ctx.SESSION.claveTemp,true);
+  await ctx.click('fc_cancel');assert.equal(await result,false);
+});
+
+test('un formulario de otra sesión no envía ninguna solicitud',async()=>{
+  let calls=0;
+  const ctx=app(async()=>{calls++;return reply({});});
+  ctx.SESSION={claveTemp:true};
+  const result=ctx.auth.temporary();
+  ctx.element('fc_p1').value=ctx.element('fc_p2').value='RíoT7!vexa';
+  ctx.SESSION={claveTemp:true,email:'other@example.invalid'};
+  await ctx.click('fc_ok');
+  assert.equal(calls,0);assert.equal(ctx.SESSION.claveTemp,true);
+  assert.match(ctx.element('fc_msg').textContent,/sesión cambió/);
+  await ctx.click('fc_cancel');assert.equal(await result,false);
+});
+
+test('un cambio de sesión durante la respuesta impide confirmar la clave de otra sesión',async()=>{
+  const pending=deferred();let calls=0;
+  const ctx=app(async()=>{calls++;return pending.promise;});
+  ctx.SESSION={claveTemp:true};
+  const result=ctx.auth.temporary();
+  ctx.element('fc_p1').value=ctx.element('fc_p2').value='RíoT7!vexa';
+  const saving=ctx.click('fc_ok');
+  ctx.SESSION={claveTemp:true,email:'other@example.invalid'};
+  pending.resolve(reply({code:'same_password'},422));await saving;
+  assert.equal(calls,1);assert.equal(ctx.SESSION.claveTemp,true);
+  assert.match(ctx.element('fc_msg').textContent,/sesión cambió/);
+  await ctx.click('fc_cancel');assert.equal(await result,false);
+});
+
+test('la recuperación permite conservar la clave actual con el mismo token validado',async()=>{
+  const updates=[];
+  const ctx=app(async(_url,opts)=>{
+    if(opts.method!=='PUT')return reply({id:'user-test',email:'user@example.invalid'});
+    assert.equal(opts.headers.Authorization,'Bearer recovery-test');
+    updates.push(JSON.parse(opts.body));
+    return updates.length===1?reply({code:'same_password'},422)
+      :reply({id:'user-test',user_metadata:{clave_temporal:false}});
+  },'https://zonda.example.invalid/#type=recovery&access_token=recovery-test');
+  await ctx.auth.consume();
+  ctx.element('recoveryPass').value=ctx.element('recoveryPass2').value='RíoT7!vexa';
+  await ctx.click('btnRecoverySave');
+  assert.deepEqual(updates,[{password:'RíoT7!vexa',data:{clave_temporal:false}},{data:{clave_temporal:false}}]);
+  assert.equal(ctx.auth.getRecoveryToken(),'');
+  assert.equal(ctx.element('recoveryBox').classList.contains('hidden'),true);
+  assert.match(ctx.element('loginMsg').textContent,/Clave confirmada/);
 });
 
 test('el arranque bloquea un ingreso concurrente mientras valida el enlace y restaura el botón',async()=>{

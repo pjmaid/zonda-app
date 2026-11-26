@@ -7,8 +7,8 @@
  */
 window.ZONDA_RUNTIME_CONFIG = Object.freeze({
   environment: 'production',
-  appVersion: '0.9.6',
-  releaseId: 'zonda-0.9.6-20261126-claves10',
+  appVersion: '0.9.6.1',
+  releaseId: 'zonda-0.9.6.1-20261126-clave-personal',
   supaUrl: 'https://aqinxboxjklsyvesdcyr.supabase.co',
   supaKey: 'sb_publishable_ypqDPv6T3S4cDuNFi2Yq2A_Lt5rJ68m'
 });
