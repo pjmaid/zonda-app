@@ -2328,14 +2328,14 @@ const Store = {
     }
     return body;
   },
-  async upsert(kind, obj, audit){
+  async upsert(kind, obj, audit, {soloAlta=false}={}){
     assertDeploymentWritable();
     if(!obj || !obj.id || !KIND_TABLE[kind]) throw new Error('Registro inválido.');
     /* Aislar lo enviado de los cambios posteriores del formulario. */
     obj = cloneData(obj); audit = cloneData(audit);
     const session = SESSION;
     if(!this.revisions[kind]) this.resetMeta();
-    const expected = this.revisions[kind].has(obj.id) ? this.revisions[kind].get(obj.id) : null;
+    const expected = !soloAlta && this.revisions[kind].has(obj.id) ? this.revisions[kind].get(obj.id) : null;
     const eventId = uid();
     syncStatus('storage','saving','Guardando y registrando auditoría…');
     try{
@@ -2366,7 +2366,7 @@ const Store = {
       if(e.sessionChanged) throw e;
       if(e.conflict){ try{ await this.refreshOne(kind,obj.id); }catch(refreshError){ if(refreshError.sessionChanged) throw refreshError; this.restore(kind,obj.id); } }
       else this.restore(kind,obj.id);
-      syncStatus('storage','error','⚠ '+e.message);
+      if(!soloAlta || !e.conflict) syncStatus('storage','error','⚠ '+e.message);
       throw e;
     }
   },
@@ -9809,49 +9809,101 @@ async function migrarDatosCompartidosLegacy(){
 }
 
 async function migrarConfiguracionCompartidaLegacy(){
-  if(!Store.online() || !MEMBRESIA || !MEMBRESIA.org_id) return;
+  const session=SESSION, orgId=MEMBRESIA && MEMBRESIA.org_id;
+  if(!Store.online() || !session || !orgId) return;
+  // Dos pestañas pueden tener abiertas cuentas de centros diferentes.
+  if(typeof navigator!=='undefined' && navigator.locks){
+    await navigator.locks.request('ecx_legacy_settings_import',{ifAvailable:true},lock=>
+      lock ? importarPreferenciasAnteriores(session,orgId) : undefined);
+  }else await importarPreferenciasAnteriores(session,orgId);
+}
+function preferenciasDeOtroCentro(orgId){
+  const claim=loadJSON('ecx_legacy_settings_claim') || loadJSON('ecx_legacy_shared_claim');
+  if(claim && claim.orgId) return claim.orgId!==orgId;
+  // Las versiones anteriores guardaban sólo el marcador de fin por centro.
+  const prefix='ecx_legacy_settings_migrated_';
+  for(let i=0;i<localStorage.length;i++){
+    const key=localStorage.key(i);
+    if(key && key.startsWith(prefix) && key!==prefix+orgId && loadJSON(key)) return true;
+  }
+  return false;
+}
+async function importarPreferenciasAnteriores(session,orgId){
+  const sigueEnSitio=()=>SESSION===session && MEMBRESIA && MEMBRESIA.org_id===orgId;
+  if(!sigueEnSitio() || preferenciasDeOtroCentro(orgId)) return;
+  const marker='ecx_legacy_settings_migrated_'+orgId;
+  const anterior=loadJSON(marker);
+  if(anterior && !anterior.diferidas?.length) return;
+  const pendientes=anterior ? new Set(anterior.diferidas) : null;
   const legacyProc=loadJSON('ecx_procclasif')||{};
   const legacyLab=loadJSON('ecx_labextra')||{};
   const legacyTablet=loadJSON('ecx_tabletclasif')||{};
-  const candidatos=[];
+  const candidatos=[], diferidas=[];
+  function agregar(tipo,clave,valor,estudioId){
+    const id=settingId(tipo,clave);
+    if(pendientes && !pendientes.has(id)) return;
+    if(estudioId===null){ diferidas.push(id); return; }
+    candidatos.push({id,settingType:tipo,settingKey:clave,value:valor,estudioId});
+  }
   for(const [k,v] of Object.entries(legacyProc))
-    if(k && ['lab','cardio','imagen','otros','no'].includes(v))
-      candidatos.push({id:settingId('procedure',k),settingType:'procedure',settingKey:k,value:v,estudioId:''});
-  for(const [k,v] of Object.entries(legacyLab))
-    if(k && v===true)
-      candidatos.push({id:settingId('lab_extra',k),settingType:'lab_extra',settingKey:k,value:true,estudioId:''});
+    if(k && ['lab','cardio','imagen','otros','no'].includes(v)) agregar('procedure',k,v,'');
+  const estudios=DB.studies||[];
+  for(const [k,v] of Object.entries(legacyLab)){
+    if(!k || v!==true) continue;
+    const visita=k.split('|')[0];
+    const coincidencias=estudios.filter(st=>st.visitas?.some(p=>(p.id||p.nombre)===visita));
+    agregar('lab_extra',k,true,coincidencias.length===1 ? coincidencias[0].id : null);
+  }
   for(const [k,v] of Object.entries(legacyTablet)){
-    const studyId=String(k).split('|')[0]||'';
-    if(k && studyId && (v==='paciente'||v==='medico'))
-      candidatos.push({id:settingId('tablet',k),settingType:'tablet',settingKey:k,value:v,estudioId:studyId});
+    if(!k || (v!=='paciente' && v!=='medico')) continue;
+    const studyId=k.split('|')[0];
+    agregar('tablet',k,v,estudios.some(st=>st.id===studyId) ? studyId : null);
   }
   if(!candidatos.length) return;
-  const marker='ecx_legacy_settings_migrated_'+MEMBRESIA.org_id;
-  if(loadJSON(marker)) return;
-  const servidor=new Map((DB.settings||[]).map(x=>[x.id,x]));
-  const faltan=candidatos.filter(x=>!servidor.has(x.id));
-  const conflictos=candidatos.filter(x=>servidor.has(x.id) && !datosIguales(x,servidor.get(x.id)));
-  if(!faltan.length && !conflictos.length){
-    saveJSON(marker,{fecha:new Date().toISOString(),configuraciones:0,conflictos:0});
+  const mismaPreferencia=(a,b)=>a.settingType===b.settingType && a.settingKey===b.settingKey && a.value===b.value;
+  const faltan=candidatos.filter(s=>!settingById(s.id));
+  const distintos=candidatos.filter(s=>settingById(s.id) && !mismaPreferencia(s,settingById(s.id)));
+  const fecha=new Date().toISOString();
+  if(!faltan.length && !distintos.length){
+    saveJSON(marker,{fecha,configuraciones:anterior?.configuraciones||0,conflictos:anterior?.conflictos||0,diferidas});
     return;
   }
-  if(!loadJSON('ecx_settings_respaldo_pre_migracion')){
+  const claim=loadJSON('ecx_legacy_settings_claim');
+  if((!claim || claim.orgId!==orgId) && !confirm('¿Importar las configuraciones locales de este navegador al centro «'+(miOrgNombre()||orgId)+'»? Se agregarán '+faltan.length+' nuevas. Las preferencias que ya estén guardadas en el centro se conservarán.')) return;
+  if(!loadJSON('ecx_settings_respaldo_pre_migracion'))
     saveJSON('ecx_settings_respaldo_pre_migracion',{procClasif:legacyProc,labExtra:legacyLab,tabletClasif:legacyTablet});
-  }
-  if(!confirm('Se encontraron '+faltan.length+' configuraciones de procedimientos guardadas anteriormente en este navegador.'+
-    (conflictos.length?'\n\nHay '+conflictos.length+' configuración(es) diferentes con el mismo identificador: se conservará la versión de la nube.':'')+
-    '\n\n¿Importarlas una sola vez al sitio «'+(miOrgNombre()||MEMBRESIA.org_id)+'»?')) return;
+  saveJSON('ecx_legacy_settings_claim',{orgId,fecha});
+  let importadas=0, conflictos=0;
   try{
-    for(const s of faltan)
-      await Store.upsert('settings',s,{accion:'migración',detalle:'Configuración importada desde almacenamiento local',motivo:'Migración inicial'});
-    const hecho={fecha:new Date().toISOString(),configuraciones:faltan.length,conflictos:conflictos.length};
-    saveJSON(marker,hecho);
+    for(const s of candidatos){
+      if(!sigueEnSitio()) return;
+      let existente=settingById(s.id);
+      if(!existente){
+        try{
+          await Store.upsert('settings',s,{accion:'migración',detalle:'Configuración importada desde almacenamiento local',motivo:'Migración inicial'},{soloAlta:true});
+          importadas++;
+          continue;
+        }catch(e){
+          if(!sigueEnSitio() || e.sessionChanged) return;
+          if(!e.conflict) throw e;
+          // Confirmar en el servidor antes de considerar resuelta una carrera.
+          await Store.refreshOne('settings',s.id);
+          if(!sigueEnSitio()) return;
+          existente=settingById(s.id);
+          if(!existente) throw e;
+        }
+      }
+      if(!mismaPreferencia(s,existente)) conflictos++;
+    }
+    if(!sigueEnSitio()) return;
+    saveJSON(marker,{fecha,configuraciones:(anterior?.configuraciones||0)+importadas,
+      conflictos:(anterior?.conflictos||0)+conflictos,diferidas});
     hidratarConfiguracionCompartida();
-    if(conflictos.length) alert('La migración conservó la versión de la nube en '+conflictos.length+' conflicto(s). El original quedó en el respaldo local.');
-    else toast('Configuraciones anteriores migradas correctamente.');
+    syncStatus('storage','ok',conflictos?'✓ Configuraciones verificadas. Se conservaron las preferencias vigentes del centro.':'✓ Configuraciones verificadas.');
   }catch(e){
+    if(!sigueEnSitio() || e.sessionChanged) return;
     hidratarConfiguracionCompartida();
-    syncStatus('storage','error','⚠ La migración de configuraciones quedó incompleta: '+e.message);
+    syncStatus('storage','error','⚠ No se pudo completar la importación de preferencias. Se conservó la copia local para reintentar. '+e.message);
   }
 }
 function logRows(tipo){ return (LOGS[tipo] || []).filter(r=>!r.anulado); }

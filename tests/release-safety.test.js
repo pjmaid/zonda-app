@@ -59,7 +59,7 @@ test('la aplicación declara entorno y versión visibles',()=>{
   assert.ok(['unconfigured','test','production'].includes(config.environment));
   assert.equal(config.appVersion,fs.readFileSync(path.join(root,'VERSION'),'utf8').trim());
   assert.match(html,/function assertDeploymentWritable\(\)/);
-  assert.match(html,/async upsert\(kind, obj, audit\)\{\s*assertDeploymentWritable\(\)/);
+  assert.match(html,/async upsert\(kind, obj, audit[^)]*\)\{\s*assertDeploymentWritable\(\)/);
   assert.match(html,/async remove\(kind, id, audit\)\{\s*assertDeploymentWritable\(\)/);
 });
 
