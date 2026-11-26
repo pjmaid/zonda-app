@@ -7,8 +7,8 @@
  */
 window.ZONDA_RUNTIME_CONFIG = Object.freeze({
   environment: 'production',
-  appVersion: '0.9.6.4',
-  releaseId: 'zonda-0.9.6.4-20261126-auditoria',
+  appVersion: '0.9.6.5',
+  releaseId: 'zonda-0.9.6.5-20261126-centro-demo',
   supaUrl: 'https://aqinxboxjklsyvesdcyr.supabase.co',
   supaKey: 'sb_publishable_ypqDPv6T3S4cDuNFi2Yq2A_Lt5rJ68m'
 });

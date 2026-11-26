@@ -5241,6 +5241,18 @@ async function storageDel(path){
 }
 
 async function docBlob(doc){
+  if(doc.storage==='demo-pdf'){
+    // Los PDF de muestra viajan con la ficha protegida del centro demo.
+    if(!SESSION || MEMBRESIA?.org_id!=='55e431c7-c6a9-4e71-91a0-5fea8b21a184' ||
+       !doc.id.startsWith('zd26-') || doc.mime!=='application/pdf' ||
+       typeof doc.demoPdfBase64!=='string' || !Number.isInteger(doc.size) ||
+       doc.size<=0 || doc.size>65536 || doc.demoPdfBase64.length!==4*Math.ceil(doc.size/3)) return null;
+    try{
+      const raw=atob(doc.demoPdfBase64);
+      if(raw.length!==doc.size || !raw.startsWith('%PDF-')) return null;
+      return new Blob([Uint8Array.from(raw,c=>c.charCodeAt(0))],{type:'application/pdf'});
+    }catch(e){return null;}
+  }
   const recovery=DOC_RECOVERY_FILES.get(doc.id);
   if(recovery&&recovery.session===SESSION) return recovery.blob;
   try{ return doc.storage==='supabase' ? await storageGet(doc.path) : await idbGet(doc.id); }
@@ -5263,8 +5275,10 @@ async function eliminarDocumentoSeguro(doc,audit){
     assertSameSession(session);
     // Una respuesta perdida también puede haber borrado el objeto: restaurar
     // ante cualquier fallo posterior al intento, no sólo tras un HTTP exitoso.
-    archivoEliminado=true;
-    if(doc.storage==='supabase') await storageDel(doc.path); else await idbDel(doc.id);
+    if(doc.storage!=='demo-pdf'){
+      archivoEliminado=true;
+      if(doc.storage==='supabase') await storageDel(doc.path); else await idbDel(doc.id);
+    }
     assertSameSession(session);
     await Store.remove('docs',doc.id,audit||{detalle:auditResumen('docs',doc)});
     DOC_RECOVERY_FILES.delete(doc.id);

@@ -36,6 +36,21 @@ function frontend(overrides = {}) {
   return ctx;
 }
 
+test('el PDF de muestra se abre en su centro y se conserva si falla la eliminación de su ficha', async()=>{
+  const pdf='%PDF-1.4\nPDF de muestra\n%%EOF';
+  const sample={id:'zd26-doc-1',estudioId:'zd26-s1',storage:'demo-pdf',mime:'application/pdf',
+    demoPdfBase64:Buffer.from(pdf).toString('base64'), size:pdf.length};
+  const ctx=frontend({atob,MEMBRESIA:{rol:'admin',org_id:'55e431c7-c6a9-4e71-91a0-5fea8b21a184'},DB:{docs:[sample]}});
+  assert.equal(await (await ctx.docBlob(sample)).text(),pdf);
+  assert.equal(await ctx.docBlob({...sample,size:sample.size+1}),null);
+  ctx.Store.remove=async()=>{throw Error('Conflicto');};
+  await assert.rejects(ctx.removeDocument(sample),/Conflicto/);
+  assert.equal(await (await ctx.docBlob(sample)).text(),pdf);
+  assert.deepEqual(ctx.calls,[]);
+  ctx.MEMBRESIA.org_id='otro-centro';
+  assert.equal(await ctx.docBlob(sample),null);
+});
+
 test('no elimina registros ni índices si el original no se puede respaldar', async()=>{
   const ctx=frontend({storageGet:async()=>null});
   await assert.rejects(ctx.removeDocument(ctx.DB.docs[0]),/copia del archivo/);
