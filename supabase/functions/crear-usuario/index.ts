@@ -133,12 +133,13 @@ async function targetMember(ctx: Awaited<ReturnType<typeof requireAdministrator>
   return target;
 }
 
-async function audit(ctx: Awaited<ReturnType<typeof requireAdministrator>>, action: string, refId: string, detail: string) {
+async function audit(ctx: Awaited<ReturnType<typeof requireAdministrator>>, action: string, refId: string, detail: string, orgId = ctx.member.org_id) {
   const response = await fetch(`${ctx.supabaseUrl}/rest/v1/ec_audit`, {
     method: "POST",
     headers: serviceHeaders(ctx.serviceKey, { Prefer: "return=minimal" }),
     body: JSON.stringify({
-      org_id: ctx.member.org_id,
+      org_id: orgId,
+      actor_id: ctx.user.id,
       usuario: ctx.user.email || ctx.user.id,
       rol: ctx.member.rol,
       entidad: "usuarios",
@@ -151,9 +152,9 @@ async function audit(ctx: Awaited<ReturnType<typeof requireAdministrator>>, acti
   if (!response.ok) throw new Error("AUDIT_WRITE_FAILED");
 }
 
-async function completed(ctx: Awaited<ReturnType<typeof requireAdministrator>>, action: string, refId: string, detail: string, mensaje: string) {
+async function completed(ctx: Awaited<ReturnType<typeof requireAdministrator>>, action: string, refId: string, detail: string, mensaje: string, orgId = ctx.member.org_id) {
   try {
-    await audit(ctx, action, refId, detail);
+    await audit(ctx, action, refId, detail, orgId);
     return { mensaje, applied: true, audit_pending: false };
   } catch {
     // La intención quedó registrada antes de mutar. Un fallo al registrar el
@@ -162,28 +163,50 @@ async function completed(ctx: Awaited<ReturnType<typeof requireAdministrator>>, 
   }
 }
 
+async function createOwnedAuthAccount(ctx: Awaited<ReturnType<typeof requireAdministrator>>, email: string, password: string) {
+  // /invite también acepta cuentas pendientes preexistentes: su respuesta NO
+  // prueba propiedad de creación. /admin/users rechaza duplicados de forma
+  // atómica; sólo un ID confirmado por esta creación podrá compensarse.
+  const response = await fetch(`${ctx.supabaseUrl}/auth/v1/admin/users`, {
+    method: "POST",
+    headers: serviceHeaders(ctx.serviceKey),
+    body: JSON.stringify({ email, ...(password ? { password } : {}), email_confirm: !!password,
+      user_metadata: { clave_temporal: !!password } }),
+  }).catch(() => { throw new Error("USER_CREATE_UNCONFIRMED"); });
+  if (!response.ok) throw new Error("USER_CREATE_FAILED");
+  const body = await responseJson(response);
+  const user = body.user || body;
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(user?.id || "")) ||
+    (user.email && String(user.email).toLowerCase() !== email)) throw new Error("USER_CREATE_UNCONFIRMED");
+  return String(user.id);
+}
+
+async function inviteOwnedAuthAccount(ctx: Awaited<ReturnType<typeof requireAdministrator>>, authId: string, email: string, path: string) {
+  try {
+    const response = await fetch(`${ctx.supabaseUrl}/auth/v1/${path}`, {
+      method: "POST", headers: serviceHeaders(ctx.serviceKey),
+      body: JSON.stringify({ email, data: { clave_temporal: false } }),
+    });
+    const body = await responseJson(response);
+    return response.ok && (body.user || body).id === authId;
+  } catch {
+    return false;
+  }
+}
+
 async function createUser(ctx: Awaited<ReturnType<typeof requireAdministrator>>, input: Record<string, unknown>) {
   const email = validEmail(input.email);
   const role = validRole(input.rol);
   const password = input.claveTemporal ? validTemporaryPassword(input.claveTemporal) : "";
-  const authPath = password ? "admin/users" : invitationPath(input.redirect);
+  const invitePath = password ? "" : invitationPath(input.redirect);
   const studies = await validStudies(ctx, input.estudios);
   const profileId = crypto.randomUUID();
   await audit(ctx, "alta solicitada", profileId, `Usuario ${email}; rol ${role}`);
-  const authResponse = await fetch(`${ctx.supabaseUrl}/auth/v1/${authPath}`, {
-    method: "POST",
-    headers: serviceHeaders(ctx.serviceKey),
-    body: JSON.stringify(password
-      ? { email, password, email_confirm: true, user_metadata: { clave_temporal: true } }
-      : { email, data: { clave_temporal: false } }),
-  });
-  const authBody = await responseJson(authResponse);
-  const authUser = authBody.user || authBody;
-  if (!authResponse.ok || !authUser?.id) throw new Error("USER_CREATE_FAILED");
+  const authId = await createOwnedAuthAccount(ctx, email, password);
 
   const profile = {
     id: profileId,
-    authId: authUser.id,
+    authId,
     email,
     nombre: String(input.nombre || "").trim().slice(0, 160) || email,
     rol: role,
@@ -197,7 +220,7 @@ async function createUser(ctx: Awaited<ReturnType<typeof requireAdministrator>>,
     const membership = await fetch(`${ctx.supabaseUrl}/rest/v1/ec_members`, {
       method: "POST",
       headers: serviceHeaders(ctx.serviceKey, { Prefer: "return=minimal" }),
-      body: JSON.stringify({ user_id: authUser.id, org_id: ctx.member.org_id, rol: role, activo: true }),
+      body: JSON.stringify({ user_id: authId, org_id: ctx.member.org_id, rol: role, activo: true }),
     });
     if (!membership.ok) throw new Error("MEMBERSHIP_CREATE_FAILED");
     const profileResponse = await fetch(`${ctx.supabaseUrl}/rest/v1/ec_users`, {
@@ -207,7 +230,7 @@ async function createUser(ctx: Awaited<ReturnType<typeof requireAdministrator>>,
     });
     if (!profileResponse.ok) throw new Error("PROFILE_CREATE_FAILED");
   } catch (error) {
-    const rollback = await fetch(`${ctx.supabaseUrl}/auth/v1/admin/users/${authUser.id}`, {
+    const rollback = await fetch(`${ctx.supabaseUrl}/auth/v1/admin/users/${authId}`, {
       method: "DELETE",
       headers: serviceHeaders(ctx.serviceKey),
     }).catch(() => null);
@@ -215,8 +238,14 @@ async function createUser(ctx: Awaited<ReturnType<typeof requireAdministrator>>,
     throw error;
   }
 
-  return completed(ctx, "alta", profileId, `Usuario ${email}; rol ${role}`,
-    password ? "Usuario creado con clave temporal." : "Usuario creado; se envió la invitación por email.");
+  // El alta ya está persistida. Un fallo de SMTP o una respuesta inesperada al
+  // invitar no debe borrar la cuenta ni sus asignaciones.
+  const invitationPending = !!invitePath && !await inviteOwnedAuthAccount(ctx, authId, email, invitePath);
+  const result = await completed(ctx, "alta", profileId, `Usuario ${email}; rol ${role}${invitationPending ? "; invitación pendiente de confirmar" : ""}`,
+    password ? "Usuario creado con clave temporal." : invitationPending
+      ? "Usuario creado. No se confirmó el envío de la invitación. No repitas el alta; usá el envío de recuperación de clave para esta cuenta."
+      : "Usuario creado; se envió la invitación por email.");
+  return { ...result, invitation_pending: invitationPending };
 }
 
 async function createOrganization(ctx: Awaited<ReturnType<typeof requireAdministrator>>, input: Record<string, unknown>) {
@@ -225,7 +254,7 @@ async function createOrganization(ctx: Awaited<ReturnType<typeof requireAdminist
   if (name.length < 3 || name.length > 160) throw new Error("ORGANIZATION_INVALID");
   const email = validEmail(input.email);
   const password = input.claveTemporal ? validTemporaryPassword(input.claveTemporal) : "";
-  const authPath = password ? "admin/users" : invitationPath(input.redirect);
+  const invitePath = password ? "" : invitationPath(input.redirect);
   const requestId = crypto.randomUUID();
   await audit(ctx, "alta de sitio solicitada", requestId, `Sitio ${name}; administrador ${email}`);
 
@@ -240,17 +269,7 @@ async function createOrganization(ctx: Awaited<ReturnType<typeof requireAdminist
 
   let authId = "";
   try {
-    const authResponse = await fetch(`${ctx.supabaseUrl}/auth/v1/${authPath}`, {
-      method: "POST",
-      headers: serviceHeaders(ctx.serviceKey),
-      body: JSON.stringify(password
-        ? { email, password, email_confirm: true, user_metadata: { clave_temporal: true } }
-        : { email, data: { clave_temporal: false } }),
-    });
-    const authBody = await responseJson(authResponse);
-    const authUser = authBody.user || authBody;
-    if (!authResponse.ok || !authUser?.id) throw new Error("USER_CREATE_FAILED");
-    authId = authUser.id;
+    authId = await createOwnedAuthAccount(ctx, email, password);
 
     const profileId = crypto.randomUUID();
     const membership = await fetch(`${ctx.supabaseUrl}/rest/v1/ec_members`, {
@@ -272,26 +291,38 @@ async function createOrganization(ctx: Awaited<ReturnType<typeof requireAdminist
     });
     if (!profileResponse.ok) throw new Error("PROFILE_CREATE_FAILED");
   } catch (error) {
-    const authRollback = authId ? await fetch(`${ctx.supabaseUrl}/auth/v1/admin/users/${authId}`, {
-      method: "DELETE", headers: serviceHeaders(ctx.serviceKey),
-    }).catch(() => null) : null;
+    // El guard SQL conserva al último administrador mientras exista su sitio.
+    // Eliminar primero el sitio revierte sus filas por cascada y mantiene la
+    // historia de auditoría; recién después se retira la cuenta Auth huérfana.
     const orgRollback = await fetch(`${ctx.supabaseUrl}/rest/v1/ec_orgs?id=eq.${encodeURIComponent(orgId)}`, {
       method: "DELETE", headers: serviceHeaders(ctx.serviceKey, { Prefer: "return=minimal" }),
     }).catch(() => null);
-    if ((authId && !authRollback?.ok) || !orgRollback?.ok) throw new Error("ROLLBACK_INCOMPLETE");
+    if (!orgRollback?.ok) throw new Error("ROLLBACK_INCOMPLETE");
+    const authRollback = authId ? await fetch(`${ctx.supabaseUrl}/auth/v1/admin/users/${authId}`, {
+      method: "DELETE", headers: serviceHeaders(ctx.serviceKey),
+    }).catch(() => null) : null;
+    if (authId && !authRollback?.ok) throw new Error("ROLLBACK_INCOMPLETE");
     throw error;
   }
 
-  return completed(ctx, "alta de sitio", orgId, `Sitio ${name}; administrador ${email}`,
-    password ? "Sitio creado con una clave temporal para su administrador." : "Sitio creado; se envió la invitación al administrador.");
+  const invitationPending = !!invitePath && !await inviteOwnedAuthAccount(ctx, authId, email, invitePath);
+  const result = await completed(ctx, "alta de sitio", orgId, `Sitio ${name}; administrador ${email}${invitationPending ? "; invitación pendiente de confirmar" : ""}`,
+    password ? "Sitio creado con una clave temporal para su administrador." : invitationPending
+      ? "Sitio y administrador creados. No se confirmó el envío de la invitación. No repitas el alta; el administrador puede pedir la recuperación de clave con su email."
+      : "Sitio creado; se envió la invitación al administrador.", orgId);
+  return { ...result, invitation_pending: invitationPending };
 }
 
 async function changePassword(ctx: Awaited<ReturnType<typeof requireAdministrator>>, input: Record<string, unknown>) {
   const target = await targetMember(ctx, input.authId);
+  // Un precheck sobre target.superadmin no puede mantenerse atómico entre REST
+  // y Auth. Un administrador de sitio no obtiene capacidad de cambiar claves
+  // ajenas; la recuperación por email la controla el titular de la cuenta.
+  if (!ctx.member.superadmin && target.user_id !== ctx.user.id) throw new Error("ADMIN_PASSWORD_RESET_FORBIDDEN");
   const password = validTemporaryPassword(input.claveTemporal);
   const personal = target.user_id === ctx.user.id;
   await audit(ctx, "cambio de clave solicitado", target.user_id, personal
-    ? "Cambio de clave personal; contenido no registrado" : "Asignación de clave temporal; contenido no registrado");
+    ? "Cambio de clave personal; contenido no registrado" : "Asignación de clave temporal; contenido no registrado", target.org_id);
   const response = await fetch(`${ctx.supabaseUrl}/auth/v1/admin/users/${target.user_id}`, {
     method: "PUT",
     headers: serviceHeaders(ctx.serviceKey),
@@ -301,7 +332,7 @@ async function changePassword(ctx: Awaited<ReturnType<typeof requireAdministrato
   return completed(ctx, "cambio de clave", target.user_id,
     personal ? "Clave personal actualizada; contenido no registrado" : "Clave temporal asignada; contenido no registrado",
     personal ? "Tu clave personal quedó actualizada. Podés usarla para ingresar."
-      : "Clave cambiada. El usuario deberá reemplazarla al iniciar sesión.");
+      : "Clave cambiada. El usuario deberá reemplazarla al iniciar sesión.", target.org_id);
 }
 
 async function targetProfiles(ctx: Awaited<ReturnType<typeof requireAdministrator>>, target: Member, requestedId: unknown) {
@@ -337,24 +368,34 @@ async function targetProfiles(ctx: Awaited<ReturnType<typeof requireAdministrato
 
 async function deleteUser(ctx: Awaited<ReturnType<typeof requireAdministrator>>, input: Record<string, unknown>) {
   const target = await targetMember(ctx, input.authId);
+  if (!ctx.member.superadmin) throw new Error("PERMANENT_DELETE_SUPERADMIN_REQUIRED");
   if (target.user_id === ctx.user.id) throw new Error("SELF_DELETE_FORBIDDEN");
   const profiles = await targetProfiles(ctx, target, input.profileId);
-  if (target.rol === "admin" && target.activo) {
+  async function lastActiveAdmin() {
     const response = await fetch(
       `${ctx.supabaseUrl}/rest/v1/ec_members?select=user_id&org_id=eq.${encodeURIComponent(target.org_id)}&rol=eq.admin&activo=eq.true`,
       { headers: serviceHeaders(ctx.serviceKey) },
     );
-    const admins = response.ok ? await responseJson(response) : [];
-    if (admins.length <= 1) throw new Error("LAST_ADMIN_FORBIDDEN");
+    const admins = response.ok ? await responseJson(response) : null;
+    if (!Array.isArray(admins)) throw new Error("MEMBERSHIP_LOOKUP_FAILED");
+    return admins.length === 1 && admins[0].user_id === target.user_id;
   }
+  // Este precheck mejora el mensaje; el trigger SQL de la cascada Auth es la
+  // autoridad atómica ante bajas/demisiones simultáneas.
+  if (await lastActiveAdmin()) throw new Error("LAST_ADMIN_FORBIDDEN");
 
-  await audit(ctx, "baja solicitada", target.user_id, "Eliminación de cuenta y asignaciones; datos clínicos conservados");
+  await audit(ctx, "baja solicitada", target.user_id, "Eliminación de cuenta y asignaciones; datos clínicos conservados", target.org_id);
 
   const response = await fetch(`${ctx.supabaseUrl}/auth/v1/admin/users/${target.user_id}`, {
     method: "DELETE",
     headers: serviceHeaders(ctx.serviceKey),
   });
-  if (!response.ok) throw new Error("USER_DELETE_FAILED");
+  if (!response.ok) {
+    // Auth puede ocultar el código SQL como "Database error deleting user".
+    // Reconsultar permite explicar una carrera perdida sin limpiar su ficha.
+    if (await lastActiveAdmin().catch(() => false)) throw new Error("LAST_ADMIN_FORBIDDEN");
+    throw new Error("USER_DELETE_FAILED");
+  }
 
   for (const profile of profiles) {
     const profileResponse = await fetch(`${ctx.supabaseUrl}/rest/v1/ec_users?id=eq.${encodeURIComponent(profile.id)}&org_id=eq.${encodeURIComponent(target.org_id)}`, {
@@ -363,11 +404,11 @@ async function deleteUser(ctx: Awaited<ReturnType<typeof requireAdministrator>>,
     }).catch(() => null);
     if (!profileResponse?.ok) {
       const result = await completed(ctx, "baja parcial", target.user_id, "Cuenta de acceso eliminada; limpieza de ficha pendiente",
-        "La cuenta de acceso fue eliminada. Quedó pendiente la limpieza de su ficha; no repitas la baja.");
+        "La cuenta de acceso fue eliminada. Quedó pendiente la limpieza de su ficha; no repitas la baja.", target.org_id);
       return { ...result, cleanup_pending: true };
     }
   }
-  return completed(ctx, "baja", target.user_id, "Cuenta de acceso y asignaciones eliminadas; datos clínicos conservados", "Usuario eliminado definitivamente.");
+  return completed(ctx, "baja", target.user_id, "Cuenta de acceso y asignaciones eliminadas; datos clínicos conservados", "Usuario eliminado definitivamente.", target.org_id);
 }
 
 Deno.serve(async (req) => {
@@ -401,20 +442,24 @@ Deno.serve(async (req) => {
       SELF_DELETE_FORBIDDEN: "No podés eliminar tu propio usuario.",
       LAST_ADMIN_FORBIDDEN: "Tiene que quedar al menos un administrador activo.",
       SUPERADMIN_TARGET_FORBIDDEN: "Solo un superadministrador puede modificar esta cuenta.",
+      ADMIN_PASSWORD_RESET_FORBIDDEN: "Cada usuario debe recuperar su propia clave por email. Usá Enviar email para restablecer la clave; sólo un superadministrador puede asignar una clave ajena.",
+      PERMANENT_DELETE_SUPERADMIN_REQUIRED: "La eliminación definitiva de una cuenta requiere un superadministrador. Para retirar el acceso al sitio, desactivá su usuario.",
       PROFILE_MISMATCH_FORBIDDEN: "La ficha seleccionada no corresponde a la cuenta de acceso.",
       REDIRECT_INVALID: "La dirección de regreso debe pertenecer a Zonda.",
       STUDIES_INVALID: "Los estudios asignados deben existir en tu sitio.",
       INPUT_INVALID: "La solicitud no tiene un formato válido.",
       USER_CREATE_FAILED: "No se pudo crear la cuenta. Revisá si el email ya está registrado.",
+      USER_CREATE_UNCONFIRMED: "No se pudo confirmar el alta de la cuenta. No se eliminó ninguna cuenta por email. Revisá si fue creada antes de reintentar.",
       PASSWORD_UPDATE_FAILED: "No se pudo actualizar la clave. Volvé a intentar.",
       USER_DELETE_FAILED: "No se pudo eliminar la cuenta de acceso.",
       ROLLBACK_INCOMPLETE: "El alta quedó incompleta y no se pudo revertir por completo. Revisá la cuenta y el sitio antes de reintentar.",
       AUDIT_WRITE_FAILED: "No se pudo registrar la operación en la auditoría; no se aplicaron cambios de acceso.",
     };
     const status = /AUTH_REQUIRED|MEMBERSHIP_REQUIRED/.test(code) ? 401
-      : /ADMIN_REQUIRED|SUPERADMIN_REQUIRED|SUPERADMIN_TARGET_FORBIDDEN/.test(code) ? 403
+      : /ADMIN_REQUIRED|SUPERADMIN_REQUIRED|SUPERADMIN_TARGET_FORBIDDEN|ADMIN_PASSWORD_RESET_FORBIDDEN/.test(code) ? 403
       : /INVALID|WEAK|FORBIDDEN|OUTSIDE|NOT_FOUND|OWN_PASSWORD/.test(code) ? 400 : 500;
     return json({ error: messages[code] || "No se pudo completar la operación. Volvé a intentar.", code,
-      ...(code === "ROLLBACK_INCOMPLETE" ? { applied: "partial" } : {}) }, status);
+      ...(code === "ROLLBACK_INCOMPLETE" ? { applied: "partial" } : {}),
+      ...(code === "USER_CREATE_UNCONFIRMED" ? { applied: "unknown" } : {}) }, status);
   }
 });

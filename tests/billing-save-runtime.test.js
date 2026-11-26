@@ -6,6 +6,7 @@ const vm = require('node:vm');
 
 const html = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
 const source = html.slice(html.indexOf('async function factGuardarGasto('), html.indexOf('async function factEliminarGasto('));
+const uploadSource=html.slice(html.indexOf('const DOC_UPLOAD_FILES='),html.indexOf('async function docBlob('));
 
 function form({file, upsert, storagePut = async () => {}}) {
   const elements = {
@@ -17,13 +18,14 @@ function form({file, upsert, storagePut = async () => {}}) {
   const alerts = [], toasts = [];
   const ctx = vm.createContext({
     SESSION: {id:'session-test'},
+    MEMBRESIA:{org_id:'org-test',user_id:'user-test'},DB:{docs:[]},
     assertSameSession(session){if(session!==ctx.SESSION){const error=new Error('La sesión cambió');error.sessionChanged=true;throw error;}},
     FACT_GASTOS: {gasto_remis: {key: 'Remis', titulo: 'Gasto de remís'}},
     $: id => elements[id], canFact: () => true, uid: () => 'test-id', T: s => s,
     Store: {upsert, online: () => true}, storagePut, renderFactGasto: () => {},
     alert: text => alerts.push(text), toast: text => toasts.push(text)
   });
-  vm.runInContext(source, ctx);
+  vm.runInContext(uploadSource+source, ctx);
   return {save: () => ctx.factGuardarGasto('gasto_remis'), alerts, toasts, elements, ctx};
 }
 

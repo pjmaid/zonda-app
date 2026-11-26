@@ -86,7 +86,7 @@ async function googleDeleteIfPresent(path:string){
   const body=await response.json().catch(()=>({}));throw new Error(String(body?.error?.message||`GOOGLE_RAG_HTTP_${response.status}`).slice(0,500));
 }
 async function audit(auth:Auth,action:string,refId:string,detail:string){
-  const response=await fetch(`${auth.supabaseUrl}/rest/v1/ec_audit`,{method:"POST",headers:{Authorization:`Bearer ${auth.serviceKey}`,apikey:auth.serviceKey,"Content-Type":"application/json",Prefer:"return=minimal"},body:JSON.stringify({org_id:auth.member.org_id,usuario:auth.user?.email||auth.user?.id,rol:auth.member.rol,entidad:"documentos",accion:action,ref_id:refId,detalle:detail,motivo:"Protección de datos"})});
+  const response=await fetch(`${auth.supabaseUrl}/rest/v1/ec_audit`,{method:"POST",headers:{Authorization:`Bearer ${auth.serviceKey}`,apikey:auth.serviceKey,"Content-Type":"application/json",Prefer:"return=minimal"},body:JSON.stringify({org_id:auth.member.org_id,actor_id:auth.user.id,usuario:auth.user?.email||auth.user?.id,rol:auth.member.rol,entidad:"documentos",accion:action,ref_id:refId,detalle:detail,motivo:"Protección de datos"})});
   if(!response.ok)throw new Error("AUDIT_WRITE_FAILED");
 }
 function prepareText(text:string){

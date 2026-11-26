@@ -1,5 +1,10 @@
 # Revisión de permisos y restauración — 23 de noviembre de 2026
 
+Seguimiento del 26/11: los pendientes enumerados aquí ya tienen correcciones y
+validación local en [CIERRE_PENDIENTES_20261123.md](CIERRE_PENDIENTES_20261123.md).
+Su publicación sigue bloqueada por la conexión SQL administrativa; este informe
+conserva la evidencia y el estado histórico del 23/11.
+
 Estado: la migración `20261123_storage_roles_identidad.sql` está
 **validada con PostgreSQL WASM y con Auth/Storage reales en un entorno local
 separado, y aplicada en producción como `20261123233445_storage_roles_identidad`**.

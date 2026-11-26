@@ -1,0 +1,66 @@
+{
+  "sourceRun": "8e12bbd4ca2195b4",
+  "syntheticOnly": true,
+  "files": [
+    {
+      "file": "full-runtime-report.json",
+      "sha256": "103ad2e4981a39fd6c7fd310018e9939886b69f7d654d94ca4403f3707916e92",
+      "passed": true,
+      "checks": 0
+    },
+    {
+      "file": "runtime-provenance.json",
+      "sha256": "947f1e92e258071c9d88548f1ae165948c0830cdf8707dcd0bd629e155e67588",
+      "passed": null,
+      "checks": 0
+    },
+    {
+      "file": "auth-recovery-integration.json",
+      "sha256": "682b1dfa5007427fc70ba59f97fb32257de4994f52cc51f66aa93dfb8ba333ec",
+      "passed": true,
+      "checks": 17
+    },
+    {
+      "file": "hardening-integration.json",
+      "sha256": "0a67f0fb7a16653edc95f7a49b82a105f904afac57a9491d77fb5e638fe91d72",
+      "passed": true,
+      "checks": 28
+    },
+    {
+      "file": "user-administration-integration.json",
+      "sha256": "0406ba68264f6e6e6d46aee60f3adb47402dfa3b95ced01f701f44fa198016c8",
+      "passed": true,
+      "checks": 9
+    },
+    {
+      "file": "backup-restore-integration.json",
+      "sha256": "c24ea6cd87918d9cf2969811a76842bf169a4aef560d181268d6f0ed5f0ef6cf",
+      "passed": true,
+      "checks": 8
+    },
+    {
+      "file": "schema-baseline-comparison.json",
+      "sha256": "e9a8b5b956350ce64b461a5908eddb790907e37fb5e2aaf5ed5b87fc9c5e4e61",
+      "passed": true,
+      "checks": 0
+    },
+    {
+      "file": "rollback-unused-comparison.json",
+      "sha256": "e9a8b5b956350ce64b461a5908eddb790907e37fb5e2aaf5ed5b87fc9c5e4e61",
+      "passed": true,
+      "checks": 0
+    },
+    {
+      "file": "rollback-used-guard.json",
+      "sha256": "5cc0effe76d132953f175f9b3db68bc75f1cf834ab60df9ff9a5e30565644ed9",
+      "passed": true,
+      "checks": 0
+    },
+    {
+      "file": "rollback-seeded-document-guard.json",
+      "sha256": "3d5964cdafd505f19926cc56317821248a0568c2928e462ed5bacb793122b2f0",
+      "passed": true,
+      "checks": 0
+    }
+  ]
+}

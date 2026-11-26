@@ -1,0 +1,99 @@
+{
+  "startedAt": "2026-11-26T21:50:09.845Z",
+  "passed": true,
+  "runtime": "Official Auth 2.198.0 + PostgreSQL 17.12, loopback only",
+  "checks": [
+    {
+      "label": "Base Auth local vacía y Auth oficial disponible",
+      "status": "passed"
+    },
+    {
+      "label": "Acceso inicial con cuenta sintética confirmado",
+      "status": "passed"
+    },
+    {
+      "label": "Solicitud real de recuperación entregada al capturador SMTP local",
+      "status": "passed"
+    },
+    {
+      "label": "Enlace de recuperación respeta el destino solicitado",
+      "status": "passed"
+    },
+    {
+      "label": "Cliente rechaza nueve caracteres, acepta diez, limpia URL y permite ingresar con la nueva clave",
+      "status": "passed"
+    },
+    {
+      "label": "La clave anterior queda invalidada",
+      "status": "passed"
+    },
+    {
+      "label": "El cambio de clave elimina el indicador temporal en Auth real",
+      "status": "passed"
+    },
+    {
+      "label": "Un enlace ya utilizado se rechaza y no deja tokens en la URL",
+      "status": "passed"
+    },
+    {
+      "label": "El cliente reutiliza una contraseña anterior válida de diez caracteres e inicia sesión",
+      "status": "passed"
+    },
+    {
+      "label": "Auth real devuelve 422 same_password al volver a enviar la contraseña actual",
+      "status": "passed"
+    },
+    {
+      "label": "El cliente confirma la contraseña actual mediante metadatos, conserva el acceso y elimina el indicador temporal",
+      "status": "passed"
+    },
+    {
+      "label": "Auth rechaza admin-create duplicado y conserva identidad y metadatos de la cuenta pendiente preexistente",
+      "status": "passed"
+    },
+    {
+      "label": "Admin-create sin contraseña reserva una identidad nueva y la invitación reutiliza exactamente ese ID",
+      "status": "passed"
+    },
+    {
+      "label": "Invitación real entregada al capturador SMTP local",
+      "status": "passed"
+    },
+    {
+      "label": "Cliente activa la invitación y permite ingresar con la clave elegida",
+      "status": "passed"
+    },
+    {
+      "label": "Una cuenta pendiente sin contraseña ni invitación puede recuperarse por correo local, elegir clave e ingresar",
+      "status": "passed"
+    },
+    {
+      "label": "Solo se capturaron tres correos sintéticos, sin SMTP externo",
+      "status": "passed"
+    }
+  ],
+  "cleanup": [
+    {
+      "target": "synthetic Auth user",
+      "status": "passed"
+    },
+    {
+      "target": "synthetic Auth user",
+      "status": "passed"
+    },
+    {
+      "target": "synthetic Auth user",
+      "status": "passed"
+    },
+    {
+      "target": "local Auth users empty",
+      "status": "passed"
+    }
+  ],
+  "limitations": [
+    "SMTP público y entrega al destinatario real no evaluados",
+    "No usa la cuenta ni la clave de Pablo",
+    "Las funciones reales del cliente corren en un DOM de prueba; no es una sesión de navegador"
+  ],
+  "finishedAt": "2026-11-26T21:50:14.320Z"
+}

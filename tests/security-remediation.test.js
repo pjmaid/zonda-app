@@ -16,9 +16,11 @@ test('la recuperación valida el enlace y permite definir una clave nueva',()=>{
   assert.doesNotMatch(html,/\/auth\/v1\/signup/);
 });
 
-test('el borrado de documentos comprueba Storage y compensa el fallo de metadatos',()=>{
+test('el borrado de documentos registra la baja antes de retirar bytes sin restauraciones',()=>{
   assert.match(html,/async function storageDel[\s\S]*if\(!r\.ok\)/);
-  assert.match(html,/archivoEliminado&&respaldo[\s\S]*storagePut\(doc\.path,respaldo\)/);
+  const removal=html.slice(html.indexOf('async function eliminarDocumentoSeguro('),html.indexOf('async function reintentarBajasDocumentos('));
+  assert.ok(removal.indexOf("Store.remove('docs'")<removal.indexOf('retirarArchivoDadoDeBaja(doc.path)'));
+  assert.doesNotMatch(removal,/storagePut|createObjectURL|document\.createElement/);
   assert.match(html,/if\(doc\.ragIndexado\|\|doc\.ragPendiente\) await ragBorrar\(doc\)/);
 });
 

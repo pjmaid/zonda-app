@@ -52,7 +52,7 @@ test('la auditoría local no se trunca ni ignora errores', () => {
 
 test('la auditoría pendiente se reintenta al recuperar una sesión válida', () => {
   assert.match(html, /initConfigUI\(\);\s*\/\*[\s\S]*?await syncAuditQueue\(\);\s*renderAll\(\);/);
-  assert.match(html, /syncStatus\('audit','ok',[^\n]+\);[\s\S]*?typeof renderDashboard==='function'\) renderDashboard\(\);/);
+  assert.match(html, /syncStatus\('audit',ids\.size===pendientes\.length\?'ok':'saving',[^\n]+\);[\s\S]*?typeof renderDashboard==='function'\) renderDashboard\(\);/);
 });
 
 test('la migración agrega revisión y hace escritura más auditoría en una transacción', () => {
@@ -128,8 +128,8 @@ test('RLS limita datos y archivos a los protocolos asignados', () => {
   assert.match(permissionsMigration, /create policy users_ver/i);
   assert.match(permissionsMigration, /create policy ec_docs_protocol/i);
   assert.match(permissionsMigration, /when 'settings' then 'ec_settings'/i);
-  assert.match(html, /doc\.path = stId\+'\/'\+doc\.id/);
-  assert.match(html, /doc\.path = paciente\.estudioId\+'\/'\+doc\.id/);
+  assert.match(html, /doc\.path=doc\.estudioId\+'\/'\+doc\.id/);
+  assert.match(html, /async function guardarDocumentoArchivo\(doc,file\)/);
 });
 
 test('crear protocolos queda reservado al administrador en la interfaz', () => {

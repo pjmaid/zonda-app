@@ -111,7 +111,7 @@ test('las funciones con service_role rechazan sitios desactivados', async () => 
 });
 
 test('la auditoría de intención fallida impide modificar cuentas', async () => {
-  const app = edge('users', { respond: call => call.url.pathname === '/rest/v1/ec_audit' ? reply({}, 503) : undefined });
+  const app = edge('users', { actor: { superadmin: true }, respond: call => call.url.pathname === '/rest/v1/ec_audit' ? reply({}, 503) : undefined });
   const result = await app.request(passwordInput);
   assert.equal(result.status, 500);
   assert.equal(result.body.code, 'AUDIT_WRITE_FAILED');
@@ -119,7 +119,7 @@ test('la auditoría de intención fallida impide modificar cuentas', async () =>
 });
 
 test('el fallo de auditoría final informa que la clave sí cambió', async () => {
-  const app = edge('users', { respond: (call, state) => call.url.pathname === '/rest/v1/ec_audit' && state.audits.length === 2 ? reply({}, 503) : undefined });
+  const app = edge('users', { actor: { superadmin: true }, respond: (call, state) => call.url.pathname === '/rest/v1/ec_audit' && state.audits.length === 2 ? reply({}, 503) : undefined });
   const result = await app.request(passwordInput);
   assert.equal(result.status, 200);
   assert.equal(result.body.applied, true);
@@ -130,7 +130,7 @@ test('el fallo de auditoría final informa que la clave sí cambió', async () =
 });
 
 test('la baja rechaza una ficha ajena antes de eliminar la cuenta', async () => {
-  const app = edge('users');
+  const app = edge('users', { actor: { superadmin: true } });
   const result = await app.request({ ...deleteInput, profileId: 'another-profile' });
   assert.equal(result.status, 400);
   assert.equal(result.body.code, 'PROFILE_MISMATCH_FORBIDDEN');
@@ -138,7 +138,7 @@ test('la baja rechaza una ficha ajena antes de eliminar la cuenta', async () => 
 });
 
 test('la baja deriva la ficha de authId aunque el cliente omita profileId', async () => {
-  const app = edge('users');
+  const app = edge('users', { actor: { superadmin: true } });
   const result = await app.request({ accion: 'eliminar_usuario', authId: targetId });
   assert.equal(result.status, 200);
   const deletes = app.state.calls.filter(call => call.method === 'DELETE');
@@ -149,7 +149,7 @@ test('la baja deriva la ficha de authId aunque el cliente omita profileId', asyn
 });
 
 test('la baja parcial distingue cuenta eliminada de ficha pendiente', async () => {
-  const app = edge('users', { respond: call => call.url.pathname === '/rest/v1/ec_users' && call.method === 'DELETE' ? reply({}, 503) : undefined });
+  const app = edge('users', { actor: { superadmin: true }, respond: call => call.url.pathname === '/rest/v1/ec_users' && call.method === 'DELETE' ? reply({}, 503) : undefined });
   const result = await app.request(deleteInput);
   assert.equal(result.status, 200);
   assert.equal(result.body.applied, true);
@@ -161,10 +161,85 @@ test('las invitaciones envían redirect_to en query y excluyen tokens de la sesi
   const app = edge('users');
   const result = await app.request({ ...createInput, redirect: 'https://zonda-app.pages.dev/?code=secret#access_token=secret' });
   assert.equal(result.status, 200);
-  const invitation = authMutations(app.state)[0];
+  const created = authMutations(app.state)[0];
+  assert.equal(created.url.pathname, '/auth/v1/admin/users');
+  assert.equal(created.body.email_confirm, false);
+  assert.equal(created.body.password, undefined);
+  const invitation = authMutations(app.state).find(call => call.url.pathname === '/auth/v1/invite');
   assert.equal(invitation.url.pathname, '/auth/v1/invite');
   assert.equal(invitation.url.searchParams.get('redirect_to'), 'https://zonda-app.pages.dev/');
   assert.equal(invitation.body.redirect_to, undefined);
+  const invitationIndex = app.state.calls.indexOf(invitation);
+  assert.ok(app.state.calls.findIndex(call => call.url.pathname === '/rest/v1/ec_users' && call.method === 'POST') < invitationIndex);
+  assert.equal(result.body.invitation_pending, false);
+});
+
+test('una cuenta pendiente preexistente no se invita, modifica ni borra al fallar el alta duplicada', async () => {
+  for (const input of [createInput, { accion: 'organizacion', nombre: 'Sitio de prueba', email: 'other@example.invalid' }]) {
+    for (const existingSite of [siteId, 'another-site']) {
+      const existing = { id: targetId, org_id: existingSite, confirmed_at: null, marker: 'Keep existing account' };
+      const app = edge('users', { actor: { superadmin: true }, respond: call => {
+        if (call.url.pathname === '/auth/v1/admin/users' && call.method === 'POST') return reply({ message: 'User already registered' }, 422);
+        // Esta es la conducta real peligrosa de /invite: podría devolver un
+        // usuario pendiente preexistente. El flujo corregido nunca llega aquí.
+        if (call.url.pathname === '/auth/v1/invite') return reply(existing);
+      } });
+      const result = await app.request(input);
+      assert.equal(result.body.code, 'USER_CREATE_FAILED');
+      assert.equal(authMutations(app.state).length, 1);
+      assert.equal(authMutations(app.state)[0].url.pathname, '/auth/v1/admin/users');
+      assert.equal(app.state.calls.some(call => call.url.pathname === '/rest/v1/ec_members' && call.method !== 'GET'), false);
+      assert.equal(existing.marker, 'Keep existing account');
+    }
+  }
+});
+
+test('un fallo al invitar después de persistir conserva la cuenta y reporta alta aplicada', async () => {
+  for (const input of [createInput, { accion: 'organizacion', nombre: 'Sitio de prueba', email: 'new@example.invalid' }]) {
+    for (const outcome of ['http', 'network', 'different-user']) {
+      const app = edge('users', { actor: { superadmin: true }, respond: call => {
+        if (call.url.pathname !== '/auth/v1/invite') return;
+        if (outcome === 'network') throw new Error('SMTP response lost');
+        return outcome === 'http' ? reply({}, 503) : reply({ id: actorId });
+      } });
+      const result = await app.request(input);
+      assert.equal(result.status, 200);
+      assert.equal(result.body.applied, true);
+      assert.equal(result.body.invitation_pending, true);
+      assert.match(result.body.mensaje, /No repitas el alta/);
+      assert.equal(app.state.calls.some(call => call.method === 'DELETE'), false);
+      assert.ok(app.state.calls.some(call => call.url.pathname === '/rest/v1/ec_users' && call.method === 'POST'));
+    }
+  }
+});
+
+test('un alta Auth sin respuesta confirmada no busca por email ni borra cuentas desconocidas', async () => {
+  for (const input of [createInput, { accion: 'organizacion', nombre: 'Sitio de prueba', email: 'new@example.invalid' }]) {
+    for (const outcome of ['network', 'missing-id']) {
+      const app = edge('users', { actor: { superadmin: true }, respond: call => {
+        if (call.url.pathname !== '/auth/v1/admin/users' || call.method !== 'POST') return;
+        if (outcome === 'network') throw new Error('Response lost after creation');
+        return reply({});
+      } });
+      const result = await app.request(input);
+      assert.equal(result.body.code, 'USER_CREATE_UNCONFIRMED');
+      assert.equal(result.body.applied, 'unknown');
+      assert.equal(authMutations(app.state).some(call => call.method === 'DELETE'), false);
+      assert.equal(app.state.calls.some(call => call.url.pathname === '/auth/v1/admin/users' && call.method === 'GET'), false);
+    }
+  }
+});
+
+test('la compensación previa a invitar solo elimina el ID creado por admin/users', async () => {
+  for (const input of [createInput, { accion: 'organizacion', nombre: 'Sitio de prueba', email: 'new@example.invalid' }]) {
+    const app = edge('users', { actor: { superadmin: true }, respond: call => {
+      if (call.url.pathname === '/rest/v1/ec_members' && call.method === 'POST') return reply({}, 409);
+      if (call.url.pathname === '/auth/v1/invite') return reply({ id: actorId });
+    } });
+    assert.equal((await app.request(input)).status, 500);
+    assert.equal(app.state.calls.some(call => call.url.pathname === '/auth/v1/invite'), false);
+    assert.deepEqual(authMutations(app.state).filter(call => call.method === 'DELETE').map(call => call.url.pathname), [`/auth/v1/admin/users/${targetId}`]);
+  }
 });
 
 test('los enlaces de invitación a otro origen se rechazan antes del alta', async () => {
@@ -206,6 +281,73 @@ test('el rollback fallido informa un alta incompleta, sin asegurar reversión', 
   assert.equal(result.body.applied, 'partial');
 });
 
+test('un administrador ordinario no asigna claves a otra cuenta ni envía un email implícito', async () => {
+  const app = edge('users');
+  const result = await app.request(passwordInput);
+  assert.equal(result.status, 403);
+  assert.equal(result.body.code, 'ADMIN_PASSWORD_RESET_FORBIDDEN');
+  assert.equal(authMutations(app.state).length, 0);
+  assert.equal(app.state.calls.some(call => /recover|invite/.test(call.url.pathname)), false);
+});
+
+test('un administrador ordinario no elimina cuentas Auth de forma definitiva', async () => {
+  const app = edge('users');
+  const result = await app.request(deleteInput);
+  assert.equal(result.status, 403);
+  assert.equal(result.body.code, 'PERMANENT_DELETE_SUPERADMIN_REQUIRED');
+  assert.equal(authMutations(app.state).length, 0);
+  assert.equal(app.state.calls.some(call => call.method === 'DELETE'), false);
+});
+
+test('una carrera rechazada por el guard SQL se explica como último administrador sin borrar su ficha', async () => {
+  let checks = 0;
+  const app = edge('users', { actor: { superadmin: true }, target: { rol: 'admin' }, respond: call => {
+    if (call.url.pathname === '/rest/v1/ec_members' && call.url.searchParams.has('rol')) {
+      return reply(++checks === 1 ? [{ user_id: actorId }, { user_id: targetId }] : [{ user_id: targetId }]);
+    }
+    if (call.url.pathname === `/auth/v1/admin/users/${targetId}` && call.method === 'DELETE') return reply({ message: 'Database error deleting user' }, 500);
+  } });
+  const result = await app.request(deleteInput);
+  assert.equal(result.body.code, 'LAST_ADMIN_FORBIDDEN');
+  assert.equal(checks, 2);
+  assert.equal(app.state.calls.some(call => call.url.pathname === '/rest/v1/ec_users' && call.method === 'DELETE'), false);
+});
+
+test('un administrador conserva el cambio de su propia clave', async () => {
+  const app = edge('users');
+  const result = await app.request({ ...passwordInput, authId: actorId });
+  assert.equal(result.status, 200);
+  assert.equal(authMutations(app.state)[0].url.pathname, `/auth/v1/admin/users/${actorId}`);
+});
+
+test('la auditoría de un cambio de clave entre sitios se registra en el sitio afectado', async () => {
+  const otherSite = '44444444-4444-4444-8444-444444444444';
+  const app = edge('users', { actor: { superadmin: true }, target: { org_id: otherSite } });
+  assert.equal((await app.request(passwordInput)).status, 200);
+  assert.deepEqual(app.state.audits.map(a => a.org_id), [otherSite, otherSite]);
+  assert.ok(app.state.audits.every(a => a.actor_id === actorId));
+});
+
+test('el rollback de un sitio elimina la organización antes de la cuenta del último administrador', async () => {
+  const app = edge('users', { actor: { superadmin: true }, respond: call =>
+    call.url.pathname === '/rest/v1/ec_users' && call.method === 'POST' ? reply({}, 503) : undefined });
+  const result = await app.request({ accion: 'organizacion', nombre: 'Sitio de prueba', email: 'test@example.invalid' });
+  assert.equal(result.status, 500);
+  assert.notEqual(result.body.code, 'ROLLBACK_INCOMPLETE');
+  const deletes = app.state.calls.filter(call => call.method === 'DELETE');
+  assert.deepEqual(deletes.map(call => call.url.pathname), ['/rest/v1/ec_orgs', `/auth/v1/admin/users/${targetId}`]);
+});
+
+test('un rollback de sitio rechazado conserva Auth y reporta compensación incompleta', async () => {
+  const app = edge('users', { actor: { superadmin: true }, respond: call => {
+    if (call.url.pathname === '/rest/v1/ec_users' && call.method === 'POST') return reply({}, 503);
+    if (call.url.pathname === '/rest/v1/ec_orgs' && call.method === 'DELETE') return reply({}, 503);
+  } });
+  const result = await app.request({ accion: 'organizacion', nombre: 'Sitio de prueba', email: 'test@example.invalid' });
+  assert.equal(result.body.code, 'ROLLBACK_INCOMPLETE');
+  assert.equal(authMutations(app.state).some(call => call.method === 'DELETE'), false);
+});
+
 test('IA no transmite contenido cuando falla la auditoría previa', async () => {
   const app = edge('ai', { respond: call => call.url.pathname === '/rest/v1/ec_audit' ? reply({}, 503) : undefined });
   const result = await app.request(aiInput);
@@ -220,6 +362,8 @@ test('IA enlaza intención y resultado con eventos distintos sin auditar conteni
   assert.equal(result.status, 200);
   assert.equal(app.state.audits.length, 2);
   const [intent, completed] = app.state.audits;
+  assert.equal(intent.actor_id, actorId);
+  assert.equal(completed.actor_id, actorId);
   assert.equal(intent.accion, 'generacion_solicitada');
   assert.equal(completed.accion, 'generacion_asistida');
   assert.equal(intent.ref_id, result.body.meta.request_id);
@@ -289,7 +433,7 @@ test('los perfiles legados conservan acceso con email en mayúsculas sin aceptar
 });
 
 test('la baja reconoce la ficha legada por email exacto sin distinguir mayúsculas', async () => {
-  const app = edge('users', { respond: call => {
+  const app = edge('users', { actor: { superadmin: true }, respond: call => {
     if (call.url.pathname !== '/rest/v1/ec_users' || call.method !== 'GET') return;
     if (call.url.searchParams.has('data->>authId')) return reply([]);
     assert.equal(call.url.searchParams.get('data->>email'), 'imatch.^target@example\\.invalid$');
@@ -356,4 +500,18 @@ test('IA expone límite de cuota y tiempo de espera con estados recuperables', a
   const result = await timedOut.request(aiInput);
   assert.equal(result.status, 504);
   assert.equal(result.body.error, 'AI_TIMEOUT');
+});
+
+test('RAG envía la identidad Auth y el sitio a la auditoría canónica', async () => {
+  const ragSource = fs.readFileSync(path.join(__dirname, '../supabase/functions/rag/index.ts'), 'utf8');
+  const auditSource = ragSource.slice(ragSource.indexOf('async function audit('), ragSource.indexOf('function prepareText('));
+  const calls = [];
+  const ctx = vm.createContext({ fetch: async (url, init) => {
+    calls.push({ url, body: JSON.parse(init.body) });
+    return reply({});
+  } });
+  vm.runInContext(stripTypeScriptTypes(auditSource) + '\nthis.append = audit;', ctx);
+  await ctx.append({ supabaseUrl: 'https://fixture.supabase.test', serviceKey: 'fixture', member: { org_id: siteId, rol: 'admin' }, user: { id: actorId, email: 'actor@example.invalid' } }, 'indexado', 'doc-test', 'Ficticio');
+  assert.equal(calls[0].body.actor_id, actorId);
+  assert.equal(calls[0].body.org_id, siteId);
 });
