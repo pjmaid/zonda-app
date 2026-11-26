@@ -1,0 +1,192 @@
+{
+  "startedAt": "2026-11-26T22:18:35.215Z",
+  "runId": "55c45e8d0f6a4dad",
+  "database": "zonda_test_55c45e8d0f6a4dad",
+  "passed": true,
+  "stages": [
+    {
+      "name": "PostgreSQL 17 ready",
+      "at": "2026-11-26T22:18:35.443Z"
+    },
+    {
+      "name": "Fresh synthetic database created",
+      "at": "2026-11-26T22:18:35.473Z"
+    },
+    {
+      "name": "zonda_test_55c45e8d0f6a4dad Auth ready",
+      "at": "2026-11-26T22:18:35.742Z"
+    },
+    {
+      "name": "zonda_test_55c45e8d0f6a4dad Storage ready",
+      "at": "2026-11-26T22:18:37.204Z"
+    },
+    {
+      "name": "zonda_test_55c45e8d0f6a4dad PostgREST ready",
+      "at": "2026-11-26T22:18:37.423Z"
+    },
+    {
+      "name": "Real Auth SMTP recovery and invitation passed",
+      "at": "2026-11-26T22:18:39.806Z"
+    },
+    {
+      "name": "Current production metadata baseline reproduced exactly",
+      "at": "2026-11-26T22:18:39.935Z"
+    },
+    {
+      "name": "Applied locally 20261124002116_membresias_seguras",
+      "at": "2026-11-26T22:18:39.957Z",
+      "sha256": "e7467f58f4351e9ab5af82f7fd84615032d76243ff4f1a18a6480138dcb35efe"
+    },
+    {
+      "name": "Applied locally 20261124002135_auditoria_permisos",
+      "at": "2026-11-26T22:18:39.995Z",
+      "sha256": "1ae72b2ed21777203e0b2d1455c825b2db82675e9dda43276c93735f5e63af06"
+    },
+    {
+      "name": "Applied locally 20261124002147_documentos_privados",
+      "at": "2026-11-26T22:18:40.020Z",
+      "sha256": "03cb49a1e04b2bb980636cb2604ccd054d56812d4f42365b48bd6b90b6d4f45d"
+    },
+    {
+      "name": "Pre-use rollback restored exact current baseline metadata",
+      "at": "2026-11-26T22:18:40.104Z"
+    },
+    {
+      "name": "Reapplied locally 20261124002116_membresias_seguras",
+      "at": "2026-11-26T22:18:40.120Z",
+      "sha256": "e7467f58f4351e9ab5af82f7fd84615032d76243ff4f1a18a6480138dcb35efe"
+    },
+    {
+      "name": "Reapplied locally 20261124002135_auditoria_permisos",
+      "at": "2026-11-26T22:18:40.153Z",
+      "sha256": "1ae72b2ed21777203e0b2d1455c825b2db82675e9dda43276c93735f5e63af06"
+    },
+    {
+      "name": "Reapplied locally 20261124002147_documentos_privados",
+      "at": "2026-11-26T22:18:40.187Z",
+      "sha256": "03cb49a1e04b2bb980636cb2604ccd054d56812d4f42365b48bd6b90b6d4f45d"
+    },
+    {
+      "name": "Rollback with 34 seeded document paths refused safely",
+      "at": "2026-11-26T22:18:40.216Z"
+    },
+    {
+      "name": "Real adversarial REST and SQL concurrency checks passed",
+      "at": "2026-11-26T22:18:46.726Z",
+      "checks": 28
+    },
+    {
+      "name": "Real user administration and ten-character temporary password passed",
+      "at": "2026-11-26T22:18:49.363Z",
+      "checks": 9
+    },
+    {
+      "name": "zonda_restore_933f50e565c7490b96e68ac3 Auth ready",
+      "at": "2026-11-26T22:18:52.164Z"
+    },
+    {
+      "name": "zonda_restore_933f50e565c7490b96e68ac3 Storage ready",
+      "at": "2026-11-26T22:18:53.597Z"
+    },
+    {
+      "name": "zonda_restore_933f50e565c7490b96e68ac3 PostgREST ready",
+      "at": "2026-11-26T22:18:53.818Z"
+    },
+    {
+      "name": "Real database and binary backup/restore passed",
+      "at": "2026-11-26T22:18:55.809Z"
+    },
+    {
+      "name": "Post-use rollback refused safely and preserved every audit row",
+      "at": "2026-11-26T22:18:55.865Z"
+    },
+    {
+      "name": "Synthetic source database removed",
+      "at": "2026-11-26T22:18:55.917Z"
+    }
+  ],
+  "sourceFiles": [
+    {
+      "file": "index.html",
+      "sha256": "91043eb4672dbe328f0d8bd1956c193bd7c5eaf00d73e078b52826847161b8b4"
+    },
+    {
+      "file": "tests/auth-runtime.test.js",
+      "sha256": "dfb942b55293e3625d1017bc77e67e7badf4aa758c4ef4412311e784df63777c"
+    },
+    {
+      "file": "tests/fixtures/schema-baseline-20261124.json",
+      "sha256": "d44b33c5a3b97482dcc5a121e76eea817dc799b6644d200bfebf89befea2b481"
+    },
+    {
+      "file": "scripts/verify-local-supabase-full.mjs",
+      "sha256": "332aa1cfbd07ab63df0b8c624f2aa5dd503f5f7784be93429ed646cfe7a24b0c"
+    },
+    {
+      "file": "scripts/verify-auth-recovery-local.mjs",
+      "sha256": "85a8bc32092ae4177082d68ed283ac70909c7d8c9ece5d1c9f8c3067ab6e9222"
+    },
+    {
+      "file": "scripts/synthetic-supabase-fixtures.mjs",
+      "sha256": "b0551051ffeb9310df0d766a21a0d171ca99b4396374cac7855efa280f2d5525"
+    },
+    {
+      "file": "scripts/verify-supabase-hardening-local.mjs",
+      "sha256": "1d4770f6b9614629cf4432f7eefc989f4fb48b02f5cab77ec1f514155d7437f7"
+    },
+    {
+      "file": "scripts/verify-supabase-backup-restore.mjs",
+      "sha256": "0249100075aef5242a95f35a4b630639ff914067ad89c9bcb1b901bda6801cf6"
+    },
+    {
+      "file": "scripts/verify-supabase-integration.mjs",
+      "sha256": "b53667292c4a9445b8a32bb84e620e7bb28f3d4c84ec4777d6141dd52c42a14c"
+    },
+    {
+      "file": "scripts/verify-user-administration-local.mjs",
+      "sha256": "b9173842e4d60ebd9eb615812cc13a55cae0bec23fc011022b56e0c3cc53d9cb"
+    },
+    {
+      "file": "supabase/functions/crear-usuario/index.ts",
+      "sha256": "9ba484e1c8c7a044975eb1a6433876f445a0508f258c417fb6bfb2828e5b8305"
+    },
+    {
+      "file": "scripts/render-test-schema.mjs",
+      "sha256": "e7f56cf19f6e675919dd2d0c7944c3741875756bab746ca0651fdc0b6065f1d6"
+    },
+    {
+      "file": "scripts/schema-catalog.sql",
+      "sha256": "cb6eb0cf70e2feca3786fcb8415b88759c54bcfc8b8bb8455f0f9881c50035ff"
+    },
+    {
+      "file": "supabase/migrations/20261124002116_membresias_seguras.sql",
+      "sha256": "e7467f58f4351e9ab5af82f7fd84615032d76243ff4f1a18a6480138dcb35efe"
+    },
+    {
+      "file": "supabase/migrations/20261124002135_auditoria_permisos.sql",
+      "sha256": "1ae72b2ed21777203e0b2d1455c825b2db82675e9dda43276c93735f5e63af06"
+    },
+    {
+      "file": "supabase/migrations/20261124002147_documentos_privados.sql",
+      "sha256": "03cb49a1e04b2bb980636cb2604ccd054d56812d4f42365b48bd6b90b6d4f45d"
+    },
+    {
+      "file": "supabase/rollback/20261124002116_membresias_seguras_down.sql",
+      "sha256": "31de47d76d35840e2ad11c28f2dafd360f4f6d4a44a910a9387818e31b17a6ab"
+    },
+    {
+      "file": "supabase/rollback/20261124002135_auditoria_permisos.sql",
+      "sha256": "8e2ad5e05b9e8a0bcaeb56433e91ac178c4ca50c53a440fa130770c0c0899ed0"
+    },
+    {
+      "file": "supabase/rollback/20261124002147_documentos_privados_down.sql",
+      "sha256": "671ac98dd94ece6d6b37a7fb79cf920e38d70ac0b0894af4ba8cb877f2a41310"
+    }
+  ],
+  "limitations": [
+    "Synthetic loopback data only",
+    "SMTP capture does not validate public delivery",
+    "Managed supabase_vault extension is not installed in the native test cluster"
+  ],
+  "finishedAt": "2026-11-26T22:18:55.929Z"
+}

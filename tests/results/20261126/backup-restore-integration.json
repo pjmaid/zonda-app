@@ -1,0 +1,399 @@
+{
+  "runId": "zbr_ac78c77dad7742b3a4bbf244ec80fbe3",
+  "startedAt": "2026-11-26T22:18:49.366Z",
+  "passed": true,
+  "scope": "Synthetic local Auth, application SQL and private Storage; no production data",
+  "checks": [
+    {
+      "label": "Two sites, five real Auth accounts, eleven application tables and four private documents seeded synthetically",
+      "status": "passed"
+    },
+    {
+      "label": "Every Storage object downloaded through the API and reconciled to known synthetic bytes",
+      "status": "passed"
+    },
+    {
+      "label": "Full Auth/public/Storage database dump and private SHA256 manifest created; source remained stable",
+      "status": "passed"
+    },
+    {
+      "label": "pg_restore preserved every application, Auth and Storage table count and canonical metadata hash",
+      "status": "passed"
+    },
+    {
+      "label": "All five restored password hashes support real Auth login and verified JWT identities",
+      "status": "passed"
+    },
+    {
+      "label": "Restored database cannot read original bytes before binary recovery: independent Storage root verified",
+      "status": "passed"
+    },
+    {
+      "label": "All recovered binaries match backup SHA256 and byte counts through the second Storage API",
+      "status": "passed"
+    },
+    {
+      "label": "Restored JWT enforcement, site/study/contract RLS and complete application/Storage metadata integrity verified",
+      "status": "passed"
+    }
+  ],
+  "cleanup": [
+    {
+      "label": "Stop second Auth/Storage/PostgREST/gateway",
+      "status": "passed"
+    },
+    {
+      "label": "Remove only the generated restored database",
+      "status": "passed"
+    },
+    {
+      "label": "synthetic organization 0ef70e19-d797-4842-8975-cbc06376dcb5",
+      "status": "passed"
+    },
+    {
+      "label": "synthetic organization 0343e5c9-aed5-4b24-94b3-9f4dab52cb64",
+      "status": "passed"
+    },
+    {
+      "label": "synthetic object bytes",
+      "status": "passed"
+    },
+    {
+      "label": "synthetic Auth account 8b8f8d0f-dda4-4aeb-ab0e-623a0a46f22b",
+      "status": "passed"
+    },
+    {
+      "label": "synthetic Auth account 88c7e03a-ac6b-496d-a8be-b125bcfb8bb5",
+      "status": "passed"
+    },
+    {
+      "label": "synthetic Auth account 995dc421-d4f0-4b17-8935-fc1782f1349f",
+      "status": "passed"
+    },
+    {
+      "label": "synthetic Auth account bd0931cd-3348-4efc-9522-13866133d99c",
+      "status": "passed"
+    },
+    {
+      "label": "synthetic Auth account 6871a130-6363-463c-a3d9-6cde9c0fbf21",
+      "status": "passed"
+    },
+    {
+      "label": "append-only audit history retained",
+      "status": "passed"
+    },
+    {
+      "label": "synthetic empty bucket",
+      "status": "passed"
+    },
+    {
+      "label": "no fixture entities remain; audit is retained",
+      "status": "passed"
+    },
+    {
+      "label": "Clean source fixtures while retaining append-only audit",
+      "status": "passed"
+    }
+  ],
+  "preservedAuditOrganizations": [
+    "1fe61df2-379c-480a-9f0e-2f5037674cd2",
+    "02b55033-1de5-492e-8f7c-eac056e8e6e7",
+    "afb54330-47a3-48ce-95d9-e4b1865b6750",
+    "58901199-cb97-4250-adda-81bf6d63bdfe",
+    "2b27db5a-951e-4742-9983-7de481ada63c",
+    "e31e844c-2e75-4f2a-8888-dff3733d6e4d",
+    "964e9454-7d0a-4efe-bf53-26a0d07c9be3",
+    "cd6a15eb-cf58-4071-b595-dd2b5f15429b",
+    "e979b901-7ac1-4a03-86f0-dae53a5ae3d5",
+    "3c969ea5-0d5c-4a24-a8a8-4dd25cbe9ee3",
+    "ab0e9207-a3e4-4d13-a570-438225b649c6",
+    "1490b162-04a2-4c85-823f-119456625895",
+    "0ef70e19-d797-4842-8975-cbc06376dcb5",
+    "0343e5c9-aed5-4b24-94b3-9f4dab52cb64"
+  ],
+  "limitations": [
+    "Local file backend restore; not a hosted disaster-recovery timing guarantee",
+    "PostgreSQL roles already exist in the same local cluster; pg_dump does not back up cluster-global role passwords",
+    "Auth table hashes are reconciled before new restored logins modify session state"
+  ],
+  "backup": {
+    "dumpSha256": "5b619b4b780e57661558a2804a9782150f86eb0585250c966def303014b71199",
+    "dumpBytes": 435342,
+    "objectCount": 4,
+    "binaryBytes": 350,
+    "manifestSha256": "1cf9f85e9c2584a6ce610bd8ccabb515e61c7edd4c09d89b05826e9974295ad0",
+    "tables": [
+      {
+        "schema": "auth",
+        "table": "audit_log_entries",
+        "count": 123
+      },
+      {
+        "schema": "auth",
+        "table": "custom_oauth_providers",
+        "count": 0
+      },
+      {
+        "schema": "auth",
+        "table": "flow_state",
+        "count": 0
+      },
+      {
+        "schema": "auth",
+        "table": "identities",
+        "count": 5
+      },
+      {
+        "schema": "auth",
+        "table": "instances",
+        "count": 0
+      },
+      {
+        "schema": "auth",
+        "table": "mfa_amr_claims",
+        "count": 5
+      },
+      {
+        "schema": "auth",
+        "table": "mfa_challenges",
+        "count": 0
+      },
+      {
+        "schema": "auth",
+        "table": "mfa_factors",
+        "count": 0
+      },
+      {
+        "schema": "auth",
+        "table": "mfa_recovery_code_sets",
+        "count": 0
+      },
+      {
+        "schema": "auth",
+        "table": "mfa_recovery_codes",
+        "count": 0
+      },
+      {
+        "schema": "auth",
+        "table": "oauth_authorizations",
+        "count": 0
+      },
+      {
+        "schema": "auth",
+        "table": "oauth_client_states",
+        "count": 0
+      },
+      {
+        "schema": "auth",
+        "table": "oauth_clients",
+        "count": 0
+      },
+      {
+        "schema": "auth",
+        "table": "oauth_consents",
+        "count": 0
+      },
+      {
+        "schema": "auth",
+        "table": "one_time_tokens",
+        "count": 0
+      },
+      {
+        "schema": "auth",
+        "table": "refresh_tokens",
+        "count": 5
+      },
+      {
+        "schema": "auth",
+        "table": "saml_providers",
+        "count": 0
+      },
+      {
+        "schema": "auth",
+        "table": "saml_relay_states",
+        "count": 0
+      },
+      {
+        "schema": "auth",
+        "table": "schema_migrations",
+        "count": 77
+      },
+      {
+        "schema": "auth",
+        "table": "scim_tokens",
+        "count": 0
+      },
+      {
+        "schema": "auth",
+        "table": "scim_users",
+        "count": 0
+      },
+      {
+        "schema": "auth",
+        "table": "sessions",
+        "count": 5
+      },
+      {
+        "schema": "auth",
+        "table": "sso_domains",
+        "count": 0
+      },
+      {
+        "schema": "auth",
+        "table": "sso_providers",
+        "count": 0
+      },
+      {
+        "schema": "auth",
+        "table": "users",
+        "count": 5
+      },
+      {
+        "schema": "auth",
+        "table": "webauthn_challenges",
+        "count": 0
+      },
+      {
+        "schema": "auth",
+        "table": "webauthn_credentials",
+        "count": 0
+      },
+      {
+        "schema": "public",
+        "table": "ec_audit",
+        "count": 195
+      },
+      {
+        "schema": "public",
+        "table": "ec_checklists",
+        "count": 1
+      },
+      {
+        "schema": "public",
+        "table": "ec_docs",
+        "count": 4
+      },
+      {
+        "schema": "public",
+        "table": "ec_members",
+        "count": 5
+      },
+      {
+        "schema": "public",
+        "table": "ec_orgs",
+        "count": 2
+      },
+      {
+        "schema": "public",
+        "table": "ec_patients",
+        "count": 1
+      },
+      {
+        "schema": "public",
+        "table": "ec_records",
+        "count": 1
+      },
+      {
+        "schema": "public",
+        "table": "ec_settings",
+        "count": 1
+      },
+      {
+        "schema": "public",
+        "table": "ec_studies",
+        "count": 3
+      },
+      {
+        "schema": "public",
+        "table": "ec_users",
+        "count": 5
+      },
+      {
+        "schema": "public",
+        "table": "ec_visits",
+        "count": 1
+      },
+      {
+        "schema": "storage",
+        "table": "bucket_lifecycle_states",
+        "count": 0
+      },
+      {
+        "schema": "storage",
+        "table": "buckets",
+        "count": 1
+      },
+      {
+        "schema": "storage",
+        "table": "buckets_analytics",
+        "count": 0
+      },
+      {
+        "schema": "storage",
+        "table": "buckets_vectors",
+        "count": 0
+      },
+      {
+        "schema": "storage",
+        "table": "iceberg_namespaces",
+        "count": 0
+      },
+      {
+        "schema": "storage",
+        "table": "iceberg_tables",
+        "count": 0
+      },
+      {
+        "schema": "storage",
+        "table": "lifecycle_abandoned_artifacts",
+        "count": 0
+      },
+      {
+        "schema": "storage",
+        "table": "migrations",
+        "count": 82
+      },
+      {
+        "schema": "storage",
+        "table": "objects",
+        "count": 4
+      },
+      {
+        "schema": "storage",
+        "table": "s3_multipart_uploads",
+        "count": 0
+      },
+      {
+        "schema": "storage",
+        "table": "s3_multipart_uploads_parts",
+        "count": 0
+      },
+      {
+        "schema": "storage",
+        "table": "vector_indexes",
+        "count": 0
+      },
+      {
+        "schema": "zonda_private",
+        "table": "actor_context",
+        "count": 35
+      },
+      {
+        "schema": "zonda_private",
+        "table": "document_paths",
+        "count": 7
+      },
+      {
+        "schema": "zonda_private",
+        "table": "write_context",
+        "count": 0
+      },
+      {
+        "schema": "zonda_private",
+        "table": "write_receipts",
+        "count": 16
+      }
+    ]
+  },
+  "finishedAt": "2026-11-26T22:18:55.809Z"
+}

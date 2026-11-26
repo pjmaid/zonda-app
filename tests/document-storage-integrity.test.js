@@ -17,30 +17,37 @@ const doc = () => ({id:'d1', estudioId:'s1', tipo:'protocolo', filename:'protoco
 function frontend(overrides = {}) {
   const stored = doc(), calls = [], blob = new Blob(['original']);
   const ctx = vm.createContext({
-    SESSION:{id:'session'}, MEMBRESIA:{rol:'admin',org_id:'org1'}, DB:{docs:[stored]},
+    SESSION:{id:'session'}, MEMBRESIA:{rol:'admin',org_id:'org1'}, DB:{docs:[stored]},fileExists:true,pending:[],
     ZondaClinicalRag:clinical, calls, Blob, URL, setTimeout:()=>{}, T:x=>x,
     document:{createElement:()=>({click(){calls.push('download');}})},
     assertSameSession(session){if(session!==ctx.SESSION){const error=new Error('La sesión cambió');error.sessionChanged=true;throw error;}},
     auditResumen:()=>'', canFact:()=>true, ragActivo:()=>false,
     ragDocId:d=>'doc-'+d.id, ragLlamar:async input=>{calls.push(input.accion);return {ok:true};},
-    storageGet:async()=>blob, storageDel:async()=>{calls.push('delete-file');},
+    storageGet:async()=>blob, storageDel:async()=>{calls.push('delete-file');ctx.fileExists=false;},
     storagePut:async(_path, restored)=>{assert.equal(restored,blob);calls.push('restore-file');},
     Store:{online:()=>true,
       async upsert(_kind, value){calls.push('save-marker');ctx.DB.docs=[clone(value)];},
-      async remove(){calls.push('delete-record');ctx.DB.docs=[];}
+      async remove(){calls.push('delete-record');ctx.DB.docs=[];},
+      async refreshOne(){calls.push('refresh-record');},
+      async rpc(name){
+        if(name==='ec_document_cleanup_status'){calls.push('check-delete');return {deleted:ctx.DB.docs.length===0,doc_id:'d1'};}
+        if(name==='ec_pending_document_cleanup')return ctx.pending;
+        assert.equal(name,'ec_confirm_document_cleanup');calls.push('confirm-cleanup');
+        if(ctx.fileExists)throw Error('DOCUMENT_STORAGE_CLEANUP_PENDING');return {ok:true,doc_id:'d1'};
+      }
     }, ...overrides
   });
-  vm.runInContext(html.slice(html.indexOf('async function docBlob('),html.indexOf("$('btnUploadDoc').addEventListener"))+
+  vm.runInContext(html.slice(html.indexOf('async function docBlob('),html.indexOf("for(const [id,study] of [['btnRetryDocCleanup'"))+
     html.slice(html.indexOf('function ragFallo('),html.indexOf('/* consulta con recuperación:'))+
-    '\nthis.removeDocument=eliminarDocumentoSeguro;this.clearIndex=ragBorrar;this.indexDocument=ragIndexarDetalle;this.recovery=DOC_RECOVERY_FILES;',ctx);
+    '\nthis.removeDocument=eliminarDocumentoSeguro;this.clearIndex=ragBorrar;this.indexDocument=ragIndexarDetalle;this.retryCleanup=reintentarBajasDocumentos;',ctx);
   return ctx;
 }
 
-test('no elimina registros ni índices si el original no se puede respaldar', async()=>{
+test('la baja auditada precede al retiro y no necesita descargar una copia', async()=>{
   const ctx=frontend({storageGet:async()=>null});
-  await assert.rejects(ctx.removeDocument(ctx.DB.docs[0]),/copia del archivo/);
-  assert.deepEqual(ctx.calls,[]);
-  assert.equal(ctx.DB.docs.length,1);
+  assert.equal((await ctx.removeDocument(ctx.DB.docs[0])).cleanupPending,false);
+  assert.deepEqual(ctx.calls,['borrar','save-marker','delete-record','delete-file','confirm-cleanup']);
+  assert.equal(ctx.DB.docs.length,0);
 });
 
 test('un fallo de desindexación conserva el original y el registro',async()=>{
@@ -50,49 +57,90 @@ test('un fallo de desindexación conserva el original y el registro',async()=>{
   assert.ok(ctx.DB.docs[0].ragIndexado);
 });
 
-test('compensa el fallo de metadatos y permite reintentar sin marcador obsoleto',async()=>{
+test('un rechazo de metadatos conserva bytes y permite reintentar sin marcador obsoleto',async()=>{
   const ctx=frontend();let fail=true;
   ctx.Store.remove=async()=>{ctx.calls.push('delete-record');if(fail)throw Error('Conflicto');ctx.DB.docs=[];};
-  await assert.rejects(ctx.removeDocument(ctx.DB.docs[0]),/archivo fue restaurado/);
+  await assert.rejects(ctx.removeDocument(ctx.DB.docs[0]),/Conflicto/);
   assert.equal(ctx.DB.docs[0].ragIndexado,undefined);
-  assert.deepEqual(ctx.calls,['borrar','save-marker','delete-file','delete-record','restore-file']);
+  assert.deepEqual(ctx.calls,['borrar','save-marker','delete-record','check-delete']);
+  assert.equal(ctx.fileExists,true);
   fail=false;await ctx.removeDocument(ctx.DB.docs[0]);
   assert.equal(ctx.DB.docs.length,0);
   assert.equal(ctx.calls.filter(x=>x==='borrar').length,1);
 });
 
-test('una respuesta perdida de Storage también activa la restauración',async()=>{
-  const ctx=frontend({storageDel:async()=>{throw Error('Respuesta perdida');}});
-  await assert.rejects(ctx.removeDocument(ctx.DB.docs[0]),/archivo fue restaurado/);
-  assert.ok(ctx.calls.includes('restore-file'));
-  assert.ok(!ctx.calls.includes('delete-record'));
+test('una respuesta perdida de Storage se verifica sin reinsertar bytes',async()=>{
+  const ctx=frontend();ctx.storageDel=async()=>{ctx.fileExists=false;throw Error('Respuesta perdida');};
+  assert.equal((await ctx.removeDocument(ctx.DB.docs[0])).cleanupPending,false);
+  assert.ok(!ctx.calls.includes('restore-file'));
+  assert.ok(ctx.calls.includes('confirm-cleanup'));assert.equal(ctx.DB.docs.length,0);
 });
 
-test('si falla la restauración conserva una copia y no muestra éxito',async()=>{
-  const ctx=frontend({storagePut:async()=>{throw Error('Sin red');}});
-  ctx.Store.remove=async()=>{throw Error('Fallo de metadatos');};
-  await assert.rejects(ctx.removeDocument(ctx.DB.docs[0]),/copia de recuperación/);
-  assert.equal(ctx.recovery.size,1);
-  assert.ok(ctx.calls.includes('download'));
+test('si falla Storage conserva una baja pendiente y no restaura la ficha ni descarga copias',async()=>{
+  const ctx=frontend({storageDel:async()=>{throw Error('Sin red');}});
+  assert.equal((await ctx.removeDocument(ctx.DB.docs[0])).cleanupPending,true);
+  assert.equal(ctx.DB.docs.length,0);assert.equal(ctx.fileExists,true);
+  assert.ok(!ctx.calls.includes('restore-file'));assert.ok(!ctx.calls.includes('download'));
 });
 
-test('el cambio de sesión no restaura el archivo dentro de otra organización',async()=>{
+test('el cambio de sesión luego de la baja impide tocar archivos o guardar datos en otra organización',async()=>{
   const ctx=frontend();
-  ctx.storageDel=async()=>{ctx.SESSION={id:'otra-sesion'};};
+  ctx.Store.remove=async()=>{ctx.SESSION={id:'otra-sesion'};};
   await assert.rejects(ctx.removeDocument(ctx.DB.docs[0]),/La sesión cambió/);
   assert.ok(!ctx.calls.includes('restore-file'));
   assert.ok(!ctx.calls.includes('delete-record'));
+  assert.ok(!ctx.calls.includes('delete-file'));assert.ok(!ctx.calls.includes('check-delete'));
   assert.ok(!ctx.calls.includes('download'));
-  assert.equal(ctx.recovery.size,0);
+});
+
+test('cambiar sesión durante el retiro impide confirmar la baja en otra cuenta',async()=>{
+  const ctx=frontend();ctx.storageDel=async()=>{ctx.SESSION={id:'new'};throw Error('Respuesta perdida');};
+  await assert.rejects(ctx.removeDocument(ctx.DB.docs[0]),/La sesión cambió/);
+  assert.ok(!ctx.calls.includes('confirm-cleanup'));assert.ok(!ctx.calls.includes('download'));
+});
+
+test('cambiar sesión durante la confirmación no declara éxito ni genera copias',async()=>{
+  const ctx=frontend();ctx.Store.rpc=async()=>{ctx.SESSION={id:'new'};return {ok:true};};
+  await assert.rejects(ctx.removeDocument(ctx.DB.docs[0]),/La sesión cambió/);
+  assert.ok(!ctx.calls.includes('restore-file'));assert.ok(!ctx.calls.includes('download'));
 });
 
 test('dos eliminaciones simultáneas no duplican las operaciones',async()=>{
   let resolve;const waiting=new Promise(done=>{resolve=done;});
-  const ctx=frontend({storageGet:async()=>waiting});const original=ctx.DB.docs[0];
+  const ctx=frontend();const original=ctx.DB.docs[0];delete original.ragIndexado;
+  ctx.Store.remove=async()=>{ctx.calls.push('delete-record');await waiting;ctx.DB.docs=[];};
   const first=ctx.removeDocument(original);
   await assert.rejects(ctx.removeDocument(original),/ya se está eliminando/);
   resolve(new Blob(['original']));await first;
   assert.equal(ctx.calls.filter(x=>x==='delete-record').length,1);
+});
+
+test('un resultado incierto de la ficha nunca autoriza retirar el binario',async()=>{
+  const ctx=frontend();ctx.Store.remove=async()=>{throw Error('Respuesta perdida');};
+  ctx.Store.rpc=async()=>{throw Error('Sin conexión');};
+  await assert.rejects(ctx.removeDocument(ctx.DB.docs[0]),error=>error.documentDeleteUncertain===true);
+  assert.equal(ctx.fileExists,true);assert.ok(!ctx.calls.includes('delete-file'));
+});
+
+test('una baja confirmada en servidor se recupera tras perder la respuesta de la RPC',async()=>{
+  const ctx=frontend();ctx.Store.remove=async()=>{ctx.DB.docs=[];throw Error('Respuesta perdida');};
+  assert.equal((await ctx.removeDocument(ctx.DB.docs[0])).cleanupPending,false);
+  assert.ok(ctx.calls.includes('check-delete'));assert.ok(ctx.calls.includes('refresh-record'));
+  assert.equal(ctx.fileExists,false);
+});
+
+test('el reintento usa únicamente las rutas retiradas devueltas por el servidor',async()=>{
+  const ctx=frontend();ctx.pending=[{path:'s1/d1/protocolo.pdf'}];ctx.DB.docs=[];
+  const paths=[];ctx.storageDel=async path=>{paths.push(path);ctx.fileExists=false;};
+  const result=await ctx.retryCleanup('s1');
+  assert.deepEqual(paths,['s1/d1/protocolo.pdf']);assert.equal(result.completed,1);assert.equal(result.pending,0);
+  assert.ok(!ctx.calls.includes('delete-record'));assert.ok(!ctx.calls.includes('restore-file'));
+});
+
+test('el reintento aborta al cambiar la sesión después de listar bajas',async()=>{
+  const ctx=frontend();ctx.Store.rpc=async()=>{ctx.SESSION={id:'new'};return [{path:'old/private.pdf'}];};
+  await assert.rejects(ctx.retryCleanup('s1'),/La sesión cambió/);
+  assert.ok(!ctx.calls.includes('delete-file'));
 });
 
 test('los documentos históricos no clínicos se depuran con RAG desactivado',async()=>{
@@ -183,6 +231,31 @@ test('si falla la eliminación del comprobante restaura el gasto antes de inform
   vm.runInContext(html.slice(html.indexOf('async function factEliminarGasto('),html.indexOf('function factTarifas(')),ctx);
   await ctx.factEliminarGasto('gasto_remis','g1');
   assert.deepEqual(calls,['remove-expense','remove-doc','restore-expense','error']);
+});
+
+test('la limpieza pendiente del comprobante conserva la baja del gasto y no reconstruye su ficha',async()=>{
+  const calls=[],gasto={id:'g1',detalle:'Traslado'};
+  const ctx=vm.createContext({SESSION:{id:'session'},FACT_GASTOS:{gasto_remis:{titulo:'Gasto de remís'}},
+    $:()=>({value:'s1'}),factGastos:()=>[gasto],factGastoComprobante:()=>doc(),canFact:()=>true,confirm:()=>true,
+    assertSameSession:()=>{},eliminarDocumentoSeguro:async()=>({cleanupPending:true}),
+    Store:{remove:async()=>calls.push('remove-expense'),upsert:async()=>calls.push('restore-expense')},
+    mensajeBajaDocumento:result=>{assert.equal(result.cleanupPending,true);return 'Pendiente';},
+    renderFactGasto:()=>{},toast:value=>calls.push(value),alert:()=>calls.push('error'),T:x=>x
+  });
+  vm.runInContext(html.slice(html.indexOf('async function factEliminarGasto('),html.indexOf('function factTarifas(')),ctx);
+  await ctx.factEliminarGasto('gasto_remis','g1');assert.deepEqual(calls,['remove-expense','Pendiente']);
+});
+
+test('la baja incierta de un comprobante no restaura automáticamente un gasto posiblemente retirado',async()=>{
+  const calls=[],gasto={id:'g1',detalle:'Traslado'};
+  const ctx=vm.createContext({SESSION:{id:'session'},FACT_GASTOS:{gasto_remis:{titulo:'Gasto de remís'}},
+    $:()=>({value:'s1'}),factGastos:()=>[gasto],factGastoComprobante:()=>doc(),canFact:()=>true,confirm:()=>true,
+    assertSameSession:()=>{},eliminarDocumentoSeguro:async()=>{const e=Error('No se confirmó');e.documentDeleteUncertain=true;throw e;},
+    Store:{remove:async()=>calls.push('remove-expense'),upsert:async()=>calls.push('restore-expense')},
+    renderFactGasto:()=>{},toast:()=>calls.push('success'),alert:()=>calls.push('error'),T:x=>x
+  });
+  vm.runInContext(html.slice(html.indexOf('async function factEliminarGasto('),html.indexOf('function factTarifas(')),ctx);
+  await ctx.factEliminarGasto('gasto_remis','g1');assert.deepEqual(calls,['remove-expense','error']);
 });
 
 test('Storage usa eliminación por prefijos y exige la confirmación del objeto exacto',async()=>{

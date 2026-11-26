@@ -1,0 +1,111 @@
+{
+  "startedAt": "2026-11-26T22:18:46.729Z",
+  "passed": true,
+  "checks": [
+    {
+      "name": "official Auth invitation reuses the owned unconfirmed fixture identity",
+      "status": "passed"
+    },
+    {
+      "name": "duplicate pending user in same site is preserved by the actual administration handler",
+      "status": "passed"
+    },
+    {
+      "name": "duplicate pending user in another site is preserved by the actual administration handler",
+      "status": "passed"
+    },
+    {
+      "name": "duplicate pending site administrator rolls back only the newly created site",
+      "status": "passed"
+    },
+    {
+      "name": "new invited account has memberships and profile before the invitation is sent",
+      "status": "passed"
+    },
+    {
+      "name": "invitation transport failure retains the newly created account and reports its pending delivery",
+      "status": "passed"
+    },
+    {
+      "name": "valid ten-character temporary password creates a working synthetic account",
+      "status": "passed"
+    },
+    {
+      "name": "administrator changes their own password without marking it as temporary",
+      "status": "passed"
+    },
+    {
+      "name": "superadministrator assigning another account password marks it as temporary",
+      "status": "passed"
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "synthetic organization 3c969ea5-0d5c-4a24-a8a8-4dd25cbe9ee3",
+      "status": "passed"
+    },
+    {
+      "name": "synthetic organization ab0e9207-a3e4-4d13-a570-438225b649c6",
+      "status": "passed"
+    },
+    {
+      "name": "synthetic organization 1490b162-04a2-4c85-823f-119456625895",
+      "status": "passed"
+    },
+    {
+      "name": "synthetic Auth account 567a439c-1f96-48ff-8236-52ac82a9f031",
+      "status": "passed"
+    },
+    {
+      "name": "synthetic Auth account 09e41252-f641-4b5f-9d1f-3b8cf8a27bc5",
+      "status": "passed"
+    },
+    {
+      "name": "synthetic Auth account b6714d8f-3459-4242-9288-d5d73e1aa6e0",
+      "status": "passed"
+    },
+    {
+      "name": "synthetic Auth account 5bd015e2-c4d5-45b6-86c0-e88ffef04415",
+      "status": "passed"
+    },
+    {
+      "name": "synthetic Auth account 29896779-ccdf-4cd9-9eb8-ca59d4ef27b0",
+      "status": "passed"
+    },
+    {
+      "name": "synthetic Auth account 3f680bb6-80a5-4bf8-8ae6-881e3a299eb5",
+      "status": "passed"
+    },
+    {
+      "name": "synthetic Auth account ad676770-c78a-49ad-91d1-fae055b2ca3a",
+      "status": "passed"
+    },
+    {
+      "name": "synthetic Auth account c73a5b1a-ef2a-4006-9ef8-170f74bacf34",
+      "status": "passed"
+    },
+    {
+      "name": "append-only audit history retained",
+      "status": "passed"
+    },
+    {
+      "name": "synthetic empty bucket",
+      "status": "passed"
+    },
+    {
+      "name": "no fixture entities remain; audit is retained",
+      "status": "passed"
+    }
+  ],
+  "syntheticOrganizations": [
+    "3c969ea5-0d5c-4a24-a8a8-4dd25cbe9ee3",
+    "ab0e9207-a3e4-4d13-a570-438225b649c6",
+    "1490b162-04a2-4c85-823f-119456625895"
+  ],
+  "edgeSourceSha256": "9ba484e1c8c7a044975eb1a6433876f445a0508f258c417fb6bfb2828e5b8305",
+  "limitations": [
+    "Real Edge source executes in a Node VM, not the hosted Deno runtime",
+    "Mail delivery is loopback SMTP only"
+  ],
+  "finishedAt": "2026-11-26T22:18:49.363Z"
+}

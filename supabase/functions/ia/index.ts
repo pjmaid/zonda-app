@@ -198,6 +198,7 @@ async function appendAudit(auth: Awaited<ReturnType<typeof authenticate>>, reque
     },
     body: JSON.stringify({
       org_id: auth.member.org_id,
+      actor_id: auth.user.id,
       event_id: crypto.randomUUID(),
       usuario: auth.user.email || auth.user.id,
       rol: auth.member.rol || "",

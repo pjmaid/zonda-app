@@ -1,0 +1,6 @@
+{
+  "passed": true,
+  "syntheticHistoryRows": 34,
+  "historyAndSchemaUnchanged": true,
+  "scenario": "Simulated pre-existing backfill entries; exact rollback body refuses to drop permanent document history"
+}

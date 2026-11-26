@@ -1,0 +1,73 @@
+{
+  "sourceRun": "55c45e8d0f6a4dad",
+  "syntheticOnly": true,
+  "files": [
+    {
+      "file": "full-runtime-report.json",
+      "sha256": "b92f2aed08d04420e0ee4ac32282b768201864e9da8eb0a0d168c7fb969b03d0",
+      "passed": true,
+      "checks": 0
+    },
+    {
+      "file": "runtime-provenance.json",
+      "sha256": "947f1e92e258071c9d88548f1ae165948c0830cdf8707dcd0bd629e155e67588",
+      "passed": null,
+      "checks": 0
+    },
+    {
+      "file": "auth-recovery-integration.json",
+      "sha256": "9503a217ce5d18b2ede122f5b177d04bdddaa9fdfd1d04b0b4f313a2db7032c9",
+      "passed": true,
+      "checks": 17
+    },
+    {
+      "file": "hardening-integration.json",
+      "sha256": "a7dd51e4a32885ba08e1edb593d046ea338cfde406d5813c0d3a7da1f4ff4d4e",
+      "passed": true,
+      "checks": 28
+    },
+    {
+      "file": "user-administration-integration.json",
+      "sha256": "7f5ee4c7f4246ee22b574f72bd9dde69b631b955cbbc1e5a1768be1efae24be4",
+      "passed": true,
+      "checks": 9
+    },
+    {
+      "file": "backup-restore-integration.json",
+      "sha256": "fe79547bf1f6aff7e29c828c5d13f58f32092134afb90ced51f3f6fe42e3cd87",
+      "passed": true,
+      "checks": 8
+    },
+    {
+      "file": "schema-baseline-comparison.json",
+      "sha256": "e9a8b5b956350ce64b461a5908eddb790907e37fb5e2aaf5ed5b87fc9c5e4e61",
+      "passed": true,
+      "checks": 0
+    },
+    {
+      "file": "rollback-unused-comparison.json",
+      "sha256": "e9a8b5b956350ce64b461a5908eddb790907e37fb5e2aaf5ed5b87fc9c5e4e61",
+      "passed": true,
+      "checks": 0
+    },
+    {
+      "file": "rollback-used-guard.json",
+      "sha256": "0d107c469efe366cb324d43d55442abf7adee3e85afe279552b57f863d852586",
+      "passed": true,
+      "checks": 0
+    },
+    {
+      "file": "rollback-seeded-document-guard.json",
+      "sha256": "3d5964cdafd505f19926cc56317821248a0568c2928e462ed5bacb793122b2f0",
+      "passed": true,
+      "checks": 0
+    },
+    {
+      "file": "safety-storage-integration.json",
+      "sha256": "b40b1895ceb88642edd72394068cdd7ecc07516200bc9117baf3adebe7bd4903",
+      "passed": true,
+      "checks": 21,
+      "sourceRun": "3f99370777743938"
+    }
+  ]
+}

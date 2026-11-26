@@ -1,0 +1,264 @@
+{
+  "startedAt": "2026-11-26T22:18:40.740Z",
+  "checks": [
+    {
+      "name": "controlled RPC writes data and server-derived audit together",
+      "status": "passed"
+    },
+    {
+      "name": "authenticated direct REST mutations cannot bypass the audited RPC",
+      "status": "passed"
+    },
+    {
+      "name": "direct forged audit insertion and history mutation are denied",
+      "status": "passed"
+    },
+    {
+      "name": "client audit batches cannot impersonate database mutations or another actor",
+      "status": "passed"
+    },
+    {
+      "name": "authenticated callers cannot access private receipts or supply database event prefixes",
+      "status": "passed"
+    },
+    {
+      "name": "TRUNCATE cannot bypass entity and membership row checks",
+      "status": "passed"
+    },
+    {
+      "name": "idempotent replay is bound to actor and exact request payload",
+      "status": "passed"
+    },
+    {
+      "name": "simultaneous identical RPC events produce one record and one audit event",
+      "status": "passed"
+    },
+    {
+      "name": "stale revisions leave both data and audit unchanged",
+      "status": "passed"
+    },
+    {
+      "name": "audit insertion failure rolls back the entity mutation atomically",
+      "status": "passed"
+    },
+    {
+      "name": "caller-controlled skip flags cannot suppress service audit triggers",
+      "status": "passed"
+    },
+    {
+      "name": "authenticated database identity cannot SET ROLE authenticator",
+      "status": "passed"
+    },
+    {
+      "name": "site administrators cannot mutate a superadministrator row or member identity",
+      "status": "passed"
+    },
+    {
+      "name": "unsupported transaction isolation fails closed before membership changes",
+      "status": "passed"
+    },
+    {
+      "name": "bulk administrator removal rolls back every row and its audit entries",
+      "status": "passed"
+    },
+    {
+      "name": "inactive sites still cannot lose their final administrator through service SQL",
+      "status": "passed"
+    },
+    {
+      "name": "READ COMMITTED concurrent deactivate preserves the last active administrator",
+      "status": "passed"
+    },
+    {
+      "name": "READ COMMITTED concurrent demote preserves the last active administrator",
+      "status": "passed"
+    },
+    {
+      "name": "READ COMMITTED concurrent delete_member preserves the last active administrator",
+      "status": "passed"
+    },
+    {
+      "name": "READ COMMITTED concurrent delete_auth preserves the last active administrator",
+      "status": "passed"
+    },
+    {
+      "name": "Auth API cascade cannot delete the last administrator; parent organization deletion can",
+      "status": "passed"
+    },
+    {
+      "name": "unpublished object is private to its uploader, including against site administrators",
+      "status": "passed"
+    },
+    {
+      "name": "authorized publication exposes contracts only to billing users",
+      "status": "passed"
+    },
+    {
+      "name": "publication racing orphan cleanup preserves the published object",
+      "status": "passed"
+    },
+    {
+      "name": "published bytes reject replacement by upsert or update and retain their hash",
+      "status": "passed"
+    },
+    {
+      "name": "published document classification and object identity are immutable",
+      "status": "passed"
+    },
+    {
+      "name": "deactivated site invalidates previously issued JWT access",
+      "status": "passed"
+    },
+    {
+      "name": "document deletion retires metadata before bytes and never reopens the original path",
+      "status": "passed"
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "synthetic organization 1fe61df2-379c-480a-9f0e-2f5037674cd2",
+      "status": "passed"
+    },
+    {
+      "name": "synthetic organization 02b55033-1de5-492e-8f7c-eac056e8e6e7",
+      "status": "passed"
+    },
+    {
+      "name": "synthetic organization afb54330-47a3-48ce-95d9-e4b1865b6750",
+      "status": "passed"
+    },
+    {
+      "name": "synthetic organization 58901199-cb97-4250-adda-81bf6d63bdfe",
+      "status": "passed"
+    },
+    {
+      "name": "synthetic organization 2b27db5a-951e-4742-9983-7de481ada63c",
+      "status": "passed"
+    },
+    {
+      "name": "synthetic organization e31e844c-2e75-4f2a-8888-dff3733d6e4d",
+      "status": "passed"
+    },
+    {
+      "name": "synthetic organization 964e9454-7d0a-4efe-bf53-26a0d07c9be3",
+      "status": "passed"
+    },
+    {
+      "name": "synthetic organization cd6a15eb-cf58-4071-b595-dd2b5f15429b",
+      "status": "passed"
+    },
+    {
+      "name": "synthetic organization e979b901-7ac1-4a03-86f0-dae53a5ae3d5",
+      "status": "passed"
+    },
+    {
+      "name": "synthetic object bytes",
+      "status": "passed"
+    },
+    {
+      "name": "synthetic Auth account 63d87a1f-c111-47e0-b3e7-6b2ad60cf87d",
+      "status": "passed"
+    },
+    {
+      "name": "synthetic Auth account ed59d9d4-24d8-420f-98ab-d945e532f742",
+      "status": "passed"
+    },
+    {
+      "name": "synthetic Auth account 27751ef4-750d-4ce2-acd9-86c84216682a",
+      "status": "passed"
+    },
+    {
+      "name": "synthetic Auth account 4f814007-a7a8-4cf8-9e5a-68cbc3abc726",
+      "status": "passed"
+    },
+    {
+      "name": "synthetic Auth account ef647861-30cd-4a16-a62c-2ac18e67dfe1",
+      "status": "passed"
+    },
+    {
+      "name": "synthetic Auth account d5586027-ae7e-4b22-ac97-660d4c386b6e",
+      "status": "passed"
+    },
+    {
+      "name": "synthetic Auth account 1f794762-c3c1-474c-8955-d4162cffaf62",
+      "status": "passed"
+    },
+    {
+      "name": "synthetic Auth account 6395f0b8-6fa0-43ff-9d04-a25afb06309a",
+      "status": "passed"
+    },
+    {
+      "name": "synthetic Auth account 42e6b673-a2ed-4e62-92b2-5377aceb2031",
+      "status": "passed"
+    },
+    {
+      "name": "synthetic Auth account dcf82760-9993-475c-ab34-876c3d3bb511",
+      "status": "passed"
+    },
+    {
+      "name": "synthetic Auth account d95a969d-ea24-4127-85c0-70056751f6af",
+      "status": "passed"
+    },
+    {
+      "name": "synthetic Auth account 4b65393f-a63c-49a6-8318-1c31e2142ae9",
+      "status": "passed"
+    },
+    {
+      "name": "synthetic Auth account 3ec43bbc-8b77-4cfb-8d84-fd3dc81c6ebc",
+      "status": "passed"
+    },
+    {
+      "name": "synthetic Auth account 156b2fe6-9522-47ad-be3e-17eacdec84fd",
+      "status": "passed"
+    },
+    {
+      "name": "synthetic Auth account 7d08f4ba-4a0e-4eca-a80d-72a8e9854334",
+      "status": "passed"
+    },
+    {
+      "name": "synthetic Auth account b5ddd918-05f7-4c8d-a6dd-e1b037ad9062",
+      "status": "passed"
+    },
+    {
+      "name": "synthetic Auth account 13489907-615c-4a86-9541-f78c8f477abb",
+      "status": "passed"
+    },
+    {
+      "name": "synthetic Auth account 3dff9bd0-01f1-47c6-b1a3-868eef73d25b",
+      "status": "passed"
+    },
+    {
+      "name": "synthetic Auth account 78fe3781-e4b9-4a4f-b229-538ff600e7cd",
+      "status": "passed"
+    },
+    {
+      "name": "synthetic Auth account 0ddbdf1a-5cbe-4db8-9424-1960b2a9c362",
+      "status": "passed"
+    },
+    {
+      "name": "append-only audit history retained",
+      "status": "passed"
+    },
+    {
+      "name": "synthetic empty bucket",
+      "status": "passed"
+    },
+    {
+      "name": "no fixture entities remain; audit is retained",
+      "status": "passed"
+    }
+  ],
+  "passed": true,
+  "syntheticOrganizations": [
+    "1fe61df2-379c-480a-9f0e-2f5037674cd2",
+    "02b55033-1de5-492e-8f7c-eac056e8e6e7",
+    "afb54330-47a3-48ce-95d9-e4b1865b6750",
+    "58901199-cb97-4250-adda-81bf6d63bdfe",
+    "2b27db5a-951e-4742-9983-7de481ada63c",
+    "e31e844c-2e75-4f2a-8888-dff3733d6e4d",
+    "964e9454-7d0a-4efe-bf53-26a0d07c9be3",
+    "cd6a15eb-cf58-4071-b595-dd2b5f15429b",
+    "e979b901-7ac1-4a03-86f0-dae53a5ae3d5"
+  ],
+  "finishedAt": "2026-11-26T22:18:46.725Z"
+}

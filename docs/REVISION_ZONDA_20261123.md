@@ -1,5 +1,10 @@
 # Revisión de Zonda 0.9.5
 
+Seguimiento: la política de contraseñas se publicó en 0.9.6. El resto de los
+pendientes se corrigió y validó localmente para 0.9.7; ver
+[CIERRE_PENDIENTES_20261123.md](CIERRE_PENDIENTES_20261123.md) para el bloqueo
+administrativo que impide desplegar ese paquete.
+
 Se revisaron acceso, persistencia clínica, documentos, administración, IA,
 respaldo, presentación y permisos de servidor. Las reglas médicas y los datos
 clínicos existentes no se modificaron durante la revisión.

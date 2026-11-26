@@ -391,7 +391,7 @@ details>summary{color:var(--acc-dark)}
         </div>
         <div style="flex:0 0 180px"><label>Versión / fecha del doc.</label><input type="text" id="docVersion" placeholder="Ej: v3.0 – 12/05/2026"></div>
         <div class="grow"><label>Archivo (PDF, Word, etc.)</label><input type="file" id="docFile"></div>
-        <div><button id="btnUploadDoc">Adjuntar</button></div>
+        <div><button id="btnUploadDoc">Adjuntar</button> <button id="btnRetryDocCleanup" class="ghost">Reintentar bajas pendientes</button></div>
       </div>
       <div class="muted small hidden" id="docsHint" style="margin-top:6px">⚠ Guardá el estudio primero para poder adjuntar documentos.</div>
       <div id="stDocsList" style="margin-top:10px"></div>
@@ -540,7 +540,7 @@ details>summary{color:var(--acc-dark)}
         </div>
         <div style="flex:0 0 180px"><label>Fecha / descripción</label><input type="text" id="pdocVersion" placeholder="Ej: HC 20/07/2026"></div>
         <div class="grow"><label>Archivo</label><input type="file" id="pdocFile" accept=".pdf,.docx,.doc,.txt"></div>
-        <div><button id="btnUploadPdoc">Adjuntar</button></div>
+        <div><button id="btnUploadPdoc">Adjuntar</button> <button id="btnRetryPdocCleanup" class="ghost">Reintentar bajas pendientes</button></div>
       </div>
       <div class="muted small hidden" id="pdocsHint" style="margin-top:6px">⚠ Guardá el paciente primero para poder adjuntar documentos.</div>
       <div id="paDocsList" style="margin-top:10px"></div>
@@ -706,7 +706,7 @@ details>summary{color:var(--acc-dark)}
           <div class="grow"><label>Documento seleccionado</label><select id="factContratoSelect"></select></div>
           <div style="flex:0 0 190px"><label>Versión / fecha</label><input type="text" id="factContratoVersion" placeholder="Ej: Enmienda 1 – 12/08/2026"></div>
           <div class="grow"><label>Subir nueva copia</label><input type="file" id="factContratoFile" accept=".pdf,.docx,.doc,.txt"></div>
-          <div><button id="btnFactContratoUpload">Adjuntar contrato</button></div>
+          <div><button id="btnFactContratoUpload">Adjuntar contrato</button> <button id="btnRetryFactCleanup" class="ghost">Reintentar bajas pendientes</button></div>
         </div>
         <div id="factContratosLista" style="margin-top:12px"></div>
         <div class="muted small" id="factContratoInfo" style="margin-top:8px"></div>
@@ -985,6 +985,7 @@ details>summary{color:var(--acc-dark)}
         <button class="primary" id="btnExport">⬇ Exportar respaldo (JSON)</button>
         <button id="btnImportClick">↺ Restaurar respaldo validado</button>
         <button id="btnStorageCleanup">Revisar archivos sin registro</button>
+        <button id="btnDocumentCleanup">Reintentar bajas pendientes</button>
         <input type="file" id="importFile" accept=".json" class="hidden">
       </div>
     </div>
@@ -2359,7 +2360,7 @@ const Store = {
       }
       if(typeof recordarAuditoriaConfirmada==='function')
         recordarAuditoriaConfirmada(kind, (audit&&audit.accion)||(expected===null?'alta':'modificación'), obj.id,
-          (audit&&audit.detalle)||'', (audit&&audit.motivo)||'', eventId, result.updated_at);
+          (audit&&audit.detalle)||'', (audit&&audit.motivo)||'', eventId, result.audit_ts||result.updated_at);
       syncStatus('storage','ok','✓ Cambio guardado y auditado.');
       return result;
     }catch(e){
@@ -2387,7 +2388,7 @@ const Store = {
       DB[kind] = DB[kind].filter(x=>x.id!==id);
       this.revisions[kind].delete(id); this.snapshots[kind].delete(id);
       if(typeof recordarAuditoriaConfirmada==='function')
-        recordarAuditoriaConfirmada(kind,'baja',id,(audit&&audit.detalle)||'',(audit&&audit.motivo)||'',eventId);
+        recordarAuditoriaConfirmada(kind,'baja',id,(audit&&audit.detalle)||'',(audit&&audit.motivo)||'',eventId,result.audit_ts);
       syncStatus('storage','ok','✓ Registro eliminado y auditado.');
       return result;
     }catch(e){
@@ -2559,19 +2560,23 @@ async function syncAuditQueue(){
   syncStatus('audit','saving','Sincronizando '+pendientes.length+' evento(s) de auditoría…');
   try{
     const payload=pendientes.map(ev=>({
-      org_id:ev.org_id, event_id:ev.id, client_ts:ev.ts, usuario:ev.usuario, rol:ev.rol, entidad:ev.entidad,
+      org_id:ev.org_id, auth_user_id:ev.auth_user_id, event_id:ev.id, client_ts:ev.ts, entidad:ev.entidad,
       accion:ev.accion, ref_id:ev.refId, detalle:ev.detalle, motivo:ev.motivo
     }));
     if(!auditContextMatches(session,scope)) return;
-    const r=await supaFetch('/rest/v1/ec_audit', {
-      method:'POST', headers:{'Prefer':'resolution=ignore-duplicates,return=minimal'}, body:JSON.stringify(payload)
+    const r=await supaFetch('/rest/v1/rpc/ec_append_audit_events', {
+      method:'POST', body:JSON.stringify({p_events:payload})
     });
     if(!auditContextMatches(session,scope)) return;
     if(!r.ok) throw new Error('La auditoría quedó pendiente de sincronización ('+r.status+').');
-    const ids=new Set(pendientes.map(e=>e.id));
+    const receipt=await r.json();
+    if(!auditContextMatches(session,scope)) return;
+    if(!receipt || !Array.isArray(receipt.accepted)) throw new Error('El servidor no confirmó los eventos de auditoría.');
+    const sent=new Set(pendientes.map(e=>e.id));
+    const ids=new Set(receipt.accepted.filter(id=>sent.has(id)));
     AUDIT.forEach(e=>{ if(auditInScope(e,scope) && ids.has(e.id)) e.sincronizado=true; });
     saveJSON(LS_AUDIT,AUDIT);
-    syncStatus('audit','ok','✓ Auditoría sincronizada.');
+    syncStatus('audit',ids.size===pendientes.length?'ok':'saving',ids.size===pendientes.length?'✓ Auditoría sincronizada.':'Quedan eventos de auditoría pendientes de confirmación.');
     /* El tablero puede estar mostrando el contador anterior. Actualizarlo en
        cuanto el servidor confirme la cola evita que quede una alerta falsa. */
     if(CURRENT_USER && $('appShell') && !$('appShell').classList.contains('hidden') &&
@@ -2599,8 +2604,12 @@ async function auditRows(){
       if(r.ok){
         const srv = await r.json();
         if(!auditContextMatches(session,scope)) return [];
-        filas = filas.concat((Array.isArray(srv)?srv:[]).filter(e=>e.org_id===scope.org_id).map(e=>({ origen:'servidor', id:'srv-'+e.id, ts:e.ts, usuario:e.usuario||'',
-          rol:e.rol||'', entidad:e.entidad||'', accion:e.accion||'', refId:e.ref_id||'',
+        const remote=(Array.isArray(srv)?srv:[]).filter(e=>e.org_id===scope.org_id);
+        const confirmedIds=new Set(remote.filter(e=>e.actor_id===scope.auth_user_id).map(e=>e.client_event_id||e.event_id).filter(Boolean));
+        filas = filas.filter(e=>!confirmedIds.has(e.id)).concat(remote.map(e=>({
+          origen:e.source==='database'?'base de datos':e.source==='client'?'evento de cliente':e.source==='service'?'servicio':'servidor',
+          id:'srv-'+e.id, event_id:e.event_id, ts:e.ts, usuario:e.usuario||'',
+          rol:e.rol||'', entidad:e.entidad||'', accion:e.accion+(e.action_label && e.action_label!==e.accion?' · '+e.action_label:''), refId:e.ref_id||'',
           detalle:e.detalle||'', motivo:e.motivo||'' })));
       }
     }catch(e){}
@@ -2608,7 +2617,7 @@ async function auditRows(){
   if(!auditContextMatches(session,scope)) return [];
   const vistos = new Set();
   return filas.filter(e=>{
-    const k = e.ts+'|'+e.entidad+'|'+e.accion+'|'+e.refId;
+    const k = e.event_id || e.id || e.ts+'|'+e.entidad+'|'+e.accion+'|'+e.refId;
     if(vistos.has(k)) return false;
     vistos.add(k); return true;
   }).sort((a,b)=>String(b.ts).localeCompare(String(a.ts)));
@@ -5159,16 +5168,31 @@ function fmtSize(n){ if(n==null) return ''; if(n<1024) return n+' B'; if(n<10485
 /* multi-sitio: cada organizacion guarda sus archivos en su propia carpeta,
    y la politica del servidor rechaza cualquier ruta fuera de ella */
 function storagePrefijo(){ return (MEMBRESIA && MEMBRESIA.org_id) ? MEMBRESIA.org_id+'/' : ''; }
+function storageObjectUrl(path){return '/storage/v1/object/ec-docs/'+(storagePrefijo()+path).split('/').map(encodeURIComponent).join('/');}
+async function mismosBytes(a,b){
+  if(!a||!b||a.size!==b.size) return false;
+  const hashes=await Promise.all([a,b].map(async blob=>new Uint8Array(await crypto.subtle.digest('SHA-256',await blob.arrayBuffer()))));
+  return hashes[0].every((value,index)=>value===hashes[1][index]);
+}
 async function storagePut(path, blob){
-  const r = await supaFetch('/storage/v1/object/ec-docs/'+storagePrefijo()+path, {
-    method:'POST', headers:{ 'Content-Type': blob.type||'application/octet-stream', 'x-upsert':'true' }, body: blob
+  const session=SESSION;
+  const r = await supaFetch(storageObjectUrl(path), {
+    method:'POST', headers:{ 'Content-Type': blob.type||'application/octet-stream', 'x-upsert':'false' }, body: blob
   });
   if(!r.ok){
     const j = await r.json().catch(()=>({}));
-    throw new Error('No se pudo subir el archivo ('+(j.message||r.status)+'). ¿Ejecutaste el script SQL actualizado que crea el bucket ec-docs?');
+    assertSameSession(session);
+    if(r.status===409||String(j.statusCode)==='409'||j.code==='Duplicate'||j.error==='Duplicate'){
+      const existing=await storageGet(path);assertSameSession(session);
+      const same=await mismosBytes(existing,blob);assertSameSession(session);
+      if(same) return;
+      throw new Error('Ya existe otro archivo en esa ruta. Se conservó el original; no se sobrescribió.');
+    }
+    throw new Error('No se pudo subir el archivo ('+(j.message||r.status)+').');
   }
+  assertSameSession(session);
 }
-async function storageGet(path){ const r = await supaFetch('/storage/v1/object/ec-docs/'+storagePrefijo()+path, { method:'GET' }); return r.ok ? r.blob() : null; }
+async function storageGet(path){ const r = await supaFetch(storageObjectUrl(path), { method:'GET' }); return r.ok ? r.blob() : null; }
 async function storageDel(path){
   const fullPath=storagePrefijo()+path;
   const r=await supaFetch('/storage/v1/object/ec-docs',{method:'DELETE',body:JSON.stringify({prefixes:[fullPath]})});
@@ -5177,52 +5201,125 @@ async function storageDel(path){
   if(!Array.isArray(deleted)||!deleted.some(item=>item.name===fullPath)) throw new Error('Storage no confirmó la eliminación del archivo.');
 }
 
+const DOC_UPLOAD_FILES=new WeakMap();
+async function guardarDocumentoArchivo(doc,file){
+  const session=SESSION;
+  if(!Store.online()){
+    await idbPut(doc.id,file);assertSameSession(session);
+    await Store.upsert('docs',doc);return doc;
+  }
+  const scope=JSON.stringify([MEMBRESIA&&MEMBRESIA.org_id,MEMBRESIA&&MEMBRESIA.user_id,doc.estudioId,doc.pacienteId||'',doc.gastoId||'',doc.tipo]);
+  let attempts=DOC_UPLOAD_FILES.get(file);
+  if(!attempts){attempts=new Map();DOC_UPLOAD_FILES.set(file,attempts);}
+  const previous=attempts.get(scope);
+  if(previous){
+    // Una respuesta perdida puede ocultar una ficha ya guardada. Consultarla
+    // antes de reintentar evita crear dos documentos para el mismo archivo.
+    await Store.refreshOne('docs',previous.id);assertSameSession(session);
+    const confirmed=(DB.docs||[]).find(item=>item.id===previous.id);
+    if(confirmed){Object.assign(doc,confirmed);attempts.delete(scope);return doc;}
+    Object.assign(doc,previous);
+  }else{
+    doc.path=doc.estudioId+'/'+doc.id+'/'+(file.name.replace(/[^\w.\-]+/g,'_')||'documento');
+    attempts.set(scope,Object.assign({},doc));
+  }
+  // La RLS mantiene este binario privado del autor hasta confirmar su ficha.
+  // Ante cualquier resultado incierto se conserva: nunca borrar por compensar
+  // un guardado que podría haberse confirmado en el servidor.
+  await storagePut(doc.path,file);assertSameSession(session);
+  await Store.upsert('docs',doc);assertSameSession(session);
+  const confirmed=(DB.docs||[]).find(item=>item.id===doc.id);
+  if(confirmed) Object.assign(doc,confirmed);
+  attempts.delete(scope);return doc;
+}
+
 async function docBlob(doc){
-  const recovery=DOC_RECOVERY_FILES.get(doc.id);
-  if(recovery&&recovery.session===SESSION) return recovery.blob;
   try{ return doc.storage==='supabase' ? await storageGet(doc.path) : await idbGet(doc.id); }
   catch(e){ return null; }
 }
 
 const DOC_DELETE_PENDING=new Set();
-const DOC_RECOVERY_FILES=new Map();
+async function retirarArchivoDadoDeBaja(path){
+  const session=SESSION;
+  try{await storageDel(path);}catch(e){assertSameSession(session);}
+  assertSameSession(session);
+  // Una respuesta perdida o un reintento sobre un archivo ya retirado se
+  // resuelven con el historial del servidor, nunca reinsertando bytes.
+  const result=await Store.rpc('ec_confirm_document_cleanup',{p_path:path});
+  assertSameSession(session);
+  if(!result||result.ok!==true) throw new Error('El servidor no confirmó el retiro del archivo.');
+}
+function mensajeBajaDocumento(result,success){
+  return result&&result.cleanupPending
+    ? (result.local ? 'Baja registrada. No se pudo retirar la copia local de este navegador.' : 'Baja registrada. El archivo sigue pendiente de retiro; usá «Reintentar bajas pendientes».')
+    : T(success);
+}
 async function eliminarDocumentoSeguro(doc,audit){
   if(DOC_DELETE_PENDING.has(doc.id)) throw new Error('Este documento ya se está eliminando.');
   if(Store.online()&&!['admin','medico'].includes(MEMBRESIA&&MEMBRESIA.rol)&&!(doc.tipo==='contrato'&&canFact())) throw new Error('Tu rol no permite eliminar este documento.');
   const session=SESSION;
   DOC_DELETE_PENDING.add(doc.id);
-  let respaldo=null,archivoEliminado=false;
   try{
-    respaldo=await docBlob(doc);
-    if(!respaldo) throw new Error('No se pudo obtener una copia del archivo. Se conservó su registro; comprobá la conexión antes de reintentar.');
-    assertSameSession(session);
     if(doc.ragIndexado||doc.ragPendiente) await ragBorrar(doc);
     assertSameSession(session);
-    // Una respuesta perdida también puede haber borrado el objeto: restaurar
-    // ante cualquier fallo posterior al intento, no sólo tras un HTTP exitoso.
-    archivoEliminado=true;
-    if(doc.storage==='supabase') await storageDel(doc.path); else await idbDel(doc.id);
-    assertSameSession(session);
-    await Store.remove('docs',doc.id,audit||{detalle:auditResumen('docs',doc)});
-    DOC_RECOVERY_FILES.delete(doc.id);
-  }catch(e){
-    assertSameSession(session);
-    if(archivoEliminado&&respaldo){
+    try{
+      await Store.remove('docs',doc.id,audit||{detalle:auditResumen('docs',doc)});
+      assertSameSession(session);
+    }catch(e){
+      assertSameSession(session);
+      if(doc.storage!=='supabase') throw e;
+      let status;
       try{
+        status=await Store.rpc('ec_document_cleanup_status',{p_path:doc.path});
         assertSameSession(session);
-        if(doc.storage==='supabase') await storagePut(doc.path,respaldo); else await idbPut(doc.id,respaldo);
-      }catch(restaurar){
+      }catch(checkError){
         assertSameSession(session);
-        // Conservar el binario en memoria y ofrecerlo también como descarga.
-        DOC_RECOVERY_FILES.set(doc.id,{doc,blob:respaldo,session});
-        const a=document.createElement('a');a.href=URL.createObjectURL(respaldo);a.download=doc.filename||'documento-recuperado';a.click();
-        setTimeout(()=>URL.revokeObjectURL(a.href),60000);
-        throw new Error('No se confirmó la eliminación y falló la restauración. Se inició la descarga de una copia de recuperación: '+restaurar.message);
+        const uncertain=new Error('No se pudo verificar la baja. No se intentó retirar el archivo. Recargá los datos y revisá las bajas pendientes.');
+        uncertain.documentDeleteUncertain=true;throw uncertain;
       }
-      throw new Error('No se confirmó la eliminación. El archivo fue restaurado; recargá los datos antes de reintentar. '+e.message);
+      if(!status||status.doc_id!==doc.id||status.deleted!==true) throw e;
+      // El servidor confirma que la baja y su auditoría ya se guardaron.
+      try{await Store.refreshOne('docs',doc.id);}catch(refreshError){assertSameSession(session);}
+      assertSameSession(session);
+      DB.docs=(DB.docs||[]).filter(item=>item.id!==doc.id);
     }
-    throw e;
+    try{
+      if(doc.storage==='supabase') await retirarArchivoDadoDeBaja(doc.path); else await idbDel(doc.id);
+      assertSameSession(session);
+      return {cleanupPending:false};
+    }catch(cleanupError){
+      assertSameSession(session);
+      return {cleanupPending:true,local:doc.storage!=='supabase'};
+    }
   }finally{DOC_DELETE_PENDING.delete(doc.id);}
+}
+
+async function reintentarBajasDocumentos(studyId){
+  if(!Store.online()) throw new Error('Conectate al sitio para revisar las bajas pendientes.');
+  const session=SESSION,key='cleanup:'+(studyId||'*');
+  if(DOC_DELETE_PENDING.has(key)) throw new Error('Ya se están revisando las bajas pendientes.');
+  DOC_DELETE_PENDING.add(key);
+  try{
+    const pending=await Store.rpc('ec_pending_document_cleanup',{p_estudio_id:studyId||null});
+    assertSameSession(session);
+    if(!Array.isArray(pending)) throw new Error('El servidor no devolvió un listado válido.');
+    let completed=0;
+    for(const entry of pending){
+      try{await retirarArchivoDadoDeBaja(entry.path);completed++;}
+      catch(e){assertSameSession(session);}
+    }
+    return {total:pending.length,completed,pending:pending.length-completed};
+  }finally{DOC_DELETE_PENDING.delete(key);}
+}
+for(const [id,study] of [['btnRetryDocCleanup',()=> $('stId').value],['btnRetryPdocCleanup',()=> $('paEstudio').value],['btnRetryFactCleanup',()=> $('factStudy').value],['btnDocumentCleanup',()=>null]]){
+  $(id).addEventListener('click',async()=>{
+    const btn=$(id),session=SESSION;if(btn.disabled)return;btn.disabled=true;
+    try{
+      const result=await reintentarBajasDocumentos(study());assertSameSession(session);
+      alert(result.total ? 'Archivos retirados: '+result.completed+'. Bajas pendientes: '+result.pending+'.' : 'No hay bajas pendientes accesibles.');
+    }catch(e){if(!e.sessionChanged)alert(e.message);}
+    finally{btn.disabled=false;}
+  });
 }
 
 $('btnUploadDoc').addEventListener('click', async ()=>{
@@ -5240,10 +5337,7 @@ $('btnUploadDoc').addEventListener('click', async ()=>{
   };
   const btn = $('btnUploadDoc'); btn.disabled = true; btn.textContent = 'Subiendo...';
   try{
-    if(Store.online()){ doc.path = stId+'/'+doc.id+'/'+f.name.replace(/[^\w.\-]+/g,'_'); await storagePut(doc.path, f); }
-    else{ await idbPut(doc.id, f); }
-    assertSameSession(session);
-    await Store.upsert('docs', doc);
+    await guardarDocumentoArchivo(doc,f);assertSameSession(session);
     $('docFile').value=''; $('docVersion').value='';
     renderDocsList(); renderCiPanel(); renderStudies();
     toast(doc.tipo==='ci' ? T('Consentimiento cargado. Queda como versión vigente.') : T('Documento adjuntado.'));
@@ -5316,8 +5410,8 @@ async function deleteDoc(id){
   const doc = (DB.docs||[]).find(d=>d.id===id); if(!doc) return;
   if(!confirm('¿Eliminar el documento «'+(doc.filename||'')+'»?')) return;
   try{
-    await eliminarDocumentoSeguro(doc);
-    renderAll(); renderDocsList(); renderCiPanel(); renderPaDocs(); toast(T('Documento eliminado.'));
+    const result=await eliminarDocumentoSeguro(doc);
+    renderAll(); renderDocsList(); renderCiPanel(); renderPaDocs(); toast(mensajeBajaDocumento(result,'Documento eliminado.'));
   }catch(e){
     if(!e.sessionChanged) alert('No se pudo completar la eliminación del documento. '+e.message);
   }
@@ -7825,10 +7919,7 @@ $('btnUploadPdoc').addEventListener('click', async ()=>{
   };
   const btn = $('btnUploadPdoc'); btn.disabled = true; btn.textContent = 'Subiendo...';
   try{
-    if(Store.online()){ doc.path = paciente.estudioId+'/'+doc.id+'/'+f.name.replace(/[^\w.\-]+/g,'_'); await storagePut(doc.path, f); }
-    else{ await idbPut(doc.id, f); }
-    assertSameSession(session);
-    await Store.upsert('docs', doc);
+    await guardarDocumentoArchivo(doc,f);assertSameSession(session);
     $('pdocFile').value=''; $('pdocVersion').value='';
     renderPaDocs();
     toast('Documento del paciente adjuntado.');
@@ -10894,8 +10985,8 @@ async function factEliminarContrato(doc){
   if(!doc || !canFact()) return;
   if(!confirm('¿Eliminar el contrato o adenda «'+(doc.filename||'')+'»?')) return;
   try{
-    await eliminarDocumentoSeguro(doc);
-    FACT_CHAT=[]; FACT_CHAT_KEY=''; renderFact(); toast(T('Contrato o adenda eliminado.'));
+    const result=await eliminarDocumentoSeguro(doc);
+    FACT_CHAT=[]; FACT_CHAT_KEY=''; renderFact(); toast(mensajeBajaDocumento(result,'Contrato o adenda eliminado.'));
   }catch(e){
     if(!e.sessionChanged) alert('No se pudo completar la eliminación del contrato o adenda. '+e.message);
   }
@@ -10986,10 +11077,7 @@ async function factGuardarGasto(tipo){
         filename:file.name, mime:file.type, size:file.size, subido:new Date().toISOString(),
         storage:Store.online()?'supabase':'idb', path:'' };
       try{
-        if(Store.online()){ doc.path=stId+'/'+doc.id+'/'+file.name.replace(/[^\w.\-]+/g,'_'); await storagePut(doc.path,file); }
-        else await idbPut(doc.id,file);
-        assertSameSession(session);
-        await Store.upsert('docs',doc);
+        await guardarDocumentoArchivo(doc,file);
         assertSameSession(session);
         gasto.comprobanteDocId=doc.id;
         await Store.upsert('records',gasto,{accion:'modificación',detalle:def.titulo+' con comprobante',motivo:''});
@@ -11007,17 +11095,18 @@ async function factEliminarGasto(tipo,id){
   if(!gasto || !canFact() || !confirm('¿Eliminar este '+def.titulo.toLowerCase()+'?')) return;
   const doc=factGastoComprobante(gasto);
   const session=SESSION;
-  let gastoEliminado=false;
+  let gastoEliminado=false,documentResult;
   try{
     await Store.remove('records',gasto.id,{detalle:def.titulo+': '+gasto.detalle,motivo:''});
+    assertSameSession(session);
     gastoEliminado=true;
     if(doc){
-      await eliminarDocumentoSeguro(doc,{detalle:'Comprobante de '+def.titulo.toLowerCase(),motivo:'Gasto eliminado'});
+      documentResult=await eliminarDocumentoSeguro(doc,{detalle:'Comprobante de '+def.titulo.toLowerCase(),motivo:'Gasto eliminado'});
     }
-    renderFactGasto(tipo); toast(T('Gasto eliminado.'));
+    renderFactGasto(tipo); toast(mensajeBajaDocumento(documentResult,'Gasto eliminado.'));
   }catch(e){
     if(e.sessionChanged) return;
-    if(gastoEliminado){
+    if(gastoEliminado&&!e.documentDeleteUncertain){
       try{assertSameSession(session);await Store.upsert('records',gasto,{detalle:'Restauración de gasto: comprobante no eliminado',motivo:'Eliminación incompleta'});}
       catch(restaurar){if(!restaurar.sessionChanged)alert('La eliminación quedó incompleta: el comprobante requiere revisión y no se pudo restaurar el registro del gasto. '+restaurar.message);return;}
     }
@@ -11193,10 +11282,7 @@ $('btnFactContratoUpload').addEventListener('click', async ()=>{
   };
   btn.disabled=true; btn.textContent=T('Subiendo...');
   try{
-    if(Store.online()){ doc.path=stId+'/'+doc.id+'/'+f.name.replace(/[^\w.\-]+/g,'_'); await storagePut(doc.path,f); }
-    else await idbPut(doc.id,f);
-    assertSameSession(session);
-    await Store.upsert('docs',doc);
+    await guardarDocumentoArchivo(doc,f);assertSameSession(session);
     $('factContratoFile').value=''; $('factContratoVersion').value='';
     renderFact(); toast(T('Contrato adjuntado en Facturación.'));
   }catch(e){ if(!e.sessionChanged)alert(T('No se pudo adjuntar el contrato: ')+e.message); }
@@ -12446,7 +12532,7 @@ function refreshUserUi(){
 function renderUsers(){
   if(!can('usuarios')) return;
   $('usersHint').innerHTML = Store.online()
-    ? T('Podés crear usuarios, asignarles permisos, cambiarles la clave o eliminar definitivamente su acceso. Los datos clínicos que hayan registrado se conservan en la auditoría.')+
+    ? T('Podés crear usuarios, asignar permisos, activar o desactivar su acceso y enviar un correo para recuperar la clave. La baja definitiva está reservada al superadministrador.')+
       (miOrgNombre() ? ' <span class="chip acc">'+T('Sitio')+': '+esc(miOrgNombre())+'</span>' : '')
     : '<b>'+T('Modo local')+':</b> '+T('esta lista organiza roles y protocolos, pero no es una barrera de seguridad: los datos viven en este navegador. Para control de acceso real, pasá al modo online con Supabase.');
   const us = usersAll().slice().sort((a,b)=>(a.nombre||a.email||'').localeCompare(b.nombre||b.email||''));
@@ -12463,7 +12549,7 @@ function renderUsers(){
         '</div></div>'+
       '<button class="ghost" data-ued="'+u.id+'">'+T('Editar')+'</button>'+
       '<button class="ghost" data-utog="'+u.id+'">'+(u.activo===false?T('Activar'):T('Desactivar'))+'</button>'+
-      (u.id===(ME&&ME.id)?'':'<button class="ghost" data-udel="'+u.id+'" style="color:var(--bad)">'+T('Eliminar')+'</button>')+
+      (u.id===(ME&&ME.id) || (Store.online() && !esSuper())?'':'<button class="ghost" data-udel="'+u.id+'" style="color:var(--bad)">'+T('Eliminar')+'</button>')+
       '</div>';
   }).join('') : '<div class="muted small">'+T('Todavía no hay usuarios cargados.')+'</div>';
   $('usersList').querySelectorAll('[data-ued]').forEach(b=>b.addEventListener('click', ()=>userForm(b.dataset.ued)));
@@ -12482,6 +12568,7 @@ function renderUsers(){
   $('usersList').querySelectorAll('[data-udel]').forEach(b=>b.addEventListener('click', async ()=>{
     const u = usersAll().find(x=>x.id===b.dataset.udel);
     if(!u) return;
+    if(Store.online() && !esSuper()){ toast(T('La baja definitiva requiere un superadministrador. Podés desactivar el acceso.')); return; }
     if(u.id===(ME&&ME.id) || u.authId===jwtSub()){ toast(T('No podés eliminar tu propio usuario.')); return; }
     if(!confirm(T('¿Eliminar definitivamente a')+' '+(u.nombre||u.email)+'?\n\n'+
       T('Se borrará su cuenta de acceso y sus asignaciones. Los registros clínicos y la auditoría se conservarán.'))) return;
@@ -12597,7 +12684,7 @@ function userForm(id){
       '</select></div>'+
     '</div>'+
     '<div class="muted small" id="uf_roldesc" style="margin:4px 0 8px"></div>'+
-    (Store.online() ? (u.id ?
+    (Store.online() ? (u.id ? ((esSuper() || u.authId===jwtSub()) ?
       '<div class="row" id="uf_passwordBox">'+
         '<div class="grow"><label>'+T('Nueva clave')+'</label><input type="password" id="uf_password" autocomplete="new-password"></div>'+
         '<div class="grow"><label>'+T('Repetir nueva clave')+'</label><input type="password" id="uf_password2" autocomplete="new-password"></div>'+
@@ -12605,7 +12692,7 @@ function userForm(id){
       '</div>'+
       '<div class="muted small" id="uf_passwordHint" style="margin:-2px 0 8px">'+
         T('Mínimo 10 caracteres, con mayúscula, minúscula, número y símbolo. El usuario deberá cambiarla al iniciar sesión.')+
-      '</div>' :
+      '</div>' : '<div class="muted small">'+T('Para recuperar el acceso, enviá el correo de restablecimiento: cada usuario define su propia clave.')+'</div>') :
       '<div class="row" id="uf_ctempBox">'+
         '<div class="grow"><label>'+T('Clave temporal (opcional)')+'</label>'+
           '<input type="password" id="uf_ctemp" autocomplete="new-password"></div>'+
@@ -12868,10 +12955,10 @@ $('btnTestSupa').addEventListener('click', async ()=>{
   const msg = $('cfgSupaMsg');
   msg.textContent='Probando...'; msg.style.color='var(--muted)';
   try{
-    const r = await fetch(url+'/rest/v1/ec_studies?select=id&limit=1', { headers:{ 'apikey':key, 'Authorization':'Bearer '+key } });
-    if(r.ok){ msg.textContent='✔ Conexión OK y tablas creadas. Podés guardar el modo online.'; msg.style.color='var(--ok)'; }
-    else if(r.status===404){ msg.textContent='Conecta, pero faltan las tablas o migraciones requeridas en Supabase.'; msg.style.color='var(--warn)'; }
-    else if(r.status===401){ msg.textContent='La clave (anon key) no es válida para ese proyecto.'; msg.style.color='var(--bad)'; }
+    const r = await fetch(url+'/auth/v1/health', { headers:{ 'apikey':key }, signal:AbortSignal.timeout(15000) });
+    if(r.ok){ msg.textContent='✔ Servicio de acceso disponible. La lectura de datos se verifica al iniciar sesión.'; msg.style.color='var(--ok)'; }
+    else if(r.status===404){ msg.textContent='No se encontró el servicio de acceso. Revisá la URL del proyecto.'; msg.style.color='var(--warn)'; }
+    else if(r.status===401 || r.status===403){ msg.textContent='El proyecto rechazó la clave pública configurada.'; msg.style.color='var(--bad)'; }
     else { msg.textContent='Respuesta inesperada ('+r.status+'). Revisá URL y clave.'; msg.style.color='var(--bad)'; }
   }catch(e){
     msg.textContent='No se pudo conectar: '+e.message; msg.style.color='var(--bad)';

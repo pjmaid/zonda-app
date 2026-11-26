@@ -54,12 +54,16 @@ test('eventos nuevos incluyen usuario y sitio; el logout conserva auditoría y b
 test('la cola solo envía pendientes de la cuenta y sitio actuales con org_id explícito; legados quedan intactos',async()=>{
   const legacy={id:'legacy',sincronizado:false},calls=[];
   const ctx=app([event('own'),event('other-user','user-b'),event('other-org','user-a','org-b'),legacy],async(route,opts)=>{
-    calls.push({route,payload:JSON.parse(opts.body)});return reply({});
+    calls.push({route,payload:JSON.parse(opts.body)});return reply({accepted:['own']});
   });
   assert.equal(ctx.audit.pending().length,1);
   await ctx.audit.queue();
   assert.equal(calls.length,1);
-  assert.deepEqual(calls[0].payload.map(e=>({id:e.event_id,org:e.org_id})),[{id:'own',org:'org-a'}]);
+  assert.equal(calls[0].route,'/rest/v1/rpc/ec_append_audit_events');
+  assert.deepEqual(calls[0].payload.p_events.map(e=>({id:e.event_id,org:e.org_id})),[{id:'own',org:'org-a'}]);
+  assert.equal(calls[0].payload.p_events[0].auth_user_id,'user-a');
+  assert.equal(Object.hasOwn(calls[0].payload.p_events[0],'usuario'),false);
+  assert.equal(Object.hasOwn(calls[0].payload.p_events[0],'rol'),false);
   assert.equal(ctx.audit.pending().length,0);
   assert.equal(ctx.audit.all().find(e=>e.id==='other-user').sincronizado,false);
   assert.equal(ctx.audit.all().find(e=>e.id==='other-org').sincronizado,false);
@@ -90,9 +94,40 @@ test('una respuesta pendiente de A no confirma eventos ni muestra errores en B n
   first.resolve(reply({},503));await syncA;
   assert.equal(ctx.audit.all().find(e=>e.id==='a').sincronizado,false);
   assert.equal(ctx.state.status.some(args=>args[1]==='error'),false);
-  second.resolve(reply({}));await syncB;
+  second.resolve(reply({accepted:['b']}));await syncB;
   assert.equal(ctx.audit.all().find(e=>e.id==='b').sincronizado,true);
   assert.equal(ctx.state.timers.length,0);
+});
+
+test('la cola conserva recibos incompletos y sólo confirma identificadores enviados y aceptados',async()=>{
+  const ctx=app([event('a'),event('b')],async()=>reply({accepted:['a','foreign']}));
+  await ctx.audit.queue();
+  assert.deepEqual(copy(ctx.audit.pending()).map(e=>e.id),['b']);
+  assert.equal(ctx.state.timers.length,1);
+  assert.equal(ctx.state.status.at(-1)[1],'saving');
+});
+
+test('una respuesta sin recibo no marca eventos como sincronizados',async()=>{
+  const ctx=app([event('a')],async()=>reply({}));
+  await ctx.audit.queue();
+  assert.equal(ctx.audit.pending().length,1);
+  assert.equal(ctx.state.status.at(-1)[1],'error');
+  assert.equal(ctx.state.timers.length,1);
+});
+
+test('el servidor reemplaza la copia local del mismo evento y distingue declaraciones de cliente',async()=>{
+  const ctx=app([event('confirmed')],async()=>reply([
+    {id:1,org_id:'org-a',actor_id:'user-a',event_id:'client:user-a:confirmed',client_event_id:'confirmed',
+      ts:'2026-11-23T12:00:00Z',entidad:'paciente',accion:'evento de cliente',action_label:'prueba',source:'client',ref_id:'confirmed'},
+    {id:2,org_id:'org-a',actor_id:'user-b',event_id:'database-event',ts:'2026-11-23T12:00:00Z',
+      entidad:'paciente',accion:'alta',source:'database',ref_id:'other'}
+  ]));
+  const rows=copy(await ctx.audit.rows());
+  assert.equal(rows.length,2);
+  assert.equal(rows.find(e=>e.id==='srv-1').accion,'evento de cliente · prueba');
+  assert.equal(rows.find(e=>e.id==='srv-1').origen,'evento de cliente');
+  assert.equal(rows.find(e=>e.id==='srv-2').origen,'base de datos');
+  assert.equal(rows.some(e=>e.id==='confirmed'),false);
 });
 
 test('la lectura iniciada por A no entrega datos locales ni remotos después de cambiar a B',async()=>{
