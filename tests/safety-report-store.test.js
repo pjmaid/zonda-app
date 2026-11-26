@@ -21,12 +21,12 @@ function fixture(initial = [], settings = {}) {
 
 test('sube un reporte al estudio con su fecha y referencia sin incorporarlo al corpus clínico', async () => {
   const {driver, counts} = fixture();
-  const report = await driver.upload(file(), metadata, {});
+  const report = await driver.upload(file(), {...metadata, category:'CIOMS'}, {});
   assert.equal(report.estudioId, 'S1');
   assert.equal(report.path, 'S1/doc-1/Informe_1.pdf');
   assert.equal(report.tipo, 'reporte_seguridad');
   assert.equal(report.safetyReference, 'CASO 27');
-  assert.equal(report.safetyCategory, 'SUSAR');
+  assert.equal(report.safetyCategory, 'CIOMS');
   assert.equal(report.safetyDate, '2024-02-29');
   assert.equal(safety.isReport(report), true);
   assert.equal(rag.isClinicalDocument(report), false);

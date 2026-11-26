@@ -27,7 +27,7 @@ test('búsqueda, categoría y fechas combinan metadatos del patrocinador y archi
     { id: 'ref', filename: 'adjunto.pdf', safetyReference: 'Señal-17', safetyCategory: 'SUSAR', safetyDate: '2026-07-01', subido: '2026-10-01T00:00:00Z' },
     { id: 'name', filename: 'Informe Señal-17.pdf', safetyCategory: 'SUSAR', safetyDate: '2026-07-31', subido: '2026-10-04T00:00:00Z' },
     { id: 'legacy', filename: 'uno.pdf', version: 'Señal-17', safetyCategory: 'SUSAR', subido: '2026-07-31T09:00:00Z' },
-    { id: 'wrong-type', filename: 'Señal-17.pdf', safetyCategory: 'DSUR', safetyDate: '2026-07-15' },
+    { id: 'wrong-type', filename: 'Señal-17.pdf', safetyCategory: 'CIOMS', safetyDate: '2026-07-15' },
     { id: 'wrong-date', filename: 'Señal-17.pdf', safetyCategory: 'SUSAR', safetyDate: '2026-08-01' },
     { id: 'wrong-title', filename: 'otro.pdf', safetyCategory: 'SUSAR', safetyDate: '2026-07-15' },
   ];
@@ -37,6 +37,7 @@ test('búsqueda, categoría y fechas combinan metadatos del patrocinador y archi
   assert.equal(result.total, 3);
   assert.equal(result.page, 1);
   assert.deepEqual(result.items.map(doc => doc.id), ['name', 'legacy', 'ref']);
+  assert.deepEqual(selectPage(reports, {category:'CIOMS'}).items.map(doc=>doc.id), ['wrong-type']);
   const empty = selectPage(reports, {search: 'inexistente', page: 100});
   assert.equal(empty.page, 1);
   assert.equal(empty.pages, 1);
