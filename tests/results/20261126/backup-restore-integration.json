@@ -1,6 +1,6 @@
 {
-  "runId": "zbr_80f5556b987b4ffe8e7e118e374f3027",
-  "startedAt": "2026-11-26T21:50:23.326Z",
+  "runId": "zbr_ac78c77dad7742b3a4bbf244ec80fbe3",
+  "startedAt": "2026-11-26T22:18:49.366Z",
   "passed": true,
   "scope": "Synthetic local Auth, application SQL and private Storage; no production data",
   "checks": [
@@ -47,11 +47,11 @@
       "status": "passed"
     },
     {
-      "label": "synthetic organization 309e0e0e-e3d6-47e2-b633-cc67ed4cace7",
+      "label": "synthetic organization 0ef70e19-d797-4842-8975-cbc06376dcb5",
       "status": "passed"
     },
     {
-      "label": "synthetic organization debf346b-6e7a-4df0-8cc4-d35b8bd2abc8",
+      "label": "synthetic organization 0343e5c9-aed5-4b24-94b3-9f4dab52cb64",
       "status": "passed"
     },
     {
@@ -59,23 +59,23 @@
       "status": "passed"
     },
     {
-      "label": "synthetic Auth account e413a711-c207-4697-acf3-507cf818fc77",
+      "label": "synthetic Auth account 8b8f8d0f-dda4-4aeb-ab0e-623a0a46f22b",
       "status": "passed"
     },
     {
-      "label": "synthetic Auth account 71f16997-a5d9-4909-9ab2-22a432253465",
+      "label": "synthetic Auth account 88c7e03a-ac6b-496d-a8be-b125bcfb8bb5",
       "status": "passed"
     },
     {
-      "label": "synthetic Auth account e6c1eaa9-d4bd-4a9e-91c3-0dc4f6268182",
+      "label": "synthetic Auth account 995dc421-d4f0-4b17-8935-fc1782f1349f",
       "status": "passed"
     },
     {
-      "label": "synthetic Auth account 78565cfb-3a3c-4f81-964a-efca278abf45",
+      "label": "synthetic Auth account bd0931cd-3348-4efc-9522-13866133d99c",
       "status": "passed"
     },
     {
-      "label": "synthetic Auth account 9a3d8109-ebe4-4fc7-acbb-8b91bf1614aa",
+      "label": "synthetic Auth account 6871a130-6363-463c-a3d9-6cde9c0fbf21",
       "status": "passed"
     },
     {
@@ -96,20 +96,20 @@
     }
   ],
   "preservedAuditOrganizations": [
-    "513238cf-0717-424b-b876-c6dfc8d6b114",
-    "03ed1126-3314-45f5-bfb5-1a403c5f4343",
-    "1afbe5f0-1c8e-4c29-98d5-7e0a6d0fbdf3",
-    "fe7b2c00-c7db-41d9-a142-82cad79e2834",
-    "55f86160-5447-4740-9b05-e641d3f8d556",
-    "770769e9-734c-42f2-b9ea-88b373435145",
-    "aa3cedb7-c69d-4d8a-998e-48a48bcbe1ee",
-    "a1bffaf3-3b62-4bb7-9d57-b62ae055b331",
-    "f1e6cb03-19a5-4864-a42d-75eb213f4931",
-    "aa3bb973-f856-403d-a740-7d697253d440",
-    "ec6f6c91-af01-4154-bbef-36cf0ca5a902",
-    "6c786037-e44c-4377-ab8e-74274faff47b",
-    "309e0e0e-e3d6-47e2-b633-cc67ed4cace7",
-    "debf346b-6e7a-4df0-8cc4-d35b8bd2abc8"
+    "1fe61df2-379c-480a-9f0e-2f5037674cd2",
+    "02b55033-1de5-492e-8f7c-eac056e8e6e7",
+    "afb54330-47a3-48ce-95d9-e4b1865b6750",
+    "58901199-cb97-4250-adda-81bf6d63bdfe",
+    "2b27db5a-951e-4742-9983-7de481ada63c",
+    "e31e844c-2e75-4f2a-8888-dff3733d6e4d",
+    "964e9454-7d0a-4efe-bf53-26a0d07c9be3",
+    "cd6a15eb-cf58-4071-b595-dd2b5f15429b",
+    "e979b901-7ac1-4a03-86f0-dae53a5ae3d5",
+    "3c969ea5-0d5c-4a24-a8a8-4dd25cbe9ee3",
+    "ab0e9207-a3e4-4d13-a570-438225b649c6",
+    "1490b162-04a2-4c85-823f-119456625895",
+    "0ef70e19-d797-4842-8975-cbc06376dcb5",
+    "0343e5c9-aed5-4b24-94b3-9f4dab52cb64"
   ],
   "limitations": [
     "Local file backend restore; not a hosted disaster-recovery timing guarantee",
@@ -117,11 +117,11 @@
     "Auth table hashes are reconciled before new restored logins modify session state"
   ],
   "backup": {
-    "dumpSha256": "41f616686d80b824c31e6f85c08cfb1e69e43f2593255eaab2fc93efa63944de",
-    "dumpBytes": 435389,
+    "dumpSha256": "5b619b4b780e57661558a2804a9782150f86eb0585250c966def303014b71199",
+    "dumpBytes": 435342,
     "objectCount": 4,
     "binaryBytes": 350,
-    "manifestSha256": "15edc1e5f9f17043cb3854c1bdd0477f35f9add1699364dadedd4f41ca6f0a91",
+    "manifestSha256": "1cf9f85e9c2584a6ce610bd8ccabb515e61c7edd4c09d89b05826e9974295ad0",
     "tables": [
       {
         "schema": "auth",
@@ -395,5 +395,5 @@
       }
     ]
   },
-  "finishedAt": "2026-11-26T21:50:29.921Z"
+  "finishedAt": "2026-11-26T22:18:55.809Z"
 }

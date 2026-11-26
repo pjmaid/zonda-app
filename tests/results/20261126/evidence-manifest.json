@@ -1,10 +1,10 @@
 {
-  "sourceRun": "8e12bbd4ca2195b4",
+  "sourceRun": "55c45e8d0f6a4dad",
   "syntheticOnly": true,
   "files": [
     {
       "file": "full-runtime-report.json",
-      "sha256": "103ad2e4981a39fd6c7fd310018e9939886b69f7d654d94ca4403f3707916e92",
+      "sha256": "b92f2aed08d04420e0ee4ac32282b768201864e9da8eb0a0d168c7fb969b03d0",
       "passed": true,
       "checks": 0
     },
@@ -16,25 +16,25 @@
     },
     {
       "file": "auth-recovery-integration.json",
-      "sha256": "682b1dfa5007427fc70ba59f97fb32257de4994f52cc51f66aa93dfb8ba333ec",
+      "sha256": "9503a217ce5d18b2ede122f5b177d04bdddaa9fdfd1d04b0b4f313a2db7032c9",
       "passed": true,
       "checks": 17
     },
     {
       "file": "hardening-integration.json",
-      "sha256": "0a67f0fb7a16653edc95f7a49b82a105f904afac57a9491d77fb5e638fe91d72",
+      "sha256": "a7dd51e4a32885ba08e1edb593d046ea338cfde406d5813c0d3a7da1f4ff4d4e",
       "passed": true,
       "checks": 28
     },
     {
       "file": "user-administration-integration.json",
-      "sha256": "0406ba68264f6e6e6d46aee60f3adb47402dfa3b95ced01f701f44fa198016c8",
+      "sha256": "7f5ee4c7f4246ee22b574f72bd9dde69b631b955cbbc1e5a1768be1efae24be4",
       "passed": true,
       "checks": 9
     },
     {
       "file": "backup-restore-integration.json",
-      "sha256": "c24ea6cd87918d9cf2969811a76842bf169a4aef560d181268d6f0ed5f0ef6cf",
+      "sha256": "fe79547bf1f6aff7e29c828c5d13f58f32092134afb90ced51f3f6fe42e3cd87",
       "passed": true,
       "checks": 8
     },
@@ -52,7 +52,7 @@
     },
     {
       "file": "rollback-used-guard.json",
-      "sha256": "5cc0effe76d132953f175f9b3db68bc75f1cf834ab60df9ff9a5e30565644ed9",
+      "sha256": "0d107c469efe366cb324d43d55442abf7adee3e85afe279552b57f863d852586",
       "passed": true,
       "checks": 0
     },
@@ -61,6 +61,13 @@
       "sha256": "3d5964cdafd505f19926cc56317821248a0568c2928e462ed5bacb793122b2f0",
       "passed": true,
       "checks": 0
+    },
+    {
+      "file": "safety-storage-integration.json",
+      "sha256": "b40b1895ceb88642edd72394068cdd7ecc07516200bc9117baf3adebe7bd4903",
+      "passed": true,
+      "checks": 21,
+      "sourceRun": "3f99370777743938"
     }
   ]
 }

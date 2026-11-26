@@ -1,0 +1,168 @@
+{
+  "startedAt": "2026-11-26T22:18:28.073Z",
+  "passed": true,
+  "syntheticOnly": true,
+  "implementation": {
+    "file": "/workspace/scratch/b91352d15e1d/zonda-password-20261126/safety-report-store.js",
+    "sha256": "78449dc33554a4a48d64413af01a3222032fdb988353709dd68ab16c155a004a"
+  },
+  "checks": [
+    {
+      "phase": "0.9.6-base",
+      "name": "Real module uploads a report with exact category, date, reference and bytes",
+      "status": "passed"
+    },
+    {
+      "phase": "0.9.6-base",
+      "name": "Assigned roles open private reports; unrelated study, organization and anonymous access are denied",
+      "status": "passed"
+    },
+    {
+      "phase": "0.9.6-base",
+      "name": "Unauthorized mutations and uploads cannot cross study or organization scope",
+      "status": "passed"
+    },
+    {
+      "phase": "0.9.6-base",
+      "name": "Doctor and administrator can upload the new report type through the real module",
+      "status": "passed"
+    },
+    {
+      "phase": "0.9.6-base",
+      "name": "Lost save response retries the same committed report without duplicate metadata or bytes",
+      "status": "passed"
+    },
+    {
+      "phase": "0.9.6-base",
+      "name": "Legacy Otro classification preserves binary identity and ledger while adding report metadata",
+      "status": "passed"
+    },
+    {
+      "phase": "0.9.6-base",
+      "name": "Updating category, date and reference preserves new and legacy report identity, bytes and ledger",
+      "status": "passed"
+    },
+    {
+      "phase": "0.9.6-base",
+      "name": "Stale metadata correction is rejected without overwriting the report or audit history",
+      "status": "passed"
+    },
+    {
+      "phase": "0.9.6-base",
+      "name": "Undoing legacy classification restores exact metadata without altering bytes, ledger or access",
+      "status": "passed"
+    },
+    {
+      "phase": "0.9.6-base",
+      "name": "New report type cannot be restored as legacy and classified edits have audit events",
+      "status": "passed"
+    },
+    {
+      "phase": "0.9.7-hardened",
+      "name": "Real module uploads a report with exact category, date, reference and bytes",
+      "status": "passed"
+    },
+    {
+      "phase": "0.9.7-hardened",
+      "name": "Assigned roles open private reports; unrelated study, organization and anonymous access are denied",
+      "status": "passed"
+    },
+    {
+      "phase": "0.9.7-hardened",
+      "name": "Unauthorized mutations and uploads cannot cross study or organization scope",
+      "status": "passed"
+    },
+    {
+      "phase": "0.9.7-hardened",
+      "name": "Doctor and administrator can upload the new report type through the real module",
+      "status": "passed"
+    },
+    {
+      "phase": "0.9.7-hardened",
+      "name": "Lost save response retries the same committed report without duplicate metadata or bytes",
+      "status": "passed"
+    },
+    {
+      "phase": "0.9.7-hardened",
+      "name": "Legacy Otro classification preserves binary identity and ledger while adding report metadata",
+      "status": "passed"
+    },
+    {
+      "phase": "0.9.7-hardened",
+      "name": "Updating category, date and reference preserves new and legacy report identity, bytes and ledger",
+      "status": "passed"
+    },
+    {
+      "phase": "0.9.7-hardened",
+      "name": "Stale metadata correction is rejected without overwriting the report or audit history",
+      "status": "passed"
+    },
+    {
+      "phase": "0.9.7-hardened",
+      "name": "Undoing legacy classification restores exact metadata without altering bytes, ledger or access",
+      "status": "passed"
+    },
+    {
+      "phase": "0.9.7-hardened",
+      "name": "New report type cannot be restored as legacy and classified edits have audit events",
+      "status": "passed"
+    },
+    {
+      "phase": "0.9.7-hardened",
+      "name": "Changing legacy tipo is rejected and leaves revision, audit and permanent ledger intact",
+      "status": "passed"
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "synthetic organization b8f38366-b2b7-402c-9ddf-f648c2c51572",
+      "status": "passed"
+    },
+    {
+      "name": "synthetic organization d10e3183-1cd1-412b-8a7b-0342f57a90cf",
+      "status": "passed"
+    },
+    {
+      "name": "synthetic object bytes",
+      "status": "passed"
+    },
+    {
+      "name": "synthetic Auth account 478b7027-5ddf-4a26-ab84-872c4866d4db",
+      "status": "passed"
+    },
+    {
+      "name": "synthetic Auth account 6b603254-20e1-49c9-b90a-c5f4f8f582d3",
+      "status": "passed"
+    },
+    {
+      "name": "synthetic Auth account b035f9fb-ef7f-4eeb-aaa5-c1966441945f",
+      "status": "passed"
+    },
+    {
+      "name": "synthetic Auth account ddd8f623-712e-4094-a97d-c303a60ebe08",
+      "status": "passed"
+    },
+    {
+      "name": "synthetic Auth account f6325ffa-67b0-44ca-adb0-67e4c711c99b",
+      "status": "passed"
+    },
+    {
+      "name": "append-only audit history retained",
+      "status": "passed"
+    },
+    {
+      "name": "synthetic empty bucket",
+      "status": "passed"
+    },
+    {
+      "name": "no fixture entities remain; audit is retained",
+      "status": "passed"
+    }
+  ],
+  "limitations": [
+    "Native loopback runtime and synthetic files only",
+    "Application storage module is real; UI and managed cloud runtime are not tested",
+    "Baseline policies are the metadata capture from 2026-11-24"
+  ],
+  "finishedAt": "2026-11-26T22:18:31.060Z"
+}

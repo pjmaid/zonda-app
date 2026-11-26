@@ -1,6 +1,6 @@
 # Validación local integrada — 26 de noviembre de 2026
 
-Resultado: **aprobado**, ejecución `8e12bbd4ca2195b4`. Esta evidencia valida la
+Resultado: **aprobado**, ejecución `55c45e8d0f6a4dad`. Esta evidencia valida la
 versión completa preparada de Zonda en servicios locales con datos sintéticos;
 no demuestra que las migraciones o esta versión estén publicadas en producción.
 
@@ -12,6 +12,7 @@ no demuestra que las migraciones o esta versión estén publicadas en producció
 | Permisos, auditoría y concurrencia | 28/28: REST, JWT, RPC, recibos de reintento, auditoría obligatoria, cuatro carreras de administración con espera de bloqueo observada, protección de superadministradores y documentos privados. |
 | Administración de usuarios | 9/9: fuente real de la Edge Function ejecutada en Node contra Auth/PostgREST locales; duplicados pendientes de la misma organización y de otra conservan sus cuentas y membresías. La invitación ocurre después del alta persistida. Un fallo de envío no borra la cuenta. La clave temporal de diez caracteres permite iniciar sesión. La clave elegida por su titular queda personal (`clave_temporal=false`); una asignada a otra persona conserva el indicador temporal. |
 | Respaldo/restauración | 8/8: `pg_dump`/`pg_restore`, descarga y recuperación de cuatro archivos, recuentos y hashes de todas las tablas, login de cinco cuentas restauradas y RLS del segundo servicio. |
+| Archivo de reportes de seguridad | 21/21 en ensayo complementario: diez con políticas base 0.9.6 y once con las migraciones 0.9.7. Módulo real contra Auth/Storage/PostgREST locales, apertura por URL firmada, roles y aislamiento, reintentos sin duplicados y reclasificación/deshacer de documentos «Otro» sin alterar binarios ni historial. |
 | Esquema y reversión sin uso | El catálogo coincide con la captura del esquema de producción del 24/11. Aplicar y revertir las tres migraciones en la base vacía restaura ese catálogo sin diferencias. |
 | Reversión con historial documental | La reversión rechaza 34 rutas históricas sintéticas que simulan el backfill de registros existentes. Conserva todas las filas y el esquema. |
 | Reversión después de uso | La reversión de auditoría se rechaza y conserva exactamente la pista y el esquema. No se purga el historial para forzar el resultado. |
@@ -37,6 +38,32 @@ sin el campo `password`. La prueba observa ambas respuestas, comprueba el ID
 confirmado y el indicador devuelto por Auth, y vuelve a iniciar sesión con la
 misma clave. La validación de diez caracteres y los cuatro tipos se ejecuta
 antes de estas solicitudes.
+
+## Archivo de reportes por estudio
+
+El ensayo complementario `3f99370777743938` ejecutó el módulo real
+`safety-report-store.js`, primero sobre el catálogo base 0.9.6 y después sobre
+las tres migraciones 0.9.7 en la misma base sintética. Su SHA-256
+`78449dc33554a4a48d64413af01a3222032fdb988353709dd68ab16c155a004a`
+es idéntico en la worktree de publicación y en la versión completa validada.
+El resultado sanitizado está en
+[`safety-storage-integration.json`](../tests/results/20261126/safety-storage-integration.json).
+
+Se guardaron archivos de tipo `reporte_seguridad` con categoría, fecha y
+referencia; se abrieron sus bytes y URL firmada con usuarios autorizados. Las
+lecturas, firmas y escrituras de otros estudios u organizaciones fueron
+rechazadas. Un reintento después de una respuesta perdida recuperó la misma
+ficha sin duplicar el archivo. Reclasificar un documento `otro` agrega
+`safetyReport:true`; deshacer elimina esos metadatos y conserva el tipo, la
+ruta, el contenido y el registro permanente. En 0.9.7, intentar cambiar
+físicamente `tipo` se rechaza sin modificar ficha, revisión, auditoría ni ledger.
+La edición de categoría, fecha y referencia funciona tanto en reportes nuevos
+como en los incorporados desde «Otro». Una revisión desactualizada se rechaza
+sin sobrescribir los datos ni introducir auditoría parcial.
+
+Este ensayo cubre el módulo y el almacenamiento real local; la interfaz visual
+requiere sus pruebas propias. Su supervisor temporal no modifica código de la
+aplicación ni utiliza cuentas o archivos reales.
 
 ## Identidad de las fuentes
 

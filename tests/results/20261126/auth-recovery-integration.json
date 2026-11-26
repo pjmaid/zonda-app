@@ -1,5 +1,5 @@
 {
-  "startedAt": "2026-11-26T21:50:09.845Z",
+  "startedAt": "2026-11-26T22:18:35.503Z",
   "passed": true,
   "runtime": "Official Auth 2.198.0 + PostgreSQL 17.12, loopback only",
   "checks": [
@@ -95,5 +95,5 @@
     "No usa la cuenta ni la clave de Pablo",
     "Las funciones reales del cliente corren en un DOM de prueba; no es una sesión de navegador"
   ],
-  "finishedAt": "2026-11-26T21:50:14.320Z"
+  "finishedAt": "2026-11-26T22:18:39.805Z"
 }

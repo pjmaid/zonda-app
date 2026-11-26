@@ -2,7 +2,7 @@
 
 Trabajo iniciado el 23 y validado el 26 de noviembre de 2026 (Argentina).
 Los identificadores de migración usan UTC y fueron generados con Supabase CLI
-3.3.0. La versión 0.9.6.1 con la política y la reutilización de contraseñas está publicada. Este paquete
+3.3.0. La versión 0.9.6.2 incorpora el archivo de reportes de seguridad por estudio y conserva la política de contraseñas de 0.9.6.1. Este paquete
 0.9.7 está preparado y validado localmente, pero **no aplicado en producción**:
 la conexión SQL administrativa devuelve `28P01` al autenticar a `postgres`.
 No es un rechazo de la contraseña personal del usuario de Zonda.

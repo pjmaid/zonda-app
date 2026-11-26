@@ -1,114 +1,114 @@
 {
-  "startedAt": "2026-11-26T21:50:09.494Z",
-  "runId": "8e12bbd4ca2195b4",
-  "database": "zonda_test_8e12bbd4ca2195b4",
+  "startedAt": "2026-11-26T22:18:35.215Z",
+  "runId": "55c45e8d0f6a4dad",
+  "database": "zonda_test_55c45e8d0f6a4dad",
   "passed": true,
   "stages": [
     {
       "name": "PostgreSQL 17 ready",
-      "at": "2026-11-26T21:50:09.725Z"
+      "at": "2026-11-26T22:18:35.443Z"
     },
     {
       "name": "Fresh synthetic database created",
-      "at": "2026-11-26T21:50:09.805Z"
+      "at": "2026-11-26T22:18:35.473Z"
     },
     {
-      "name": "zonda_test_8e12bbd4ca2195b4 Auth ready",
-      "at": "2026-11-26T21:50:10.075Z"
+      "name": "zonda_test_55c45e8d0f6a4dad Auth ready",
+      "at": "2026-11-26T22:18:35.742Z"
     },
     {
-      "name": "zonda_test_8e12bbd4ca2195b4 Storage ready",
-      "at": "2026-11-26T21:50:11.706Z"
+      "name": "zonda_test_55c45e8d0f6a4dad Storage ready",
+      "at": "2026-11-26T22:18:37.204Z"
     },
     {
-      "name": "zonda_test_8e12bbd4ca2195b4 PostgREST ready",
-      "at": "2026-11-26T21:50:11.928Z"
+      "name": "zonda_test_55c45e8d0f6a4dad PostgREST ready",
+      "at": "2026-11-26T22:18:37.423Z"
     },
     {
       "name": "Real Auth SMTP recovery and invitation passed",
-      "at": "2026-11-26T21:50:14.321Z"
+      "at": "2026-11-26T22:18:39.806Z"
     },
     {
       "name": "Current production metadata baseline reproduced exactly",
-      "at": "2026-11-26T21:50:14.437Z"
+      "at": "2026-11-26T22:18:39.935Z"
     },
     {
       "name": "Applied locally 20261124002116_membresias_seguras",
-      "at": "2026-11-26T21:50:14.455Z",
+      "at": "2026-11-26T22:18:39.957Z",
       "sha256": "e7467f58f4351e9ab5af82f7fd84615032d76243ff4f1a18a6480138dcb35efe"
     },
     {
       "name": "Applied locally 20261124002135_auditoria_permisos",
-      "at": "2026-11-26T21:50:14.488Z",
+      "at": "2026-11-26T22:18:39.995Z",
       "sha256": "1ae72b2ed21777203e0b2d1455c825b2db82675e9dda43276c93735f5e63af06"
     },
     {
       "name": "Applied locally 20261124002147_documentos_privados",
-      "at": "2026-11-26T21:50:14.511Z",
+      "at": "2026-11-26T22:18:40.020Z",
       "sha256": "03cb49a1e04b2bb980636cb2604ccd054d56812d4f42365b48bd6b90b6d4f45d"
     },
     {
       "name": "Pre-use rollback restored exact current baseline metadata",
-      "at": "2026-11-26T21:50:14.609Z"
+      "at": "2026-11-26T22:18:40.104Z"
     },
     {
       "name": "Reapplied locally 20261124002116_membresias_seguras",
-      "at": "2026-11-26T21:50:14.626Z",
+      "at": "2026-11-26T22:18:40.120Z",
       "sha256": "e7467f58f4351e9ab5af82f7fd84615032d76243ff4f1a18a6480138dcb35efe"
     },
     {
       "name": "Reapplied locally 20261124002135_auditoria_permisos",
-      "at": "2026-11-26T21:50:14.662Z",
+      "at": "2026-11-26T22:18:40.153Z",
       "sha256": "1ae72b2ed21777203e0b2d1455c825b2db82675e9dda43276c93735f5e63af06"
     },
     {
       "name": "Reapplied locally 20261124002147_documentos_privados",
-      "at": "2026-11-26T21:50:14.689Z",
+      "at": "2026-11-26T22:18:40.187Z",
       "sha256": "03cb49a1e04b2bb980636cb2604ccd054d56812d4f42365b48bd6b90b6d4f45d"
     },
     {
       "name": "Rollback with 34 seeded document paths refused safely",
-      "at": "2026-11-26T21:50:14.719Z"
+      "at": "2026-11-26T22:18:40.216Z"
     },
     {
       "name": "Real adversarial REST and SQL concurrency checks passed",
-      "at": "2026-11-26T21:50:20.772Z",
+      "at": "2026-11-26T22:18:46.726Z",
       "checks": 28
     },
     {
       "name": "Real user administration and ten-character temporary password passed",
-      "at": "2026-11-26T21:50:23.321Z",
+      "at": "2026-11-26T22:18:49.363Z",
       "checks": 9
     },
     {
-      "name": "zonda_restore_3776fb1148a847a396b76488 Auth ready",
-      "at": "2026-11-26T21:50:26.019Z"
+      "name": "zonda_restore_933f50e565c7490b96e68ac3 Auth ready",
+      "at": "2026-11-26T22:18:52.164Z"
     },
     {
-      "name": "zonda_restore_3776fb1148a847a396b76488 Storage ready",
-      "at": "2026-11-26T21:50:27.445Z"
+      "name": "zonda_restore_933f50e565c7490b96e68ac3 Storage ready",
+      "at": "2026-11-26T22:18:53.597Z"
     },
     {
-      "name": "zonda_restore_3776fb1148a847a396b76488 PostgREST ready",
-      "at": "2026-11-26T21:50:27.676Z"
+      "name": "zonda_restore_933f50e565c7490b96e68ac3 PostgREST ready",
+      "at": "2026-11-26T22:18:53.818Z"
     },
     {
       "name": "Real database and binary backup/restore passed",
-      "at": "2026-11-26T21:50:29.922Z"
+      "at": "2026-11-26T22:18:55.809Z"
     },
     {
       "name": "Post-use rollback refused safely and preserved every audit row",
-      "at": "2026-11-26T21:50:29.983Z"
+      "at": "2026-11-26T22:18:55.865Z"
     },
     {
       "name": "Synthetic source database removed",
-      "at": "2026-11-26T21:50:30.036Z"
+      "at": "2026-11-26T22:18:55.917Z"
     }
   ],
   "sourceFiles": [
     {
       "file": "index.html",
-      "sha256": "3e56194e658bd6a441efb08f3b3ff6ad8899c72cdd84e242bc08cc0c60ef5df2"
+      "sha256": "91043eb4672dbe328f0d8bd1956c193bd7c5eaf00d73e078b52826847161b8b4"
     },
     {
       "file": "tests/auth-runtime.test.js",
@@ -188,5 +188,5 @@
     "SMTP capture does not validate public delivery",
     "Managed supabase_vault extension is not installed in the native test cluster"
   ],
-  "finishedAt": "2026-11-26T21:50:30.049Z"
+  "finishedAt": "2026-11-26T22:18:55.929Z"
 }
