@@ -10,6 +10,8 @@
 <script src="today-rules.js"></script>
 <script src="flow-trace.js"></script>
 <script src="clinical-rag-policy.js"></script>
+<script src="safety-report-store.js"></script>
+<script src="safety-reports.js"></script>
 <script src="patient-eligibility-policy.js"></script>
 <script src="billing-ai-policy.js"></script>
 <script src="visit-evolution-policy.js"></script>
@@ -155,6 +157,13 @@ pre.sql{background:#0f2233;color:#d8e6f3;padding:14px;border-radius:10px;overflo
 .doc-line:last-child{border-bottom:none}
 .doc-line .dinfo{flex:1;min-width:200px}
 details>summary{color:var(--acc-dark)}
+#studiesList .actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:5px;white-space:normal}
+#safetyArchive summary{cursor:pointer;font-weight:600;padding:6px 0}
+#safetyArchive details+details{border-top:1px solid var(--line);margin-top:8px;padding-top:4px}
+#safetyArchive td button{margin:2px}
+#safetyArchive .toolbar{margin:10px 0 0}
+#safetyArchive input[type=file]{display:block;width:100%;margin-top:5px}
+@media(max-width:640px){#studiesList .actions{justify-content:flex-start}}
 ::-webkit-scrollbar{height:10px;width:10px}
 ::-webkit-scrollbar-thumb{background:#c3cfda;border-radius:6px}
 ::-webkit-scrollbar-thumb:hover{background:#a9b9c8}
@@ -281,6 +290,16 @@ details>summary{color:var(--acc-dark)}
     <div id="studiesEmpty" class="empty hidden">Todavía no hay estudios. Creá uno nuevo o cargá el ejemplo para ver cómo funciona.</div>
   </section>
 
+  <section id="view-safety-reports" class="view hidden" aria-labelledby="safetyHeading">
+    <div class="toolbar">
+      <h2 id="safetyHeading" style="margin:0">Reportes de seguridad</h2>
+      <span id="safetyStudyName" class="muted"></span>
+      <span class="spacer"></span>
+      <button id="safetyBack" type="button">Volver a Estudios</button>
+    </div>
+    <div id="safetyArchive"></div>
+  </section>
+
   <!-- ==== ESTUDIOS: EDITOR ==== -->
   <section id="view-study-edit" class="view hidden">
     <h2 id="studyEditTitle">Nuevo estudio</h2>
@@ -358,7 +377,7 @@ details>summary{color:var(--acc-dark)}
     </div>
 
     <div class="card">
-      <div class="toolbar" style="margin-bottom:0"><h3 style="margin:0">Documentos del estudio</h3><span class="spacer"></span><button class="ghost" id="btnStudyAsk">🔎 Consultar los documentos</button></div>
+      <div class="toolbar" style="margin-bottom:0"><h3 style="margin:0">Documentos del estudio</h3><span class="spacer"></span><button type="button" class="ghost" id="btnStudySafety">Reportes de seguridad</button><button class="ghost" id="btnStudyAsk">🔎 Consultar los documentos</button></div>
       <div class="muted small" style="margin-bottom:8px">Protocolo, consentimiento informado (CI), manual de procedimientos, enmiendas, etc. Quedan disponibles para ver o descargar cuando los necesites. En modo local se guardan en este navegador; en modo online, en la nube del equipo.</div>
       <div class="row">
         <div style="flex:0 0 220px"><label>Tipo de documento</label>
@@ -2759,7 +2778,7 @@ function qualityBannerHtml(issues){
 
 /* ---- navegación ---- */
 const TAB_OF_VIEW = {
-  'view-dashboard':'dashboard', 'view-studies':'studies', 'view-study-edit':'studies',
+  'view-dashboard':'dashboard', 'view-studies':'studies', 'view-study-edit':'studies', 'view-safety-reports':'studies',
   'view-patients':'patients', 'view-patient-edit':'patients',
   'view-visits':'visits', 'view-visit-form':'visits', 'view-evolution':'visits',
   'view-labs':'labs', 'view-config':'config',
@@ -2767,9 +2786,19 @@ const TAB_OF_VIEW = {
   'view-agenda':'agenda', 'view-prep':'agenda', 'view-kpi':'kpi',
   'view-airep':'tools', 'view-chk':'tools', 'view-fact':'fact'
 };
+let safetyPage = null;
 function showView(id){
   const view = $(id);
   if(!view) return;
+  if(safetyPage && id!=='view-safety-reports'){
+    if(safetyPage.panel && safetyPage.panel.isBusy()){
+      toast('Esperá a que termine la carga o detenela después del archivo actual.');
+      return;
+    }
+    closeSafetyReports();
+    if(id==='view-studies') renderStudies();
+    if(id==='view-study-edit') renderDocsList();
+  }
   $$('.view').forEach(v=>v.classList.add('hidden'));
   view.classList.remove('hidden');
   if(typeof applyLang==='function') setTimeout(applyLang, 0);
@@ -2912,6 +2941,7 @@ async function savePersonalPassword(password,token){
   return Object.assign({},result,{reused});
 }
 function clearPrivateSessionData(){
+  if(typeof closeSafetyReports==='function') closeSafetyReports();
   DB={studies:[],patients:[],visits:[],docs:[],users:[],records:[],checklists:[],settings:[]};
   if(typeof Store.resetMeta==='function') Store.resetMeta();
   if(typeof DOC_RECOVERY_FILES!=='undefined') DOC_RECOVERY_FILES.clear();
@@ -3333,12 +3363,18 @@ function renderStudies(){
   const box = $('studiesList'); box.innerHTML='';
   const mios = visibleStudies();
   $('studiesEmpty').classList.toggle('hidden', mios.length>0);
+  const reportCounts = new Map();
+  for(const doc of DB.docs||[]){
+    if(ZondaSafetyStore.isReport(doc))
+      reportCounts.set(doc.estudioId,(reportCounts.get(doc.estudioId)||0)+1);
+  }
   const sorted = mios.slice().sort((a,b)=>a.codigo.localeCompare(b.codigo));
   for(const s of sorted){
     const nPac = DB.patients.filter(p=>p.estudioId===s.id).length;
     const nVis = (s.visitas||[]).length;
     const ci = latestCI(s.id);
     const nDocs = studyDocsOf(s.id).length;
+    const safetyCount = reportCounts.get(s.id) || 0;
     const div = document.createElement('div');
     div.className='stcard';
     div.innerHTML =
@@ -3354,11 +3390,12 @@ function renderStudies(){
         '</div>'+
       '</div>'+
       '<div class="actions">'+
+        '<button type="button" class="ghost" data-act="safety">Reportes de seguridad'+(safetyCount?' ('+safetyCount+')':'')+'</button>'+
         (can('estudiosEditar')?'<button class="primary" data-act="edit" style="padding:9px 18px">'+T('Editar')+'</button>':'')+
         (ci?'<button class="ghost" data-act="ci" title="'+T('Ver la última versión del consentimiento informado')+'">📄 '+T('CI vigente')+'</button>'+
             (featOn('ia.askCi')?'<button class="ghost" data-act="ciask" title="'+T('Consultar el consentimiento informado')+'">❓</button>':'')+
             '<button class="ghost" data-act="ciprint" title="'+T('Imprimir')+'">🖨</button>':'')+
-        (featOn('ia.askDocs') && studyDocsOf(s.id).some(d=>d.tipo!=='ci')
+        (featOn('ia.askDocs') && clinicalDocsOf(s.id).some(d=>d.tipo!=='ci')
           ?'<button class="ghost" data-act="docsask" title="'+T('Consultar los documentos del estudio')+'">🔎 '+T('Protocolo')+'</button>':'')+
         (can('borrar')?'<button class="ghost" data-act="del" style="color:var(--bad)">'+T('Eliminar')+'</button>':'')+
       '</div>';
@@ -3368,6 +3405,7 @@ function renderStudies(){
       if(bAsk) bAsk.addEventListener('click', ()=>openCiModal(ci.id));
       div.querySelector('[data-act=ciprint]').addEventListener('click', ()=>printDoc(ci.id));
     }
+    div.querySelector('[data-act=safety]').addEventListener('click',()=>openSafetyReports(s.id,'view-studies'));
     const bDocs = div.querySelector('[data-act=docsask]');
     if(bDocs) bDocs.addEventListener('click', ()=>openStudyAsk(s.id));
     const bEdit=div.querySelector('[data-act=edit]'); if(bEdit) bEdit.addEventListener('click', ()=>openStudyEditor(s.id));
@@ -3375,6 +3413,60 @@ function renderStudies(){
     box.appendChild(div);
   }
 }
+
+function closeSafetyReports(){
+  if(!safetyPage) return;
+  const page=safetyPage;
+  safetyPage=null;
+  if(page.panel) page.panel.destroy();
+  $('safetyArchive').replaceChildren();
+  $('safetyStudyName').textContent='';
+}
+
+function openSafetyReports(studyId, returnView){
+  const study=getStudy(studyId);
+  if(!study || study.anulado || !ME || !CURRENT_USER || !canSeeStudy(studyId)){
+    toast('No se pudo abrir el archivo de este estudio.');
+    return;
+  }
+  if(safetyPage && safetyPage.panel && safetyPage.panel.isBusy()) return;
+  closeSafetyReports();
+  const page={session:SESSION,user:CURRENT_USER,organization:MEMBRESIA && MEMBRESIA.org_id,returnView};
+  safetyPage=page;
+  const isActive=()=>safetyPage===page && SESSION===page.session && CURRENT_USER===page.user &&
+    (MEMBRESIA && MEMBRESIA.org_id)===page.organization && !!ME && ME.activo!==false &&
+    !!getStudy(studyId) && !getStudy(studyId).anulado && canSeeStudy(studyId);
+  const canManage=()=>isActive() && can('estudiosEditar');
+  const assertWrite=()=>{
+    if(!canManage()) throw new Error('Ya no se puede modificar el archivo de este estudio.');
+    assertDeploymentWritable();
+  };
+  const assertRead=id=>{
+    if(!isActive() || !(DB.docs||[]).some(d=>d.id===id && d.estudioId===studyId && ZondaSafetyStore.isReport(d)))
+      throw new Error('El reporte ya no está disponible en este estudio.');
+  };
+  const reportStore=ZondaSafetyStore.create({
+    studyId, assertContext:assertWrite, docs:()=>DB.docs||[], online:()=>Store.online(),
+    uid, storagePut, idbPut, saveDoc:(doc,audit)=>Store.upsert('docs',doc,audit),
+    refreshDoc:id=>Store.refreshOne('docs',id)
+  });
+  const documentsMatching=predicate=>isActive()
+    ? (DB.docs||[]).filter(d=>d.estudioId===studyId && predicate(d)) : [];
+  $('safetyStudyName').textContent=[study.codigo,study.nombre].filter(Boolean).join(' · ');
+  $('safetyBack').textContent=returnView==='view-study-edit'?'Volver al estudio':'Volver a Estudios';
+  showView('view-safety-reports');
+  page.panel=ZondaSafetyReports.mount($('safetyArchive'),{
+    studyId, isActive, canManage,
+    getReports:()=>documentsMatching(ZondaSafetyStore.isReport),
+    getOtherDocs:()=>documentsMatching(ZondaSafetyStore.isOther),
+    upload:reportStore.upload, reclassify:reportStore.reclassify, restore:reportStore.restore,
+    updateMetadata:reportStore.updateMetadata,
+    open:id=>{ assertRead(id); return openDoc(id,()=>assertRead(id)); },
+    download:id=>{ assertRead(id); return downloadDoc(id,()=>assertRead(id)); }
+  });
+}
+$('safetyBack').addEventListener('click',()=>{ if(safetyPage) showView(safetyPage.returnView); });
+$('btnStudySafety').addEventListener('click',()=>openSafetyReports($('stId').value,'view-study-edit'));
 
 function openStudyEditor(id){
   if(!id && !can('estudiosCrear')){ toast(T('Solo un administrador puede crear protocolos.')); return; }
@@ -5030,7 +5122,7 @@ $('btnCopyEvo').addEventListener('click', async ()=>{
 });
 
 /* ================= DOCUMENTOS DEL ESTUDIO ================= */
-const DOC_TIPOS_ES = { protocolo:'Protocolo', ci:'Consentimiento informado', manual:'Manual de procedimientos', enmienda:'Enmienda', contrato:'Contrato / presupuesto', historia:'Historia clínica', resumen:'Resumen / epicrisis', laboratorio:'Laboratorio', informe:'Informe / estudio compl.', medicacion:'Medicación / recetas', otro:'Otro' };
+const DOC_TIPOS_ES = { reporte_seguridad:'Reporte de seguridad', protocolo:'Protocolo', ci:'Consentimiento informado', manual:'Manual de procedimientos', enmienda:'Enmienda', contrato:'Contrato / presupuesto', historia:'Historia clínica', resumen:'Resumen / epicrisis', laboratorio:'Laboratorio', informe:'Informe / estudio compl.', medicacion:'Medicación / recetas', otro:'Otro' };
 const DOC_TIPOS = new Proxy({}, { get:(o,k)=>DOC_TIPOS_ES[k] ? T(DOC_TIPOS_ES[k]) : undefined });
 
 function idbOpen(){
@@ -5051,7 +5143,8 @@ function esDocumentoFinanciero(doc){
   return !!(doc && (doc.tipo==='contrato' || /^gasto_(?:remis|medicamentos)_comprobante$/.test(doc.tipo||'')));
 }
 /* Contratos y comprobantes se administran únicamente desde Facturación. */
-function studyDocsOf(studyId){ return docsOf(studyId).filter(d=>!esDocumentoFinanciero(d)); }
+function studyDocsOf(studyId){ return (DB.docs||[]).filter(d=>d.estudioId===studyId && !esDocumentoFinanciero(d) && !ZondaSafetyStore.isReport(d))
+  .sort((a,b)=>(b.subido||'').localeCompare(a.subido||'')); }
 /* El corpus clínico se limita a fuentes normativas del mismo protocolo. Nunca
    incluye contratos, facturas, administrativos ni documentos de pacientes. */
 function clinicalDocsOf(studyId){ return ZondaClinicalRag.clinicalDocuments(DB.docs||[], studyId); }
@@ -5172,6 +5265,7 @@ function renderDocsList(){
   const saved = !!(stId && getStudy(stId));
   $('docsHint').classList.toggle('hidden', saved);
   $('btnUploadDoc').disabled = !saved;
+  $('btnStudySafety').disabled = !saved;
   if(!saved) return;
   const list = studyDocsOf(stId);
   if(!list.length){ box.innerHTML='<div class="muted small">'+T('Sin documentos adjuntos todavía.')+'</div>'; return; }
@@ -5195,9 +5289,10 @@ function renderDocsList(){
   }
 }
 
-async function openDoc(id){
+async function openDoc(id, assertContext){
   const doc = (DB.docs||[]).find(d=>d.id===id); if(!doc) return;
   const b = await docBlob(doc);
+  if(assertContext) assertContext();
   if(!b){ toast('El archivo no está disponible en este navegador/modo. Volvé a adjuntarlo.'); return; }
   const blob = b.type ? b : new Blob([b], { type: doc.mime||'application/octet-stream' });
   if(!/^(?:application\/pdf|text\/plain|image\/(?:png|jpeg|gif|webp))$/i.test(blob.type)){
@@ -5208,9 +5303,10 @@ async function openDoc(id){
   window.open(url, '_blank', 'noopener,noreferrer');
   setTimeout(()=>URL.revokeObjectURL(url), 60000);
 }
-async function downloadDoc(id){
+async function downloadDoc(id, assertContext){
   const doc = (DB.docs||[]).find(d=>d.id===id); if(!doc) return;
   const b = await docBlob(doc);
+  if(assertContext) assertContext();
   if(!b){ toast('El archivo no está disponible en este navegador/modo.'); return; }
   const a = document.createElement('a');
   a.href = URL.createObjectURL(b); a.download = doc.filename||'documento'; a.click();
