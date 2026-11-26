@@ -19,7 +19,7 @@ function app(seed=[],fetch=async()=>reply([])){
     Store:{online:()=>true},LS:{SES:'session'},SEC_TIMER:null,SEC_WARN:null,DOC_DELETE_PENDING:new Set(),
     loadJSON:()=>copy(seed),saveJSON(key,value){state.saved.push({key,value:copy(value)});state.steps.push('save');},
     localStorage:{removeItem(key){state.steps.push('remove:'+key);}},
-    supaFetch:fetch,uid:()=> 'new-'+(++n),T:value=>value,
+    supaFetch:fetch,URL,URLSearchParams,uid:()=> 'new-'+(++n),T:value=>value,
     syncStatus:(...args)=>state.status.push(args),
     setTimeout(callback,delay){state.timers.push({callback,delay});return state.timers.length;},clearTimeout(){},
     window:{addEventListener(){}},$:()=>({classList:{contains:()=>true,add(){},remove(){}}}),
@@ -103,4 +103,101 @@ test('la lectura iniciada por A no entrega datos locales ni remotos después de 
   pending.resolve(reply([{id:'old-server',org_id:'org-a',ts:'2026-11-23T11:00:00Z'}]));
   assert.deepEqual(copy(await rows),[]);
   assert.equal(ctx.state.status.length,0);
+});
+
+function repeatConflict(){
+  return reply({code:'23505',message:'duplicate key value violates unique constraint "ec_audit_org_event_idx"'},409);
+}
+
+function queuedEvent(id){
+  return {...event(id),usuario:'a@example.invalid',rol:'investigador',motivo:'',ts:'2026-11-23T10:00:00.000Z'};
+}
+
+function receivedRow(entry){
+  return {
+    org_id:entry.org_id,event_id:entry.id,client_ts:'2026-11-23T10:00:00+00:00',
+    usuario:entry.usuario,rol:entry.rol,entidad:entry.entidad,accion:entry.accion,
+    ref_id:entry.refId,detalle:entry.detalle,motivo:entry.motivo
+  };
+}
+
+test('un 409 por reenvío confirma la copia recibida y guarda únicamente las filas que faltan',async()=>{
+  const received=queuedEvent('recibido'),fresh=queuedEvent('nuevo'),calls=[];
+  const server=new Map([[received.id,receivedRow(received)]]);
+  const ctx=app([received,fresh,event('otro-sitio','user-a','org-b')],async(route,opts)=>{
+    const url=new URL(route,'https://test.invalid');
+    if(opts.method==='GET'){
+      calls.push({method:'GET',url});
+      return reply([...server.values()]);
+    }
+    const rows=JSON.parse(opts.body);
+    calls.push({method:opts.method,ids:rows.map(r=>r.event_id),prefer:new Headers(opts.headers).get('Prefer')});
+    if(rows.some(r=>server.has(r.event_id))) return repeatConflict();
+    rows.forEach(r=>server.set(r.event_id,r));
+    return new Response(null,{status:201});
+  });
+  await ctx.audit.queue();
+  assert.deepEqual(calls.map(c=>c.method),['POST','GET','POST']);
+  assert.deepEqual(calls[0].ids,['recibido','nuevo']);
+  assert.doesNotMatch(calls[0].prefer||'',/ignore-duplicates/);
+  assert.equal(calls[1].url.searchParams.get('org_id'),'eq.org-a');
+  const filter=calls[1].url.searchParams.get('event_id');
+  assert.match(filter,/recibido/);
+  assert.match(filter,/nuevo/);
+  assert.doesNotMatch(filter,/otro-sitio/);
+  assert.deepEqual(calls[2].ids,['nuevo']);
+  assert.equal(server.size,2);
+  assert.equal(ctx.audit.pending().length,0);
+  assert.equal(ctx.state.saved.at(-1).value.find(e=>e.id==='otro-sitio').sincronizado,false);
+  assert.equal(ctx.state.status.at(-1)[1],'ok');
+});
+
+test('un mismo identificador con contenido o autor diferente queda pendiente sin bloquear el resto',async()=>{
+  const original=queuedEvent('original'),changed=queuedEvent('detalle-distinto'),differentActor=queuedEvent('otro-autor'),fresh=queuedEvent('nuevo');
+  const stored=[receivedRow(original),{...receivedRow(changed),detalle:'Otra versión'},{...receivedRow(differentActor),usuario:'b@example.invalid'}];
+  const posts=[];
+  const ctx=app([original,changed,differentActor,fresh],async(route,opts)=>{
+    if(opts.method==='GET') return reply(stored);
+    const ids=JSON.parse(opts.body).map(r=>r.event_id);
+    posts.push(ids);
+    return ids.some(id=>stored.some(r=>r.event_id===id))?repeatConflict():new Response(null,{status:201});
+  });
+  await ctx.audit.queue();
+  assert.deepEqual(posts[1],['nuevo']);
+  assert.deepEqual(copy(ctx.audit.pending()).map(e=>e.id),['detalle-distinto','otro-autor']);
+  assert.equal(ctx.state.status.at(-1)[1],'error');
+});
+
+test('un 409 por clave foránea o una consulta de verificación fallida conserva la cola',async()=>{
+  for(const scenario of ['foreign-key','lookup-error']){
+    const calls=[];
+    const ctx=app([queuedEvent('pendiente')],async(route,opts)=>{
+      calls.push(opts.method);
+      if(opts.method==='GET') return reply({message:'unavailable'},503);
+      return scenario==='foreign-key'?reply({code:'23503',message:'foreign key violation'},409):repeatConflict();
+    });
+    await ctx.audit.queue();
+    assert.deepEqual(calls,scenario==='foreign-key'?['POST']:['POST','GET']);
+    assert.equal(ctx.audit.pending().length,1);
+    assert.equal(ctx.state.status.at(-1)[1],'error');
+    assert.ok(ctx.state.timers.length);
+  }
+});
+
+test('cambiar de cuenta durante la comprobación de un 409 conserva los pendientes de ambas cuentas',async()=>{
+  const first=queuedEvent('primero'),other=event('segundo','user-b','org-b');
+  const started=deferred(),rows=deferred(),calls=[];
+  const ctx=app([first,other],async(route,opts)=>{
+    calls.push(opts.method);
+    if(opts.method==='GET'){started.resolve();return rows.promise;}
+    return repeatConflict();
+  });
+  const sync=ctx.audit.queue();
+  await Promise.race([started.promise,sync.then(()=>{throw new Error('Faltó la comprobación de duplicados');})]);
+  ctx.account('user-b','org-b');
+  rows.resolve(reply([receivedRow(first)]));
+  await sync;
+  assert.deepEqual(calls,['POST','GET']);
+  assert.equal(ctx.audit.all().every(e=>!e.sincronizado),true);
+  assert.equal(ctx.state.status.some(s=>s[1]==='ok'||s[1]==='error'),false);
 });

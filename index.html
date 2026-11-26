@@ -2548,30 +2548,82 @@ function auditar(entidad, accion, id, detalle, motivo){
   syncAuditQueue();
   return ev;
 }
+function auditPayload(ev){
+  return {
+    org_id:ev.org_id, event_id:ev.id, client_ts:ev.ts, usuario:ev.usuario, rol:ev.rol,
+    entidad:ev.entidad, accion:ev.accion, ref_id:ev.refId, detalle:ev.detalle, motivo:ev.motivo
+  };
+}
+function auditSamePayload(sent,row){
+  return Date.parse(sent.client_ts)===Date.parse(row.client_ts) &&
+    ['org_id','event_id','usuario','rol','entidad','accion','ref_id','detalle','motivo']
+      .every(key=>(sent[key]??null)===(row[key]??null));
+}
+function confirmAuditEvents(events){
+  if(!events.length) return;
+  events.forEach(ev=>{ev.sincronizado=true;});
+  saveJSON(LS_AUDIT,AUDIT);
+}
+async function syncAuditBatch(events,session,scope){
+  let remaining=events;
+  while(remaining.length && auditContextMatches(session,scope)){
+    const payload=remaining.map(auditPayload);
+    const r=await supaFetch('/rest/v1/ec_audit', {
+      method:'POST', headers:{'Prefer':'return=minimal'}, body:JSON.stringify(payload)
+    });
+    if(!auditContextMatches(session,scope)) return;
+    if(r.ok){ confirmAuditEvents(remaining); return; }
+    const failure=new Error('La auditoría quedó pendiente de sincronización ('+r.status+').');
+    if(r.status!==409) throw failure;
+    const problem=await r.json().catch(()=>null);
+    if(!problem || problem.code!=='23505') throw failure;
+    if(!auditContextMatches(session,scope)) return;
+
+    // El INSERT es atómico. El 409 por sí solo no confirma ninguna fila.
+    const ids=payload.map(row=>JSON.stringify(row.event_id)).join(',');
+    const fields='org_id,event_id,client_ts,usuario,rol,entidad,accion,ref_id,detalle,motivo';
+    const lookup=await supaFetch('/rest/v1/ec_audit?select='+fields+'&org_id=eq.'+
+      encodeURIComponent(scope.org_id)+'&event_id=in.('+encodeURIComponent(ids)+')', {method:'GET'});
+    if(!auditContextMatches(session,scope)) return;
+    if(!lookup.ok) throw new Error('No se pudo verificar la auditoría en el servidor ('+lookup.status+').');
+    const rows=await lookup.json();
+    if(!auditContextMatches(session,scope)) return;
+    if(!Array.isArray(rows)) throw new Error('El servidor no confirmó los eventos de auditoría.');
+    const stored=new Map(rows.filter(row=>row.org_id===scope.org_id).map(row=>[row.event_id,row]));
+    const matched=[], missing=[];
+    remaining.forEach((ev,i)=>{
+      const row=stored.get(ev.id);
+      if(!row) missing.push(ev);
+      else if(auditSamePayload(payload[i],row)) matched.push(ev);
+    });
+    if(missing.length===remaining.length) throw failure;
+    confirmAuditEvents(matched);
+    // Los registros diferentes con el mismo ID quedan pendientes de revisión.
+    // Sólo los faltantes vuelven a enviarse, incluso si otra pestaña se adelantó.
+    remaining=missing;
+  }
+}
 async function syncAuditQueue(){
   const session=SESSION, scope=auditCurrentScope();
   if(!Store.online() || !scope) return;
   if(AUDIT_SYNCING && AUDIT_SYNCING.session===session && auditInScope(AUDIT_SYNCING.scope,scope)) return;
   clearTimeout(AUDIT_RETRY_TIMER); AUDIT_RETRY_TIMER=null;
-  const pendientes=auditPendingEvents(scope).slice(0,100);
+  const pendientes=auditPendingEvents(scope);
   if(!pendientes.length){ syncStatus('audit','',''); return; }
   const pending={session,scope}; AUDIT_SYNCING=pending;
   syncStatus('audit','saving','Sincronizando '+pendientes.length+' evento(s) de auditoría…');
   try{
-    const payload=pendientes.map(ev=>({
-      org_id:ev.org_id, event_id:ev.id, client_ts:ev.ts, usuario:ev.usuario, rol:ev.rol, entidad:ev.entidad,
-      accion:ev.accion, ref_id:ev.refId, detalle:ev.detalle, motivo:ev.motivo
-    }));
-    if(!auditContextMatches(session,scope)) return;
-    const r=await supaFetch('/rest/v1/ec_audit', {
-      method:'POST', headers:{'Prefer':'resolution=ignore-duplicates,return=minimal'}, body:JSON.stringify(payload)
-    });
-    if(!auditContextMatches(session,scope)) return;
-    if(!r.ok) throw new Error('La auditoría quedó pendiente de sincronización ('+r.status+').');
-    const ids=new Set(pendientes.map(e=>e.id));
-    AUDIT.forEach(e=>{ if(auditInScope(e,scope) && ids.has(e.id)) e.sincronizado=true; });
-    saveJSON(LS_AUDIT,AUDIT);
-    syncStatus('audit','ok','✓ Auditoría sincronizada.');
+    for(let i=0;i<pendientes.length;i+=100){
+      await syncAuditBatch(pendientes.slice(i,i+100),session,scope);
+      if(!auditContextMatches(session,scope)) return;
+    }
+    if(pendientes.some(ev=>!ev.sincronizado)){
+      syncStatus('audit','error','Hay eventos de auditoría cuyo contenido difiere del servidor. Se conservan en este navegador para revisión.');
+    }else if(auditPendingEvents(scope).length){
+      syncStatus('audit','saving','Quedan eventos de auditoría por sincronizar.');
+    }else{
+      syncStatus('audit','ok','✓ Auditoría sincronizada.');
+    }
     /* El tablero puede estar mostrando el contador anterior. Actualizarlo en
        cuanto el servidor confirme la cola evita que quede una alerta falsa. */
     if(CURRENT_USER && $('appShell') && !$('appShell').classList.contains('hidden') &&
@@ -2590,7 +2642,7 @@ window.addEventListener('online', syncAuditQueue);
 async function auditRows(){
   const session=SESSION, scope=auditCurrentScope();
   if(!scope) return [];
-  let filas = auditLocalEvents(scope).map(e=>Object.assign({origen:'local'}, e));
+  let filas = auditLocalEvents(scope).map(e=>({...e, origen:'local', event_id:e.id}));
   if(typeof Store!=='undefined' && Store.online() && typeof supaFetch==='function'){
     try{
       if(!auditContextMatches(session,scope)) return [];
@@ -2599,16 +2651,27 @@ async function auditRows(){
       if(r.ok){
         const srv = await r.json();
         if(!auditContextMatches(session,scope)) return [];
-        filas = filas.concat((Array.isArray(srv)?srv:[]).filter(e=>e.org_id===scope.org_id).map(e=>({ origen:'servidor', id:'srv-'+e.id, ts:e.ts, usuario:e.usuario||'',
+        const delSitio=(Array.isArray(srv)?srv:[]).filter(e=>e.org_id===scope.org_id);
+        const porEvento=new Map(delSitio.filter(e=>e.event_id).map(e=>[e.event_id,e]));
+        filas=filas.filter(e=>{
+          const remota=porEvento.get(e.id);
+          if(!remota) return true;
+          if(!e.sincronizado) return !auditSamePayload(auditPayload(e),remota);
+          return String(e.usuario||'').trim().toLowerCase()!==String(remota.usuario||'').trim().toLowerCase();
+        });
+        const remotas=delSitio.map(e=>({ origen:'servidor', id:'srv-'+e.id, event_id:e.event_id, ts:e.ts, usuario:e.usuario||'',
           rol:e.rol||'', entidad:e.entidad||'', accion:e.accion||'', refId:e.ref_id||'',
-          detalle:e.detalle||'', motivo:e.motivo||'' })));
+          detalle:e.detalle||'', motivo:e.motivo||'' }));
+        filas=remotas.concat(filas);
       }
     }catch(e){}
   }
   if(!auditContextMatches(session,scope)) return [];
   const vistos = new Set();
   return filas.filter(e=>{
-    const k = e.ts+'|'+e.entidad+'|'+e.accion+'|'+e.refId;
+    const k = e.event_id
+      ? JSON.stringify([e.origen, e.event_id])
+      : JSON.stringify(['histórico', e.ts, e.entidad, e.accion, e.refId]);
     if(vistos.has(k)) return false;
     vistos.add(k); return true;
   }).sort((a,b)=>String(b.ts).localeCompare(String(a.ts)));
