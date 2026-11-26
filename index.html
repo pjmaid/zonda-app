@@ -205,7 +205,7 @@ details>summary{color:var(--acc-dark)}
       <label for="recoveryPass2">Repetir nueva clave</label>
       <input type="password" id="recoveryPass2" autocomplete="new-password">
       <button type="button" id="btnRecoveryShowPass" aria-controls="recoveryPass recoveryPass2" aria-pressed="false" style="margin-top:8px">Mostrar claves</button>
-      <div class="muted small" id="recoveryReq" style="margin-top:4px">Mínimo 12 caracteres, con mayúscula, minúscula, número y símbolo.</div>
+      <div class="muted small" id="recoveryReq" style="margin-top:4px">Mínimo 10 caracteres, con mayúscula, minúscula, número y símbolo.</div>
       <button class="primary" id="btnRecoverySave" style="width:100%;margin-top:14px">Guardar nueva clave</button>
       <button type="button" id="btnRecoveryCancel" style="width:100%;margin-top:8px">Volver al ingreso</button>
       <div id="recoveryMsg" role="status" aria-live="polite" aria-atomic="true" style="margin-top:8px"></div>
@@ -2049,17 +2049,17 @@ function visibleStudies(){
 function canSeeStudy(id){ const ids = myStudyIds(); return !ids || ids.has(id); }
 
 /* ---- contraseñas: complejidad y evaluación ---- */
-const PASS_MIN = 8;
+const PASS_MIN = 10;
 function passCheck(p){
   p = String(p||'');
   const req = [
-    { ok:p.length>=PASS_MIN, t:'al menos '+PASS_MIN+' caracteres' },
-    { ok:/[A-Za-zÁÉÍÓÚÑáéíóúñ]/.test(p), t:'una letra' },
-    { ok:/[A-ZÁÉÍÓÚÑ]/.test(p), t:'una mayúscula' },
+    { ok:Array.from(p).length>=PASS_MIN, t:'al menos '+PASS_MIN+' caracteres' },
+    { ok:/\p{Ll}/u.test(p), t:'una minúscula' },
+    { ok:/\p{Lu}/u.test(p), t:'una mayúscula' },
     { ok:/[0-9]/.test(p), t:'un número' },
-    { ok:/[^A-Za-z0-9]/.test(p), t:'un signo o símbolo' }
+    { ok:/[^\p{L}\p{N}\s]/u.test(p), t:'un signo o símbolo' }
   ];
-  const debil = /^(?:.)\1+$/.test(p) || /12345|qwerty|password|clave|admin|abcdef/i.test(p);
+  const debil = /^(.)\1+$/u.test(p) || /12345|qwerty|password|clave|admin|abcdef/i.test(p);
   if(debil) req.push({ ok:false, t:'no usar secuencias ni palabras obvias' });
   return { ok: req.every(r=>r.ok), faltan: req.filter(r=>!r.ok).map(r=>r.t), fuerza: req.filter(r=>r.ok).length };
 }
@@ -2883,7 +2883,7 @@ function toggleAuthPassword(ids,button){
   button.textContent=show ? (ids.length>1?'Ocultar claves':'Ocultar') : (ids.length>1?'Mostrar claves':'Mostrar');
 }
 function authPasswordValid(password){
-  return passCheck(password).ok && password.length>=12 && /[a-záéíóúñ]/.test(password);
+  return passCheck(password).ok;
 }
 function clearPrivateSessionData(){
   DB={studies:[],patients:[],visits:[],docs:[],users:[],records:[],checklists:[],settings:[]};
@@ -3118,7 +3118,7 @@ async function consumeRecoveryLink(){
   }catch(e){ RECOVERY_TOKEN=''; loginMsg(e.message); return true; }
 }
 $('recoveryPass').addEventListener('input',()=>{
-  $('recoveryReq').textContent=authPasswordValid($('recoveryPass').value)?'✔ La clave cumple los requisitos.':'Mínimo 12 caracteres, con mayúscula, minúscula, número y símbolo; evitá secuencias y palabras obvias.';
+  $('recoveryReq').textContent=authPasswordValid($('recoveryPass').value)?'✔ La clave cumple los requisitos.':'Mínimo 10 caracteres, con mayúscula, minúscula, número y símbolo; evitá secuencias y palabras obvias.';
 });
 $('btnRecoveryShowPass').addEventListener('click',e=>toggleAuthPassword(['recoveryPass','recoveryPass2'],e.currentTarget));
 $('btnRecoveryCancel').addEventListener('click',()=>{ closeRecoveryForm(); $('loginUser').focus(); });
@@ -3126,7 +3126,7 @@ $('btnRecoverySave').addEventListener('click',async()=>{
   if($('btnRecoverySave').disabled) return;
   const p1=$('recoveryPass').value,p2=$('recoveryPass2').value,m=$('recoveryMsg');
   if(!RECOVERY_TOKEN){ m.className='err'; m.textContent='El enlace ya no está disponible. Volvé al ingreso y solicitá uno nuevo.'; return; }
-  if(!authPasswordValid(p1)){ m.className='err'; m.textContent='La clave debe tener 12+ caracteres, mayúscula, minúscula, número y símbolo; evitá secuencias y palabras obvias.'; return; }
+  if(!authPasswordValid(p1)){ m.className='err'; m.textContent='La clave debe tener al menos 10 caracteres, mayúscula, minúscula, número y símbolo; evitá secuencias y palabras obvias.'; return; }
   if(p1!==p2){ m.className='err'; m.textContent='Las claves no coinciden.'; return; }
   $('btnRecoverySave').disabled=true; $('btnRecoveryCancel').disabled=true;
   m.className='muted'; m.textContent='Guardando la nueva clave...';
@@ -3219,7 +3219,7 @@ async function forzarCambioClave(){
         '</div>'+
         '<label for="fc_p1">'+T('Clave nueva')+'</label><input type="password" id="fc_p1" autocomplete="new-password" aria-describedby="fc_msg">'+
         '<label for="fc_p2">'+T('Repetila')+'</label><input type="password" id="fc_p2" autocomplete="new-password">'+
-        '<div class="small" id="fc_msg" role="status" aria-live="polite" style="margin-top:6px;min-height:16px">'+T('Mínimo 12 caracteres, con mayúscula, minúscula, número y símbolo.')+'</div>'+
+        '<div class="small" id="fc_msg" role="status" aria-live="polite" style="margin-top:6px;min-height:16px">'+T('Mínimo 10 caracteres, con mayúscula, minúscula, número y símbolo.')+'</div>'+
         '<div class="toolbar" style="margin-top:10px;margin-bottom:0">'+
           '<button class="primary" id="fc_ok">'+T('Guardar clave y continuar')+'</button>'+
           '<button id="fc_cancel">'+T('Cerrar sesión')+'</button>'+
@@ -3233,7 +3233,7 @@ async function forzarCambioClave(){
       if(button.disabled) return;
       const p1 = back.querySelector('#fc_p1').value, p2 = back.querySelector('#fc_p2').value;
       const m = back.querySelector('#fc_msg');
-      if(!authPasswordValid(p1)){ m.textContent = T('Mínimo 12 caracteres, con mayúscula, minúscula, número y símbolo; evitá secuencias y palabras obvias.'); m.style.color='var(--bad)'; return; }
+      if(!authPasswordValid(p1)){ m.textContent = T('Mínimo 10 caracteres, con mayúscula, minúscula, número y símbolo; evitá secuencias y palabras obvias.'); m.style.color='var(--bad)'; return; }
       if(p1!==p2){ m.textContent = T('Las claves no coinciden.'); m.style.color='var(--bad)'; return; }
       button.disabled=true; cancel.disabled=true;
       m.textContent = T('Guardando...'); m.style.color='var(--muted)';
@@ -12448,7 +12448,7 @@ function sitioForm(){
       const ctempS = $('sf_ctemp').value;
       if(ctempS){
         const pcS = passCheck(ctempS);
-        if(!pcS.ok || ctempS.length<12){ msg.textContent = T('La clave temporal debe tener 12+ caracteres, con mayúscula, minúscula, número y símbolo.'); msg.style.color='var(--bad)'; return; }
+        if(!pcS.ok){ msg.textContent = T('La clave temporal debe tener al menos 10 caracteres, con mayúscula, minúscula, número y símbolo.'); msg.style.color='var(--bad)'; return; }
       }
       const j = await fnServidor({ accion:'organizacion', nombre, email,
                                    nombreAdmin: $('sf_admin').value.trim(),
@@ -12482,20 +12482,20 @@ function userForm(id){
         '<div style="align-self:end"><button type="button" id="uf_passwordSave">🔑 '+T('Cambiar clave')+'</button></div>'+
       '</div>'+
       '<div class="muted small" id="uf_passwordHint" style="margin:-2px 0 8px">'+
-        T('Mínimo 12 caracteres, con mayúscula, minúscula, número y símbolo. El usuario deberá cambiarla al iniciar sesión.')+
+        T('Mínimo 10 caracteres, con mayúscula, minúscula, número y símbolo. El usuario deberá cambiarla al iniciar sesión.')+
       '</div>' :
       '<div class="row" id="uf_ctempBox">'+
         '<div class="grow"><label>'+T('Clave temporal (opcional)')+'</label>'+
           '<input type="password" id="uf_ctemp" autocomplete="new-password"></div>'+
         '<div class="grow" style="align-self:end"><div class="muted small">'+
-          T('Vacía: se manda una invitación por email para que defina su clave. Completa: entra ya mismo con esta clave y el sistema lo obliga a cambiarla en el primer ingreso. Mínimo 12 caracteres, con mayúscula, minúscula, número y símbolo.')+
+          T('Vacía: se manda una invitación por email para que defina su clave. Completa: entra ya mismo con esta clave y el sistema lo obliga a cambiarla en el primer ingreso. Mínimo 10 caracteres, con mayúscula, minúscula, número y símbolo.')+
         '</div></div>'+
       '</div>') :
       '<div class="row" id="uf_claveBox">'+
         '<div class="grow"><label>'+(u.hash?T('Cambiar la clave (dejar vacío para no tocarla)'):T('Clave inicial'))+'</label>'+
           '<input type="password" id="uf_clave" autocomplete="new-password"></div>'+
         '<div class="grow" style="align-self:end"><div class="muted small" id="uf_claveHint">'+
-          T('En modo local, cada usuario ingresa con su email y esta clave. Mínimo 8 caracteres, con una letra, una mayúscula, un número y un signo.')+
+          T('En modo local, cada usuario ingresa con su email y esta clave. Mínimo 10 caracteres, con mayúscula, minúscula, número y símbolo.')+
         '</div></div>'+
       '</div>')+
     '<label style="display:block;font-weight:400;color:var(--ink);margin:6px 0" id="uf_factBox">'+
@@ -12538,7 +12538,7 @@ function userForm(id){
   if(bp) bp.addEventListener('click', async ()=>{
     const p1 = $('uf_password').value, p2 = $('uf_password2').value;
     const pc = passCheck(p1);
-    if(!pc.ok || p1.length<12){ toast(T('La nueva clave debe tener 12+ caracteres, con mayúscula, minúscula, número y símbolo.')); return; }
+    if(!pc.ok){ toast(T('La nueva clave debe tener al menos 10 caracteres, con mayúscula, minúscula, número y símbolo.')); return; }
     if(p1!==p2){ toast(T('Las claves no coinciden.')); return; }
     if(!confirm(T('¿Cambiar la clave de')+' '+(u.nombre||u.email)+'?')) return;
     bp.disabled = true;
@@ -12579,7 +12579,7 @@ function userForm(id){
       const ctemp = ctempEl ? ctempEl.value : '';
       if(ctemp){
         const pcT = passCheck(ctemp);
-        if(!pcT.ok || ctemp.length<12){ toast(T('La clave temporal debe tener 12+ caracteres, con mayúscula, minúscula, número y símbolo.')); return; }
+        if(!pcT.ok){ toast(T('La clave temporal debe tener al menos 10 caracteres, con mayúscula, minúscula, número y símbolo.')); return; }
       }
       $('uf_save').disabled = true;
       try{

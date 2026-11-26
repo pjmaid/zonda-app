@@ -5,6 +5,7 @@ const path=require('node:path');
 const vm=require('node:vm');
 
 const html=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');
+const passwordPolicy=html.slice(html.indexOf('const PASS_MIN ='),html.indexOf('function saveLocalDB('));
 const source=html.slice(html.indexOf('async function authJsonRequest('),html.indexOf('async function enterApp('));
 const membership=html.slice(html.indexOf('async function cargarMembresia('),html.indexOf('/* llamada a la función del servidor que crea cuentas'));
 const temporaryPassword=html.slice(html.indexOf('async function forzarCambioClave('),html.indexOf('function avisarClaveVencida('));
@@ -35,13 +36,13 @@ function app(fetch,url='https://zonda.example.invalid/?lang=es'){
     supaBase:()=> 'https://test.supabase.co',
     supaFetch:(route,opts)=>fetch('https://test.supabase.co'+route,opts),
     saveJSON:(_key,value)=>saved.push(json(value)),localStorage:{removeItem:key=>saved.push({removed:key})},
-    renderBuildInfo(){},passHint:()=>'',passCheck:p=>({ok:/[A-Z]/.test(p)&&/[a-z]/.test(p)&&/\d/.test(p)&&/[^A-Za-z0-9]/.test(p)}),
+    renderBuildInfo(){},
     enterApp:async()=>{},jwtSub:()=> 'user-test',auditar(){},toast(){},
     document:{addEventListener(){},body:{appendChild(){}},createElement:()=>({innerHTML:'',className:'',querySelector:selector=>element(selector.slice(1)),remove(){}})},
     history:{replaceState(_state,_title,relative){ctx.location=new URL(relative,ctx.location.origin);}}
   });
   function $(id){return element(id);}
-  vm.runInContext(source+membership+temporaryPassword+inactivitySource+logoutSource+'\nthis.auth={request:authJsonRequest,recover:sendRecoveryEmail,consume:consumeRecoveryLink,login:doLogin,membership:cargarMembresia,temporary:forzarCambioClave,logout:doLogout,inactivity:resetInactividad,getRecoveryToken:()=>RECOVERY_TOKEN};',ctx);
+  vm.runInContext(passwordPolicy+source+membership+temporaryPassword+inactivitySource+logoutSource+'\nthis.auth={request:authJsonRequest,recover:sendRecoveryEmail,consume:consumeRecoveryLink,login:doLogin,membership:cargarMembresia,temporary:forzarCambioClave,logout:doLogout,inactivity:resetInactividad,getRecoveryToken:()=>RECOVERY_TOKEN};',ctx);
   ctx.element=element;ctx.saved=saved;
   ctx.location.reload=()=>{ctx.reloaded=true;};
   ctx.click=async id=>{for(const fn of element(id).listeners.click||[])await fn({preventDefault(){},currentTarget:element(id)});};

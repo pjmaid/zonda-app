@@ -77,7 +77,8 @@ function validRole(value: unknown): Member["rol"] {
 
 function validTemporaryPassword(value: unknown) {
   const password = String(value || "");
-  const ok = password.length >= 12 && /[A-ZÁÉÍÓÚÑ]/.test(password) && /[a-záéíóúñ]/.test(password) && /\d/.test(password) && /[^A-Za-z0-9]/.test(password);
+  const ok = Array.from(password).length >= 10 && /\p{Lu}/u.test(password) && /\p{Ll}/u.test(password) && /[0-9]/.test(password) && /[^\p{L}\p{N}\s]/u.test(password)
+    && !/^(.)\1+$/u.test(password) && !/12345|qwerty|password|clave|admin|abcdef/i.test(password);
   if (!ok) throw new Error("PASSWORD_WEAK");
   return password;
 }
@@ -389,7 +390,7 @@ Deno.serve(async (req) => {
       ORGANIZATION_INVALID: "Escribí un nombre de sitio válido.",
       EMAIL_INVALID: "Escribí un email válido.",
       ROLE_INVALID: "El rol seleccionado no es válido.",
-      PASSWORD_WEAK: "La clave debe tener 12+ caracteres, mayúscula, minúscula, número y símbolo.",
+      PASSWORD_WEAK: "La clave debe tener al menos 10 caracteres, mayúscula, minúscula, número y símbolo; evitá secuencias y palabras obvias.",
       USER_INVALID: "El usuario seleccionado no es válido.",
       USER_NOT_FOUND: "La cuenta de acceso ya no existe.",
       USER_OUTSIDE_SITE: "No podés administrar usuarios de otro sitio.",
