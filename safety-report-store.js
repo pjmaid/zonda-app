@@ -7,7 +7,7 @@
   'use strict';
 
   const TYPE = 'reporte_seguridad';
-  const CATEGORIES = Object.freeze(['SUSAR', 'DSUR', 'Carta de seguridad', 'Listado periódico', 'Otro']);
+  const CATEGORIES = Object.freeze(['SUSAR', 'CIOMS', 'DSUR', 'Carta de seguridad', 'Listado periódico', 'Otro']);
   const MAX_BYTES = 50 * 1024 * 1024;
 
   function isStudyDocument(doc) {

@@ -1,13 +1,14 @@
 /* Archivo de reportes de seguridad de un estudio. El anfitrión aporta los datos y permisos. */
 (function(root, factory){
-  const api = factory();
-  if(typeof module === 'object' && module.exports) module.exports = api;
+  const commonJS = typeof module === 'object' && module.exports;
+  const store = commonJS ? require('./safety-report-store.js') : root.ZondaSafetyStore;
+  const api = factory(store.CATEGORIES);
+  if(commonJS) module.exports = api;
   root.ZondaSafetyReports = api;
-})(typeof globalThis !== 'undefined' ? globalThis : this, function(){
+})(typeof globalThis !== 'undefined' ? globalThis : this, function(categories){
   'use strict';
 
   const pageSize = 25;
-  const categories = ['SUSAR', 'DSUR', 'Carta de seguridad', 'Listado periódico', 'Otro'];
   const normalize = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
   const categoryOf = report => categories.includes(report.safetyCategory) ? report.safetyCategory : 'Otro';
   const dateOf = report => String(report.safetyDate || report.subido || '').slice(0,10);
